@@ -30,8 +30,8 @@ CT_TRAINING_TYPE,T05,临床轮转,Rotation,,1,50,科室轮转,{}
 CT_TRAINING_TYPE,T06,实习,Internship,,1,60,临床/企业实习,{}
 CT_TRAINING_TYPE,T07,GCP培训,GCP Training,,1,70,药物临床试验质量管理规范培训,{}
 CT_TRAINING_TYPE,T08,海外访学,Overseas Visiting,,1,80,海外访学/交换,{}
-CT_CREDENTIAL_TYPE,C01,执业医师资格证,Physician License,,1,10,,{"required_for":["F01"]}
-CT_CREDENTIAL_TYPE,C02,住院医师规范化培训合格证,Residency Certificate,,1,20,,{"required_for":["F01"]}
+CT_CREDENTIAL_TYPE,C01,执业医师资格证,Physician License,,1,10,,"{""required_for"":[""F01""]}"
+CT_CREDENTIAL_TYPE,C02,住院医师规范化培训合格证,Residency Certificate,,1,20,,"{""required_for"":[""F01""]}"
 CT_CREDENTIAL_TYPE,C03,专科医师规范化培训合格证,Subspecialty Certificate,,1,30,,{}
 CT_CREDENTIAL_TYPE,C04,执业药师,Licensed Pharmacist,,1,40,,{}
 CT_CREDENTIAL_TYPE,C05,执业护士,Nurse License,,1,50,,{}
@@ -77,14 +77,14 @@ CT_VERIFY_STATUS,V1,已解析,parsed,,1,1,机器抽取未核验,{}
 CT_VERIFY_STATUS,V2,人工核验,human_checked,,1,2,人工确认,{}
 CT_VERIFY_STATUS,V3,第三方验证,third_party_verified,,1,3,可外部查证,{}
 CT_VERIFY_STATUS,V4,存在争议,disputed,,1,4,信息冲突,{}
-CT_EVIDENCE_TYPE,EV1,证书,Certificate,,1,10,,{"default_verifiability":5}
-CT_EVIDENCE_TYPE,EV2,论文,Publication,,1,20,,{"default_verifiability":5}
-CT_EVIDENCE_TYPE,EV3,作品/产出,Portfolio,,1,30,,{"default_verifiability":3}
-CT_EVIDENCE_TYPE,EV4,项目经历,Project,,1,40,,{"default_verifiability":2}
-CT_EVIDENCE_TYPE,EV5,他人评价,Reference,,1,50,,{"default_verifiability":2}
-CT_EVIDENCE_TYPE,EV6,测评,Assessment,,1,60,,{"default_verifiability":3}
-CT_EVIDENCE_TYPE,EV7,自述,Self-report,,1,70,,{"default_verifiability":0}
-CT_EVIDENCE_TYPE,EV8,临床记录,Clinical Record,,1,80,,{"default_verifiability":2}
+CT_EVIDENCE_TYPE,EV1,证书,Certificate,,1,10,,"{""default_verifiability"":5}"
+CT_EVIDENCE_TYPE,EV2,论文,Publication,,1,20,,"{""default_verifiability"":5}"
+CT_EVIDENCE_TYPE,EV3,作品/产出,Portfolio,,1,30,,"{""default_verifiability"":3}"
+CT_EVIDENCE_TYPE,EV4,项目经历,Project,,1,40,,"{""default_verifiability"":2}"
+CT_EVIDENCE_TYPE,EV5,他人评价,Reference,,1,50,,"{""default_verifiability"":2}"
+CT_EVIDENCE_TYPE,EV6,测评,Assessment,,1,60,,"{""default_verifiability"":3}"
+CT_EVIDENCE_TYPE,EV7,自述,Self-report,,1,70,,"{""default_verifiability"":0}"
+CT_EVIDENCE_TYPE,EV8,临床记录,Clinical Record,,1,80,,"{""default_verifiability"":2}"
 CT_REQUIREMENT_KIND,RK1,硬性,Hard,,1,10,不满足则不可投,{}
 CT_REQUIREMENT_KIND,RK2,软性,Soft,,1,20,影响竞争力,{}
 CT_REQUIREMENT_KIND,RK3,加分,Bonus,,1,30,锦上添花,{}
@@ -182,18 +182,18 @@ CT_SALARY_PERIOD,SP1,月,Monthly,,1,10,,{}
 CT_SALARY_PERIOD,SP2,年,Yearly,,1,20,,{}
 CT_SALARY_PERIOD,SP3,日,Daily,,1,30,,{}
 CT_SALARY_PERIOD,SP4,面议,Negotiable,,1,90,须置空数值并打 quality_flag,{}
-CT_CONCEPT_TYPE,K1,技能,Skill,,1,10,可通过训练获得的程序性能力,{"ESCO":"skill"}
-CT_CONCEPT_TYPE,K2,知识,Knowledge,,1,20,领域事实与理论,{"ESCO":"knowledge"}
-CT_CONCEPT_TYPE,K3,能力,Ability,,1,30,较稳定的认知与心理特质,{"O*NET":"abilities"}
-CT_CONCEPT_TYPE,K4,任务,Task,,1,40,岗位活动单元,{"O*NET":"work_activities"}
-CT_CONCEPT_TYPE,K5,技术,Technology,,1,50,工具与软件,{"O*NET":"technology_skills"}
-CT_CONCEPT_TYPE,K6,兴趣,Interest,,1,60,,{"O*NET":"interests"}
-CT_CONCEPT_TYPE,K7,工作风格,Work Style,,1,70,,{"O*NET":"work_styles"}
-CT_CONCEPT_TYPE,K8,工作情境,Work Context,,1,80,,{"O*NET":"work_context"}
+CT_CONCEPT_TYPE,K1,技能,Skill,,1,10,可通过训练获得的程序性能力,"{""ESCO"":""skill""}"
+CT_CONCEPT_TYPE,K2,知识,Knowledge,,1,20,领域事实与理论,"{""ESCO"":""knowledge""}"
+CT_CONCEPT_TYPE,K3,能力,Ability,,1,30,较稳定的认知与心理特质,"{""O*NET"":""abilities""}"
+CT_CONCEPT_TYPE,K4,任务,Task,,1,40,岗位活动单元,"{""O*NET"":""work_activities""}"
+CT_CONCEPT_TYPE,K5,技术,Technology,,1,50,工具与软件,"{""O*NET"":""technology_skills""}"
+CT_CONCEPT_TYPE,K6,兴趣,Interest,,1,60,,"{""O*NET"":""interests""}"
+CT_CONCEPT_TYPE,K7,工作风格,Work Style,,1,70,,"{""O*NET"":""work_styles""}"
+CT_CONCEPT_TYPE,K8,工作情境,Work Context,,1,80,,"{""O*NET"":""work_context""}"
 CT_CONCEPT_TYPE,K9,价值观,Value,,1,90,,{}
-CT_REUSABILITY,RU1,通用,Transversal,,1,10,跨所有行业可用,{"ESCO":"transversal"}
-CT_REUSABILITY,RU2,跨行业,Cross-sector,,1,20,,{"ESCO":"cross-sector"}
-CT_REUSABILITY,RU3,职业专属,Occupation-specific,,1,30,,{"ESCO":"occupation-specific"}
+CT_REUSABILITY,RU1,通用,Transversal,,1,10,跨所有行业可用,"{""ESCO"":""transversal""}"
+CT_REUSABILITY,RU2,跨行业,Cross-sector,,1,20,,"{""ESCO"":""cross-sector""}"
+CT_REUSABILITY,RU3,职业专属,Occupation-specific,,1,30,,"{""ESCO"":""occupation-specific""}"
 CT_COLLECTION_METHOD,CM1,问卷,Questionnaire,,1,10,,{}
 CT_COLLECTION_METHOD,CM2,访谈,Interview,,1,20,,{}
 CT_COLLECTION_METHOD,CM3,简历解析,Resume Parse,,1,30,,{}
@@ -317,8 +317,8 @@ CT_EXPERIENCE_BAND,EX3,3-5年,3-5y,,1,40,,{}
 CT_EXPERIENCE_BAND,EX4,5-10年,5-10y,,1,50,,{}
 CT_EXPERIENCE_BAND,EX5,10年以上,Over 10y,,1,60,,{}
 CT_EXPERIENCE_BAND,EX9,不限,Any,,1,90,岗位侧：不限经验,{}
-CT_CITY_TIER,CT1,一线城市,Tier-1 City,,1,10,北上广深,{}
-CT_CITY_TIER,CT2,新一线,New Tier-1,,1,20,成都/杭州/武汉/西安/苏州等,{}
+CT_CITY_TIER,CT1,一线城市,Tier-1 City,,1,10,北上广深,"{""cities"": [""CTY01"", ""CTY05"", ""CTY16"", ""CTY17""], ""tier"": ""一线城市"", ""source"": ""第一财经·新一线城市研究所《2024新一线城市魅力排行榜》(2024-05-30发布)"", ""source_url"": ""http://e.cdsb.com/html/2024-05/31/content_778091.htm"", ""verified_at"": ""2026-02-14"", ""note"": ""仅登记已核实的一线/新一线；二线及以下分界有争议，故意留空不猜""}"
+CT_CITY_TIER,CT2,新一线,New Tier-1,,1,20,成都/杭州/武汉/西安/苏州等,"{""cities"": [""CTY24"", ""CTY09"", ""CTY25"", ""CTY07"", ""CTY20"", ""CTY28"", ""CTY06"", ""CTY21"", ""CTY02"", ""CTY22"", ""CTY19"", ""CTY08"", ""CTY10"", ""CTY13"", ""CTY11""], ""tier"": ""新一线"", ""source"": ""第一财经·新一线城市研究所《2024新一线城市魅力排行榜》(2024-05-30发布)"", ""source_url"": ""http://e.cdsb.com/html/2024-05/31/content_778091.htm"", ""verified_at"": ""2026-02-14"", ""note"": ""仅登记已核实的一线/新一线；二线及以下分界有争议，故意留空不猜""}"
 CT_CITY_TIER,CT3,二线,Tier-2,,1,30,,{}
 CT_CITY_TIER,CT4,三线及以下,Tier-3 or below,,1,40,,{}
 CT_CITY_TIER,CT5,海外,Overseas,,1,50,,{}

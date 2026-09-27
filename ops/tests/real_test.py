@@ -34,7 +34,8 @@ DSN = V.DSN
 
 # 实测基线。改动数据或口径时这些数字会变 —— 那正是让人停下来看一眼的目的。
 N_DIM = 50
-N_TWO_SIDED = 10          # 两侧都能组装出值的维度数（改设计/补字段都会动它）
+N_TWO_SIDED = 14          # 两侧都能组装出值的维度数（改设计/补字段/开通派生都会动它）
+# 历史：10（只有列直读）→ 13（016 开通岗位侧派生）→ 14（修 _as_codes 的数组嵌套 + 岗位侧文本档位归一化）
 REAL_PREFIX = "per_real_"
 REAL_BATCH = os.path.join(BASE, "ops", "fixtures", "real_cases.json")
 REAL_TARGETS = os.path.join(BASE, "ops", "fixtures", "real_targets.json")
@@ -80,6 +81,28 @@ def main():
         check(len(gates) >= 3,
               "可评的硬门槛维度 >= 3 个（实得 %d：%s）"
               % (len(gates), "、".join(x["dimension_id"] for x in gates)))
+        # 016 的核心成果：权重 1.0 的经验门禁以前**两侧都取不到值**（等于从不拦人），
+        # 现在人侧由任职起止求和、岗位侧由经验要求文本归一化，两侧都必须接近满覆盖。
+        byid = {d["dimension_id"]: d for d in cov["dims"]}
+        wy = byid["DIM_WORK_YEARS"]
+        check(wy["job_ok"] == cov["n_job"],
+              "DIM_WORK_YEARS 岗位侧全覆盖（%d/%d）—— 这条门禁以前是 0，从来不拦人"
+              % (wy["job_ok"], cov["n_job"]))
+        check(wy["person_ok"] >= 0.8 * cov["n_person"],
+              "DIM_WORK_YEARS 人侧覆盖率 >= 80%%（%d/%d）"
+              % (wy["person_ok"], cov["n_person"]))
+        et = byid["DIM_EMPLOYER_TYPE"]
+        check(et["job_ok"] >= 0.9 * cov["n_job"],
+              "DIM_EMPLOYER_TYPE 岗位侧由 employer_name_raw 派生（%d/%d）"
+              % (et["job_ok"], cov["n_job"]))
+        ct = byid["DIM_CITY_TIER"]
+        check(ct["person_ok"] and ct["job_ok"] == cov["n_job"],
+              "DIM_CITY_TIER 两侧都有值（人侧 %d，岗位侧 %d/%d）—— 映射来自数据字典"
+              % (ct["person_ok"], ct["job_ok"], cov["n_job"]))
+        st = byid["DIM_SCHOOL_TIER"]
+        check(st["person_ok"] >= 0.8 * cov["n_person"],
+              "DIM_SCHOOL_TIER 由院校中文标签归一化（%d/%d）—— 修 _as_codes 的数组嵌套之前是 0"
+              % (st["person_ok"], cov["n_person"]))
         # 岗位侧缺落点是"待采集"而不是"错误"，但缺口规模要看得见
         no_landing = [d for d in cov["dims"] if d["job_ok"] == 0]
         check(len(no_landing) > 0,

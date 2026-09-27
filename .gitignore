@@ -53,6 +53,20 @@ Desktop.ini
 # ---- 临时/一次性脚本（探查、计时、打补丁）----
 # 踩过的坑：subagent 写的临时计时脚本 _perf_probe.py 曾被 `git add -A` 收进提交并推上公开仓库。
 # 约定：一次性脚本一律用这些前缀，且不进仓库；要留下的工具请用正常命名。
+#
+# 第二个坑（更隐蔽）：subagent 跑联网检索时会写自己的抓取缓存目录
+# ops/fixtures/.cache/*.txt（56 个文件），以及 _tmp_out.txt 这类中间产物。
+# 它们在工作区里是"正常的临时文件"，但 `git add -A` 会把它们一起收进提交。
+# 只写脚本前缀是防不住的 —— **任何"运行期产物目录"都必须单独排除**。
+ops/fixtures/.cache/
+_tmp*
+tmp_*
+# 第三个坑（同一个错误的第三次）：前缀规则永远漏 —— 漏了 _fetch_probe / _gbk /
+# _registry_probe / _search_probe / _transport_probe / _urls*.txt / _t_*.txt / _yu_baike.txt，
+# 一共 15 个文件被提交。教训：**与其逐个枚举前缀，不如把"整个目录里的下划线开头"排除**。
+# ops/fixtures/ 下的正式产物都有正常名字（gen_talent.py / real_cases.py / check_*.sql），
+# 下划线开头在这里没有例外，所以这条规则是安全的。
+ops/fixtures/_*
 # 只写目录是防不住的：subagent 在别的目录下又写了一批 _probe_*.sql / _verify_*.sql。
 # 改为按 basename 全仓匹配（无斜杠的 pattern 在任意深度生效）。
 _perf_*

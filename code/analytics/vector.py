@@ -58,6 +58,312 @@ R_NO_VALUE = "有落点但该主体没有值"
 R_NO_FK = "来源表没有指向主体的外键"
 R_NEEDS_MAP = "原始值到码值缺映射规则"
 
+
+# ---------------------------------------------------------------------------
+# 派生口径的实现（对应注册表里 `derived:` 开头的落点）
+# ---------------------------------------------------------------------------
+# 一条铁律：**能在数据字典里找到刻度的一律用词表刻度，找不到就不派生。**
+#   · 经验档的边界写在 CT_EXPERIENCE_BAND 的标签里（1年以内 / 1-3年 / 3-5年 /
+#     5-10年 / 10年以上）→ 派生规则去**读标签**，而不是把 1/3/5/10 硬编码进代码。
+#     词表改了派生跟着改；代码里一旦出现第二套数字，就是第二个口径。
+#   · 城市层级用 CT_CITY_TIER.external_mapping 里登记的城市清单（只登记已核实的
+#     一线/新一线；二线及以下故意留空）。
+#   · 找不到刻度的（如"哪些专业算临床类"）**不派生**，如实报缺什么。
+#
+# 另一个容易踩的地方：rank 用"按 sort_order 排序后的**序号**"（1 起），
+# 而**不是** sort_order 本身。CT_EXPERIENCE_BAND 的 sort_order 是 10/20/30…，
+# 直接当 rank 会让 cmp_ordinal 的"差一档给 0.5"永远不触发
+# （它判的是 rank + 1 = min_rank）。
+def _band_table(c, ctable):
+    """把区间型词表解析成 [(code, lo, hi, rank)]。
+
+    支持三种标签写法（实测存在的）：
+      `1年以内` / `1-3年` / `5-10年` / `10年以上` / `应届/无经验` / `不限`
+    解析不出来的档位（如"不限"）跳过：它不是一个区间，不该参与比较。
+    """
+    import re as _re
+    cvals = code_values(c, ctable)
+    items = sorted(cvals.items(), key=lambda kv: kv[1]["sort_order"])
+    out = []
+    for rank, (code, meta) in enumerate(items, 1):
+        lab = meta["label_zh"] or ""
+        lo = hi = None
+        m = _re.search(r"(\d+)\s*[-~至]\s*(\d+)", lab)
+        if m:
+            lo, hi = float(m.group(1)), float(m.group(2))
+        elif _re.search(r"(\d+)\s*年以内", lab):
+            lo, hi = 0.0, float(_re.search(r"(\d+)\s*年以内", lab).group(1))
+        elif _re.search(r"(\d+)\s*年以上", lab):
+            lo, hi = float(_re.search(r"(\d+)\s*年以上", lab).group(1)), None
+        elif "应届" in lab or "无经验" in lab:
+            lo, hi = 0.0, 0.0
+        if lo is None:
+            continue          # "不限"这类：不是区间，不参与比较
+        out.append((code, lo, hi, rank))
+    return out
+
+
+def _band_of(value, bands):
+    """数值 → 落在哪个档。区间是左闭右开（`1-3年` 含 1 不含 3），与标签的通常读法一致。"""
+    if value is None:
+        return None
+    for code, lo, hi, rank in bands:
+        if hi is None:
+            if value >= lo:
+                return code
+        elif lo <= value < hi or (lo == hi == 0 and value == 0):
+            return code
+    # 落在最后一档之上（例如 10 年以上但词表只到 5-10 年）→ 取最高档，并让调用方知道是"截断"
+    return bands[-1][0] if bands and value >= bands[-1][1 or 0] else None
+
+
+def _rank_of_code(c, ctable, code):
+    """码 → 该词表内按 sort_order 排序后的序号（1 起）。"""
+    cvals = code_values(c, ctable)
+    items = sorted(cvals.items(), key=lambda kv: kv[1]["sort_order"])
+    for i, (cd, _meta) in enumerate(items, 1):
+        if cd == code:
+            return i
+    return None
+
+
+def _rank_from_text(c, ctable, raw_values):
+    """原始值是**文本**（不是码）时，折算成序数 rank。两条路径，都要留痕：
+
+      ① 码表标签匹配：`省重点` → ST5「省重点/部属」
+      ② 区间文本解析：`1-3年` / `3年以上` / `应届` → EX 档
+    为什么必须有这条路径：岗位侧的经验要求与偏好侧的强度要求都是**自由文本**，
+    它们和码值维度一样在做 ordinal_ge 比较，但值不是码。没有这一步，
+    `DIM_WORK_YEARS`（权重 1.0 的硬门槛）在岗位侧永远是 0 —— 门禁就成了摆设。
+    匹配不上就返回 (None, None)，让调用方如实记"缺映射"，不猜。
+    """
+    texts = [str(v) for v in raw_values if v is not None]
+    if not texts:
+        return None, None
+    # ① 标签匹配
+    codes, _unmatched = text_to_codes(c, ctable, texts)
+    if codes:
+        rk = max(x for x in (_rank_of_code(c, ctable, x) for x in codes) if x is not None)
+        return rk, "label_match"
+    # ② 区间文本
+    bands = _band_table(c, ctable)
+    if not bands:
+        return None, None
+    best = None
+    for s in texts:
+        if "应届" in s or "无经验" in s:
+            val = 0.0
+        else:
+            nums = re.findall(r"\d+(?:\.\d+)?", s)
+            if not nums:
+                continue
+            val = min(float(x) for x in nums)   # 取下限："3-5年"意味着至少 3 年
+        code = _band_of(val, bands)
+        if code:
+            r = _rank_of_code(c, ctable, code)
+            best = r if best is None else max(best, r)
+    return (best, "band_from_text") if best is not None else (None, None)
+
+
+def _emp_months(c, pid):
+    """任职总月数。end_date 为空表示至今 → 用当前日期。"""
+    rows = c.execute("""SELECT start_date, end_date FROM mt.employment_record
+                         WHERE person_id=%s AND start_date IS NOT NULL""", (pid,)).fetchall()
+    total = 0.0
+    for r in rows:
+        end = r["end_date"]
+        if end is None:
+            end = c.execute("SELECT current_date AS d").fetchone()["d"]
+        total += (end - r["start_date"]).days / 30.4375
+    return total, len(rows)
+
+
+# ---- 人侧派生 ----
+def _p_work_years(c, pid, d):
+    months, n = _emp_months(c, pid)
+    if not n:
+        return None, "有落点但该主体没有值（无任职记录）"
+    years = months / 12.0
+    bands = _band_table(c, "CT_EXPERIENCE_BAND")
+    code = _band_of(years, bands)
+    if not code:
+        return None, R_NEEDS_MAP
+    return ({"rank": _rank_of_code(c, "CT_EXPERIENCE_BAND", code)},
+            "由 %d 段任职起止日期求和得 %.1f 年 → %s（档位边界取自 CT_EXPERIENCE_BAND 标签）"
+            % (n, years, code))
+
+
+def _p_city_tier(c, pid, d):
+    """期望城市 → 城市层级。期望城市取 PF1 的码（CT_CITY），层级取 CT_CITY_TIER.external_mapping。"""
+    rows = c.execute("""SELECT value_code, value_raw FROM mt.preference
+                         WHERE person_id=%s AND pref_type='PF1'""", (pid,)).fetchall()
+    if not rows:
+        return None, "有落点但该主体没有值（未填 PF1 期望城市）"
+    city = None
+    cvals_city = code_values(c, "CT_CITY")
+    for r in rows:
+        v = (r["value_code"] or r["value_raw"] or "").strip()
+        if v in cvals_city:
+            city = v
+            break
+        for code, meta in cvals_city.items():
+            if meta["label_zh"] and meta["label_zh"] == v:
+                city = code
+                break
+        if city:
+            break
+    if not city:
+        return None, R_NEEDS_MAP
+    for tier_code, meta in code_values(c, "CT_CITY_TIER").items():
+        cities = (meta["external_mapping"] or {}).get("cities") or []
+        if city in cities:
+            return ({"rank": _rank_of_code(c, "CT_CITY_TIER", tier_code)},
+                    "期望城市 %s 属于 %s（映射来自 CT_CITY_TIER.external_mapping）"
+                    % (city, tier_code))
+    return None, "该城市未登记层级映射（二线及以下未登记，见 CT_CITY_TIER 的 note）"
+
+
+def _p_school_tier(c, pid, d):
+    """院校标签 → 院校层次码。school_tags 里存的是中文标签（如「省重点」）。"""
+    rows = c.execute("""SELECT DISTINCT unnest(school_tags) AS t FROM mt.education_record
+                         WHERE person_id=%s""", (pid,)).fetchall()
+    tags = [r["t"] for r in rows if r["t"]]
+    if not tags:
+        return None, "有落点但该主体没有值（无院校标签）"
+    codes, unmatched = text_to_codes(c, "CT_SCHOOL_TIER", tags)
+    if not codes:
+        return None, R_NEEDS_MAP
+    best = max(codes, key=lambda x: -_rank_of_code(c, "CT_SCHOOL_TIER", x))
+    return ({"rank": _rank_of_code(c, "CT_SCHOOL_TIER", best)},
+            "院校标签 %s → %s" % ("、".join(tags[:3]), best))
+
+
+def _p_research_level(c, pid, d):
+    """科研层级：按**作者位次与产出类型**判，标签本身写的就是这些角色。
+
+    RL5 专利/成果转化 > RL3 通讯或主持 > RL2 第一作者 > RL1 参与 > RL0 无科研参与。
+    注意：只认学术产出（论著/综述/病例/Meta/专利），**文学与科普作品不算科研**
+    —— 这条区分是必要的，否则一本畅销书会被算成"主持课题"。
+    """
+    rows = c.execute("""SELECT output_type, author_position, is_first_author
+                          FROM mt.research_output WHERE person_id=%s""", (pid,)).fetchall()
+    if not rows:
+        return None, "有落点但该主体没有值（无产出记录）"
+    academic = {"RO1", "RO2", "RO3", "RO4"}
+    lvl = "RL0"
+    for r in rows:
+        if r["output_type"] == "RO5":
+            lvl = "RL5"
+            break
+        pos = (r["author_position"] or "")
+        if "通讯" in pos or "主持" in pos or "corresponding" in pos.lower():
+            lvl = max(lvl, "RL3")
+        elif r["is_first_author"] and lvl < "RL2":
+            lvl = "RL2"
+        elif r["output_type"] in academic and lvl < "RL1":
+            lvl = "RL1"
+    return ({"rank": _rank_of_code(c, "CT_RESEARCH_LEVEL", lvl)},
+            "由 %d 条产出的作者位次判定为 %s（文学/科普作品不计入科研）" % (len(rows), lvl))
+
+
+# ---- 岗位侧派生 ----
+def _j_work_years(c, job_id, d, jp):
+    """经验要求文本 → 经验档。取**下限**："3-5年"意味着至少 3 年，"应届"是 0。"""
+    raw = (jp.get("experience_req") or "").strip()
+    if not raw:
+        return None, R_NO_VALUE
+    import re as _re
+    if "应届" in raw or "无经验" in raw:
+        years = 0.0
+    else:
+        nums = [float(x) for x in _re.findall(r"\d+", raw)]
+        if not nums:
+            return None, R_NEEDS_MAP
+        years = min(nums)
+    bands = _band_table(c, "CT_EXPERIENCE_BAND")
+    code = _band_of(years, bands)
+    if not code:
+        return None, R_NEEDS_MAP
+    return ({"min_rank": _rank_of_code(c, "CT_EXPERIENCE_BAND", code)},
+            "经验要求「%s」按下限 %.1f 年 → %s" % (raw, years, code))
+
+
+def _j_city_tier(c, job_id, d, jp):
+    city_raw = (jp.get("city") or "").strip()
+    if not city_raw:
+        return None, R_NO_VALUE
+    city = None
+    for code, meta in code_values(c, "CT_CITY").items():
+        if not code.startswith("CTY"):
+            continue
+        if meta["label_zh"] == city_raw:
+            city = code
+            break
+    if not city:
+        return None, R_NEEDS_MAP
+    for tier_code, meta in code_values(c, "CT_CITY_TIER").items():
+        if city in ((meta["external_mapping"] or {}).get("cities") or []):
+            return ({"min_rank": _rank_of_code(c, "CT_CITY_TIER", tier_code)},
+                    "岗位城市 %s 属于 %s" % (city_raw, tier_code))
+    return None, "该城市未登记层级映射"
+
+
+# 岗位侧单位类型：语料把雇主匿名化成「某三甲医院」「某CRO公司」这类描述，
+# 所以只能按关键词判。**这条规则依赖于本语料的匿名化命名约定**，不是通用方法 ——
+# 换成真实 JD（有真实企业名）时应当替换为雇主主数据匹配，这一点写在这里免得被误用。
+EMPLOYER_RULES = [
+    ("三甲医院", "E01"), ("三级医院", "E01"), ("三甲", "E01"),
+    ("二级医院", "E02"), ("社区卫生", "E02"), ("基层医疗", "E02"),
+    ("民营医院", "E03"), ("民营医疗", "E03"), ("门诊", "E03"), ("诊所", "E03"),
+    ("跨国制药", "E04"), ("外资药", "E04"),
+    ("创新药企", "E05"), ("本土药企", "E05"), ("制药", "E05"),
+    ("医疗器械", "E06"), ("IVD", "E06"), ("器械", "E06"),
+    ("CRO", "E07"), ("SMO", "E07"),
+    ("生物制药", "E08"), ("生物技术", "E08"), ("基因", "E08"),
+    ("健康险", "E09"), ("保险", "E09"), ("TPA", "E09"),
+    ("咨询", "E10"), ("管理顾问", "E10"),
+    ("证券", "E11"), ("基金", "E11"), ("投资", "E11"),
+    ("事业单位", "E12"), ("疾控", "E12"), ("卫健委", "E12"),
+    ("高校", "E13"), ("医学院", "E13"), ("研究院", "E13"), ("科研院所", "E13"),
+    ("互联网", "E14"), ("数字健康", "E14"), ("医疗人工智能", "E14"), ("健康内容", "E14"),
+    ("出版", "E15"), ("媒体", "E15"), ("期刊", "E15"),
+    ("律所", "E16"), ("知识产权", "E16"),
+    ("教育", "E17"), ("培训", "E17"),
+]
+
+
+def _j_employer_type(c, job_id, d, jp):
+    name = (jp.get("employer_name_raw") or "").strip()
+    if not name:
+        return None, R_NO_VALUE
+    for kw, code in EMPLOYER_RULES:
+        if kw.lower() in name.lower():
+            return ({"codes": [code]}, "雇主描述「%s」按关键词规则判为 %s" % (name, code))
+    return None, R_NEEDS_MAP
+
+
+def _j_accept_cross(c, job_id, d, jp):
+    """跨行岗位：职业族 F16 是"完全跨行"的那一族（口径来自注册表 note）。"""
+    fam = (jp.get("job_family") or "").strip()
+    if not fam:
+        return None, R_NO_VALUE
+    return ({"code": "Y" if fam == "F16" else "N"},
+            "岗位族 %s %s F16（完全跨行）" % (fam, "=" if fam == "F16" else "≠"))
+
+
+DERIVE_PERSON = {
+    "DIM_WORK_YEARS": _p_work_years,
+    "DIM_CITY_TIER": _p_city_tier,
+    "DIM_SCHOOL_TIER": _p_school_tier,
+    "DIM_RESEARCH_LEVEL": _p_research_level,
+}
+DERIVE_JOB = {
+    "DIM_WORK_YEARS": _j_work_years,
+    "DIM_CITY_TIER": _j_city_tier,
+    "DIM_EMPLOYER_TYPE": _j_employer_type,
+    "DIM_ACCEPT_CROSS_INDUSTRY": _j_accept_cross,
+}
+
 _fk_cache: dict = {}
 _cv_cache: dict = {}
 
@@ -111,21 +417,30 @@ def fk_to_parent(c, table, parent="person"):
 def _as_codes(v, ctable):
     """把原始值拆成码数组。
 
-    text[] 的文本形态是 '{a,b}'；单值就是它自己。空数组 '{}' 要化成 None，
-    因为"没有值"和"要求为空集"在语义上完全不同（后者在 cmp_set 里返回 NULL → unknown）。
+    两种输入都要处理：
+      · 标量/文本：`'a'`、`'{a,b}'`（text[] 的文本形态）
+      · 列表：每一行一个值 —— 但**列表里的元素本身也可能是 `{a,b}` 形态**
+        （查询写的是 `SELECT DISTINCT col::text`，数组列出来就是 `{a,b}`）。
+        第一版在列表分支里没有再拆一层，于是 `school_tags = {双一流,985}` 变成
+        一个元素 `'{双一流,985}'`，标签匹配全灭 —— 这正是 DIM_SCHOOL_TIER 一直是
+        0/123 的原因。**列表不等于"已经拆好了"**。
+    空数组 '{}' 化成 None：因为"没有值"和"要求为空集"语义完全不同
+    （后者在 cmp_set 里返回 NULL → unknown）。
     """
     if v is None:
         return None
-    if isinstance(v, (list, tuple)):
-        out = [str(x) for x in v if x not in (None, "")]
-    else:
-        s = str(v).strip()
+    out = []
+    items = v if isinstance(v, (list, tuple, set)) else [v]
+    for item in items:
+        if item is None:
+            continue
+        s = str(item).strip()
         if s in ("", "{}", "[]"):
-            return None
+            continue
         if s.startswith("{") and s.endswith("}"):
-            out = [p.strip().strip('"') for p in s[1:-1].split(",") if p.strip()]
+            out.extend(p.strip().strip('"') for p in s[1:-1].split(",") if p.strip())
         else:
-            out = [s]
+            out.append(s)
     return out or None
 
 
@@ -202,7 +517,18 @@ def person_payloads(c, pid, dims):
         if not loc or loc == "unavailable":
             reason = R_NO_LANDING
         elif loc.startswith("derived:"):
-            reason = R_DERIVED
+            # 派生口径：实现了的走规则，没实现的如实报"未实现"。
+            # 不把"没实现"和"没值"混为一谈 —— 前者要补规则，后者要补数据。
+            fn = DERIVE_PERSON.get(did)
+            if fn is None:
+                reason = R_DERIVED
+            else:
+                pay, note = fn(c, pid, d)
+                if pay:
+                    payload[did] = pay
+                    source = "derived: " + note
+                else:
+                    reason = note or R_DERIVED
         elif "." in loc:
             # `表.列` 形态，可选带值过滤：`credential.credential_type:C02,C03`。
             # 顺序很重要：必须先判 '.' 再判 ':'，否则 `表.列:过滤` 会被当成
@@ -291,6 +617,12 @@ def person_payloads(c, pid, dims):
                 rk = max([x for x in (_rank_of(v, d["code_table_id"], cvals)
                                       for v in codes) if x is not None] or [None])
                 if rk is None:
+                    # 值不是码（校园标签、经验要求这类自由文本）→ 走标签/区间归一化。
+                    # 这一步是"权重 1.0 的门禁能不能评"的关键，见 _rank_from_text 的说明。
+                    rk, how = _rank_from_text(c, d["code_table_id"], codes)
+                    if rk is not None:
+                        source = "%s（%s）" % (source, how)
+                if rk is None:
                     reason = R_NEEDS_MAP
                 else:
                     payload[did] = {"rank": rk}
@@ -302,7 +634,8 @@ def person_payloads(c, pid, dims):
                     payload[did] = {"lo": lo, "hi": hi}
         prov[did] = {"side": "person", "locator": source, "status":
                      "ok" if did in payload else "missing",
-                     "reason": reason, "n_values": len(codes or [])}
+                     "reason": reason if did in payload else (reason or R_NO_VALUE),
+                     "n_values": len(codes or [])}
     return payload, prov
 
 
@@ -322,7 +655,16 @@ def job_payloads(c, job_id, dims):
         if not loc or loc == "unavailable":
             reason = R_NO_LANDING
         elif loc.startswith("derived:"):
-            reason = R_DERIVED
+            fn = DERIVE_JOB.get(did)
+            if fn is None:
+                reason = R_DERIVED
+            else:
+                pay, note = fn(c, job_id, d, jp)
+                if pay:
+                    payload[did] = pay
+                    source = "derived: " + note
+                else:
+                    reason = note or R_DERIVED
         elif loc.startswith("job_posting."):
             col = loc.split(".", 1)[1]
             v = jp.get(col)
@@ -401,6 +743,12 @@ def job_payloads(c, job_id, dims):
                 rk = max([x for x in (_rank_of(v, d["code_table_id"], cvals)
                                       for v in codes) if x is not None] or [None])
                 if rk is None:
+                    # 岗位侧序数要求常常是自由文本（`1-3年`），必须走同一条归一化路径，
+                    # 否则 DIM_WORK_YEARS 在岗位侧永远是 0，权重 1.0 的门禁形同虚设。
+                    rk, how = _rank_from_text(c, d["code_table_id"], codes)
+                    if rk is not None:
+                        source = "%s（%s）" % (source, how)
+                if rk is None:
                     reason = R_NEEDS_MAP
                 else:
                     payload[did] = {"min_rank": rk}
@@ -421,7 +769,10 @@ def job_payloads(c, job_id, dims):
 
         prov[did] = {"side": "job", "locator": source,
                      "status": "ok" if did in payload else "missing",
-                     "reason": reason, "n_values": len(codes)}
+                     # 不变量：没进 payload 就必须有原因。少一个原因，报告里就会
+                     # 出现"既没值又没说为什么"的洞，而那正是最容易被忽略的失真的来源。
+                     "reason": reason if did in payload else (reason or R_NO_VALUE),
+                     "n_values": len(codes)}
     return payload, prov
 
 

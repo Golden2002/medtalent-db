@@ -2071,6 +2071,60 @@ def talent_csv(c, qs) -> bytes:
                   [{x["title"]: r.get(x["key"]) for x in picked} for r in rows])
 
 
+def _derived_person_payload(c, pid, d):
+    """调匹配引擎的派生规则，拿到载荷与规则自述。
+
+    为什么走 import 而不是在 portal 里再写一遍：**同一个口径只能有一个实现**。
+    这个项目已经因为"同一指标两处各算一遍"出过事故（质量门 90.2% vs 可视化页 61.7%），
+    派生的年限/层级比指标更容易漂移——两边各改一次就再也对不上了。
+    取数失败不抛异常：页面要能显示"这里没有值"，而不是整页 500。
+    """
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), "analytics"))
+        import vector as _v
+        fn = _v.DERIVE_PERSON.get(d["dimension_id"])
+        if fn is None:
+            return None, "派生口径未实现（%s）" % (d["person_locator"] or "")[5:40]
+        return fn(c, pid, d)
+    except Exception:  # noqa: BLE001 —— 派生失败不该让页面挂掉
+        return None, "派生失败（详见 code/analytics/vector.py）"
+
+
+def _payload_to_codes(c, d, pay) -> list:
+    """把匹配载荷翻译成**显示用的码**。
+
+    载荷是给比较器看的（rank / min_rank / lo / hi），码表里没有"rank=3"这个词；
+    要显示就得反查：rank 是词表内按 sort_order 排序的序号（见 vector.py 的说明）。
+    反查不到就返回空 —— 宁可显示"无记录"，也不要显示一个看不懂的内部字段。
+    """
+    ct = d["code_table_id"]
+    if not ct:
+        return []
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), "analytics"))
+        import vector as _v
+        vals = q(c, "SELECT code FROM code_value WHERE code_table_id=%s "
+                    "ORDER BY sort_order", (ct,))
+        order = [x["code"] for x in vals]
+    except psycopg.Error:
+        return []
+    if "codes" in pay and pay["codes"]:
+        return [str(x) for x in pay["codes"]]
+    if "code" in pay and pay["code"] is not None:
+        return [str(pay["code"])]
+    rk = pay.get("rank", pay.get("min_rank"))
+    if rk is not None:
+        try:
+            i = int(rk) - 1
+            if 0 <= i < len(order):
+                return [order[i]]
+        except (TypeError, ValueError):
+            return []
+    return []
+
+
 def person_dimensions(c, pid) -> list:
     """按 `mt.dimension` 注册表取一个人的**全部维度取值**。
 
@@ -2134,7 +2188,16 @@ def person_dimensions(c, pid) -> list:
                 if rows:
                     val = "、".join(r["preferred_label"] for r in rows)
             elif loc.startswith("derived:"):
-                note = "由其它维度派生（%s）" % loc.split(":", 1)[1].strip()[:28]
+                # 派生口径**必须与匹配引擎共用同一套实现**。
+                # 这里曾经只写一句"由其它维度派生（…）"就完事，于是出现
+                # "匹配引擎已经用上了工作年限、页面上却写着无记录"的两套口径 ——
+                # 页面是给人看建模的地方，它说没有，人就以为没有。
+                # 所以直接调 code/analytics/vector.py 的 DERIVE_PERSON，
+                # 取数说明也用那条规则自己给的文字（含实际算出的年数）。
+                pay, note = _derived_person_payload(c, pid, d)
+                if pay:
+                    codes = _payload_to_codes(c, d, pay)
+                    note = note or "由派生规则算出"
             elif not loc or loc == "unavailable":
                 # 没有类型化落点 → 按设计应当落在统一值表 field_value（零 DDL）
                 if fld and fld["n_values"]:
@@ -3220,6 +3283,45 @@ def view_real(c, qs) -> bytes:
         s = chk.get("sufficiency") or {}
         o = chk.get("orthogonality") or {}
         e = (chk.get("effectiveness") or {}).get("distribution") or {}
+        # 与本轮改动前的记录基线对比。基线是一份**带日期的历史记录**（无法重算，
+        # 因为代码已经变了），所以这里明确标出它是哪一轮，不让它冒充当前值。
+        bl = chk.get("baseline") or {}
+        delta = ""
+        if bl:
+            rows_d = []
+            def pair(name, before, now, unit=""):
+                try:
+                    d = float(now) - float(before)
+                    arrow = "↑" if d > 0 else ("↓" if d < 0 else "=")
+                    rows_d.append("<tr><td>%s</td><td class='n'>%s%s</td>"
+                                  "<td class='n'><b>%s%s</b></td><td class='n'>%s%s</td></tr>"
+                                  % (name, before, unit, now, unit, arrow,
+                                     ("%.1f" % abs(d)).rstrip("0").rstrip(".")))
+                except (TypeError, ValueError):
+                    pass
+            pair("两侧可评维度（个）", bl.get("two_sided"), len(s.get("two_sided") or []))
+            pair("两侧可评权重占比", bl.get("weight_two_sided_pct"),
+                 s.get("weight_two_sided_pct"), "%")
+            pair("打分维度可评占比", bl.get("weight_score_two_sided_pct"),
+                 s.get("weight_score_two_sided_pct"), "%")
+            pair("可评门禁（个）", bl.get("gates_evaluable"),
+                 len(s.get("gates_evaluable") or []))
+            pair("恒定维度（个）", bl.get("constant_dimensions"),
+                 len(o.get("constant_dimensions") or []))
+            pair("疑似重复计权对（个）", bl.get("redundant_pairs"),
+                 len(o.get("redundant_pairs") or []))
+            pair("得分标准差", bl.get("effective_std"),
+                 (e.get("overall") or {}).get("std"))
+            delta = """
+<div class="card"><h2>本轮改进 <span class="muted">· 对照 %s</span></h2>
+<div class="tscroll"><table><thead><tr><th>指标</th><th class="n">改动前</th>
+<th class="n">现在</th><th class="n">变化</th></tr></thead><tbody>%s</tbody></table></div>
+<p class="muted">改动内容：把注册表里 <code>derived:</code>（派生口径）从"声明"变成"可执行规则" ——
+任职起止求年限、经验要求文本归一化、期望/岗位城市映射城市层级、匿名雇主描述判单位类型、
+院校中文标签归一化。刻度一律取自数据字典（<code>CT_EXPERIENCE_BAND</code> /
+<code>CT_CITY_TIER</code> / <code>CT_SCHOOL_TIER</code>），找不到刻度的**不派生**。
+<br><b>基线是带日期的历史记录，不是当前值</b>（代码已变，无法重算）。</p></div>""" % (
+                esc(bl.get("label") or "-"), "".join(rows_d))
         check_html = """
 <div class="card"><h2>维度体检 <span class="muted">· 由 code/analytics/dimension_check.py 生成
 （%s）</span></h2>
@@ -3255,6 +3357,7 @@ def view_real(c, qs) -> bytes:
        e.get("n_person"), e.get("n_job"),
        (e.get("overall") or {}).get("std") or 0,
        (e.get("overall") or {}).get("distinct"), (e.get("overall") or {}).get("n_scores"))
+        check_html += delta
     else:
         check_html = """
 <div class="card"><h2>维度体检 <span class="muted">· 尚未生成</span></h2>

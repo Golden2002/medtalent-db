@@ -58,6 +58,23 @@ RHO_REDUNDANT = 0.90   # Spearman 同上
 JACCARD_REDUNDANT = 0.80
 V_STRONG = 0.90        # 更强的证据：几乎完全同步
 
+# 记录在案的历史基线：第一轮（2026-02-14，只有列直读、派生规则未实现）。
+# 它**不可能重新测量**（代码已经变了），所以只能作为一份带日期的记录留下，
+# 让报告能算出改进幅度。用日期命名，避免以后有人把它当成当前值。
+BASELINE_2026_02_14 = {
+    "label": "第一轮（只有列直读，派生口径未实现）",
+    "two_sided": 10, "weight_two_sided_pct": 35.1,
+    "score_two_sided": 7, "weight_score_two_sided_pct": 23.1,
+    "gates_evaluable": 3, "gates_total": 8,
+    "constant_dimensions": 1, "redundant_pairs": 1,
+    "effective_std": 0.112, "coverage_lo": 0.16, "coverage_hi": 0.17,
+    "real_rank": {"per_real_fengtang": 490, "per_real_li_tiantian": 15,
+                  "per_real_yu_ying": 1},
+    "real_tie": {"per_real_fengtang": 420, "per_real_li_tiantian": 690,
+                 "per_real_yu_ying": 690},
+    "note": "于莺第一轮的『第 1 名』是 690 个岗位全部同分下的字典序，不构成证据",
+}
+
 
 # ---------------------------------------------------------------------------
 # 取值形态归一
@@ -492,6 +509,10 @@ def main():
             res["sufficiency"] = sufficiency(c, dims)
         if a.all or a.effectiveness:
             res["effectiveness"] = effectiveness(c, dims, sample=a.persons)
+    if a.all:
+        # 把上一轮的记录一起写进 JSON：报告页要显示改进幅度，
+        # 而"上一轮"无法重算（代码已变），只能作为带日期的基线引用。
+        res["baseline"] = BASELINE_2026_02_14
     print(summary_text(res))
     if a.json:
         with open(a.json, "w", encoding="utf-8") as fh:
