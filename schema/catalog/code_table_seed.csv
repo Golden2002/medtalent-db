@@ -301,3 +301,78 @@ CT_EVIDENCE_SOURCE_TYPE,ES1,本人,Self,,1,10,自述类证据,{}
 CT_EVIDENCE_SOURCE_TYPE,ES2,第三方机构,Third-party Body,,1,20,考试机构/认证机构,{}
 CT_EVIDENCE_SOURCE_TYPE,ES3,雇主或实习单位,Employer,,1,30,,{}
 CT_EVIDENCE_SOURCE_TYPE,ES4,同行或上级,Peer/Supervisor,,1,40,,{}
+CT_SCHOOL_TIER,ST1,双一流A类,Double First Class A,,1,10,教育部双一流建设A类高校,{}
+CT_SCHOOL_TIER,ST2,双一流B类,Double First Class B,,1,20,教育部双一流建设B类高校,{}
+CT_SCHOOL_TIER,ST3,原985,Former 985,,1,30,985工程高校（非双一流A/B时按此归类）,{}
+CT_SCHOOL_TIER,ST4,原211,Former 211,,1,40,211工程高校,{}
+CT_SCHOOL_TIER,ST5,省重点/部属,Provincial Key,,1,50,省属重点、部属非211,{}
+CT_SCHOOL_TIER,ST6,普通本科,Regular Undergraduate,,1,60,,{}
+CT_SCHOOL_TIER,ST7,海外QS前100,Overseas QS Top100,,1,70,,{}
+CT_SCHOOL_TIER,ST8,海外其他,Overseas Other,,1,80,,{}
+CT_SCHOOL_TIER,ST9,高职高专,Vocational College,,1,90,,{}
+CT_EXPERIENCE_BAND,EX0,应届/无经验,Fresh Graduate,,1,10,,{}
+CT_EXPERIENCE_BAND,EX1,1年以内,Under 1y,,1,20,,{}
+CT_EXPERIENCE_BAND,EX2,1-3年,1-3y,,1,30,,{}
+CT_EXPERIENCE_BAND,EX3,3-5年,3-5y,,1,40,,{}
+CT_EXPERIENCE_BAND,EX4,5-10年,5-10y,,1,50,,{}
+CT_EXPERIENCE_BAND,EX5,10年以上,Over 10y,,1,60,,{}
+CT_EXPERIENCE_BAND,EX9,不限,Any,,1,90,岗位侧：不限经验,{}
+CT_CITY_TIER,CT1,一线城市,Tier-1 City,,1,10,北上广深,{}
+CT_CITY_TIER,CT2,新一线,New Tier-1,,1,20,成都/杭州/武汉/西安/苏州等,{}
+CT_CITY_TIER,CT3,二线,Tier-2,,1,30,,{}
+CT_CITY_TIER,CT4,三线及以下,Tier-3 or below,,1,40,,{}
+CT_CITY_TIER,CT5,海外,Overseas,,1,50,,{}
+CT_MOBILITY,MB1,只考虑本市,Local Only,,1,10,,{}
+CT_MOBILITY,MB2,省内可接受,Within Province,,1,20,,{}
+CT_MOBILITY,MB3,全国可接受,Nationwide,,1,30,,{}
+CT_MOBILITY,MB4,海外也可,Include Overseas,,1,40,,{}
+CT_WORK_MODE,WM1,全职,Full-time,,1,10,,{}
+CT_WORK_MODE,WM2,兼职,Part-time,,1,20,,{}
+CT_WORK_MODE,WM3,实习,Internship,,1,30,,{}
+CT_WORK_MODE,WM4,远程,Remote,,1,40,,{}
+CT_WORK_MODE,WM5,混合办公,Hybrid,,1,50,,{}
+CT_WORK_MODE,WM6,弹性工时,Flexible Hours,,1,60,,{}
+CT_SALARY_BAND,SB1,5千以下,Under 5k,,1,10,月薪,{}
+CT_SALARY_BAND,SB2,5-8千,5k-8k,,1,20,月薪,{}
+CT_SALARY_BAND,SB3,8-12千,8k-12k,,1,30,月薪,{}
+CT_SALARY_BAND,SB4,12-20千,12k-20k,,1,40,月薪,{}
+CT_SALARY_BAND,SB5,20-35千,20k-35k,,1,50,月薪,{}
+CT_SALARY_BAND,SB6,35-50千,35k-50k,,1,60,月薪,{}
+CT_SALARY_BAND,SB7,5万以上,Over 50k,,1,70,月薪,{}
+CT_SALARY_BAND,SB9,面议,Negotiable,,1,90,,{}
+CT_SHIFT_WILLING,SH1,愿意值班,Willing,,1,10,夜班/值班意愿,{}
+CT_SHIFT_WILLING,SH2,可协商,Negotiable,,1,20,,{}
+CT_SHIFT_WILLING,SH3,不愿意,Not Willing,,1,30,,{}
+CT_CLINICAL_BAND,CB0,无临床经历,None,,1,10,,{}
+CT_CLINICAL_BAND,CB1,见习,Clerkship,,1,20,,{}
+CT_CLINICAL_BAND,CB2,规培中,In Residency,,1,30,,{}
+CT_CLINICAL_BAND,CB3,规培结业,Residency Completed,,1,40,,{}
+CT_CLINICAL_BAND,CB4,独立执业,Independent Practice,,1,50,,{}
+CT_CLINICAL_BAND,CB5,带组/主诊,Leading Team,,1,60,,{}
+CT_RESEARCH_LEVEL,RL0,无科研参与,None,,1,10,,{}
+CT_RESEARCH_LEVEL,RL1,参与,Participated,,1,20,,{}
+CT_RESEARCH_LEVEL,RL2,第一作者,First Author,,1,30,,{}
+CT_RESEARCH_LEVEL,RL3,通讯/主持,Corresponding / PI,,1,40,,{}
+CT_RESEARCH_LEVEL,RL4,主持课题,Grant PI,,1,50,,{}
+CT_RESEARCH_LEVEL,RL5,专利/成果转化,Patent / Transfer,,1,60,,{}
+CT_LANGUAGE_LEVEL,LG0,未提供,Not Provided,,1,10,,{}
+CT_LANGUAGE_LEVEL,LG1,CET-4,CET-4,,1,20,,{}
+CT_LANGUAGE_LEVEL,LG2,CET-6,CET-6,,1,30,,{}
+CT_LANGUAGE_LEVEL,LG3,雅思6.5/托福90,IELTS 6.5 / TOEFL 90,,1,40,,{}
+CT_LANGUAGE_LEVEL,LG4,雅思7.5/托福105,IELTS 7.5 / TOEFL 105,,1,50,,{}
+CT_LANGUAGE_LEVEL,LG5,日语N2及以上,JLPT N2+,,1,60,,{}
+CT_LANGUAGE_LEVEL,LG6,其他语种,Other Language,,1,70,,{}
+CT_ORG_CULTURE,OC1,稳定体制,Stable / Public Sector,,1,10,,{}
+CT_ORG_CULTURE,OC2,快速成长,Fast-growing,,1,20,,{}
+CT_ORG_CULTURE,OC3,科研导向,Research-driven,,1,30,,{}
+CT_ORG_CULTURE,OC4,商业导向,Commercial,,1,40,,{}
+CT_ORG_CULTURE,OC5,工作生活平衡,Work-life Balance,,1,50,,{}
+CT_ORG_CULTURE,OC6,国际化,International,,1,60,,{}
+CT_CAREER_GOAL,CG1,临床深耕,Clinical Practice,,1,10,,{}
+CT_CAREER_GOAL,CG2,医学事务,Medical Affairs,,1,20,,{}
+CT_CAREER_GOAL,CG3,研发,R&D,,1,30,,{}
+CT_CAREER_GOAL,CG4,商业与市场,Commercial & Marketing,,1,40,,{}
+CT_CAREER_GOAL,CG5,数据与算法,Data & Algorithms,,1,50,,{}
+CT_CAREER_GOAL,CG6,公共部门,Public Sector,,1,60,,{}
+CT_CAREER_GOAL,CG7,学术科研,Academia,,1,70,,{}
+CT_CAREER_GOAL,CG8,创业/自由职业,Entrepreneur / Freelance,,1,80,,{}

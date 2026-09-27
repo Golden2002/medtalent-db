@@ -29,9 +29,6 @@ BASE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, os.path.join(BASE, "code", "bridge"))
 sys.path.insert(0, os.path.join(BASE, "code"))
 
-import psycopg  # noqa: E402
-from psycopg.rows import dict_row  # noqa: E402
-
 import api as bridge_api  # noqa: E402
 import exchange as ex  # noqa: E402
 import outbox as ob  # noqa: E402
@@ -43,24 +40,15 @@ SRC = "bridge_test_" + secrets.token_hex(4)     # 独立来源，跑完即清
 ANON = "anon_" + SRC
 PORT = 8096
 
-PASS, FAIL = [], []
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _harness as H  # noqa: E402
 
-
-def check(cond, msg):
-    (PASS if cond else FAIL).append(msg)
-    print(("  [PASS] " if cond else "  [FAIL] ") + msg)
-    return cond
+PASS, FAIL = H.PASS, H.FAIL
+check, q1 = H.check, H.q1
 
 
 def db():
-    return psycopg.connect(DSN, row_factory=dict_row)
-
-
-def q1(c, sql, p=None):
-    with c.cursor() as cur:
-        cur.execute(sql, p)
-        r = cur.fetchone()
-        return list(r.values())[0] if r else None
+    return H.connect(DSN)
 
 
 def pkg(ver, event_id, **over):
@@ -334,10 +322,7 @@ def main():
     with db() as c:
         cleanup(c)
 
-    print("\n" + "=" * 78)
-    print("结果：PASS %d 项，FAIL %d 项   （测试数据已清理）" % (len(PASS), len(FAIL)))
-    print("=" * 78)
-    return 1 if FAIL else 0
+    return H.report(note="（测试数据已清理）")
 
 
 if __name__ == "__main__":

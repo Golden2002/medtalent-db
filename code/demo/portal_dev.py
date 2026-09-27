@@ -45,6 +45,7 @@ import psycopg  # noqa: E402
 from psycopg.rows import dict_row  # noqa: E402
 
 import portal as P  # noqa: E402
+from _portal_shared import PortalError  # noqa: E402  ← 同一个异常类对象，见该模块说明
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -523,14 +524,14 @@ def do_model(c, qs) -> tuple:
                     code, _sep, label = line.partition("=")
                     opts.append({"code": code.strip(), "label": (label or code).strip()})
                 if not fid or not title:
-                    raise P.PortalError(400, "字段 ID 与标题都必填")
+                    raise PortalError(400, "字段 ID 与标题都必填")
                 cur.execute("SELECT mt.add_dimension(%s, %s, %s, %s::jsonb)",
                             (entity, fid, title, json.dumps(opts, ensure_ascii=False)))
                 msg = "已新增维度 %s（%d 个选项）——刷新表单即可看到它" % (fid, len(opts))
             elif act == "make_row":
                 sid = (qs.get("subject_id", [""])[0] or "").strip()
                 if not sid:
-                    raise P.PortalError(400, "记录 ID 必填")
+                    raise PortalError(400, "记录 ID 必填")
                 payload = ({"person_id": sid, "subject_code": "MT-DEV-" + sid[-6:]}
                            if entity == "person" else {"project_id": sid})
                 cur.execute("SELECT mt.create_instance(%s, %s, %s::jsonb)",
@@ -541,20 +542,20 @@ def do_model(c, qs) -> tuple:
                 fid = (qs.get("field_id", [""])[0] or "").strip()
                 code = (qs.get("code", [""])[0] or "").strip() or None
                 if not sid or not fid:
-                    raise P.PortalError(400, "记录 ID 与字段 ID 都必填")
+                    raise PortalError(400, "记录 ID 与字段 ID 都必填")
                 cur.execute("SELECT mt.set_value(%s, %s, %s, %s)", (entity, sid, fid, code))
                 msg = "已写入 %s.%s = %s" % (sid, fid, code or "（空）")
             elif act == "deprecate":
                 fid = (qs.get("field_id", [""])[0] or "").strip()
                 if not fid:
-                    raise P.PortalError(400, "字段 ID 必填")
+                    raise PortalError(400, "字段 ID 必填")
                 cur.execute("SELECT mt.deprecate_dimension(%s, %s)",
                             (fid, qs.get("reason", [""])[0] or None))
                 msg = "已废弃维度 %s（数据未删除，只是从表单里消失）" % fid
             elif act == "reg_entity":
                 eid = (qs.get("entity_id", [""])[0] or "").strip()
                 if not eid:
-                    raise P.PortalError(400, "实体 ID 必填")
+                    raise PortalError(400, "实体 ID 必填")
                 cur.execute("SELECT mt.register_entity(%s, %s, %s)",
                             (eid, qs.get("domain", ["talent"])[0],
                              qs.get("kind", ["EK2"])[0]))
@@ -563,7 +564,7 @@ def do_model(c, qs) -> tuple:
                 return "", "info", ""
         c.commit()
         kind = "ok"
-    except P.PortalError as e:
+    except PortalError as e:
         c.rollback()
         msg, kind = e.message, "err"
     except psycopg.Error as e:
@@ -764,7 +765,7 @@ class DevHandler(BaseHTTPRequestHandler):
                 out, kind = run_tool(qs["run"][0], qs)
                 return self._send(200, view_tools(c, qs, out, "", kind))
             return self._send(200, view_tools(c, qs))
-        raise P.PortalError(404, "没有这个页面：%s" % path)
+        raise PortalError(404, "没有这个页面：%s" % path)
 
     def do_GET(self):
         u = urllib.parse.urlparse(self.path)
@@ -791,7 +792,7 @@ class DevHandler(BaseHTTPRequestHandler):
                     return self._send(200, view_migrate(c, qs))
                 return self._send(404, P.page(
                     "未找到", "<div class='note err'>没有这个页面</div>", nav=DEV_NAV))
-        except P.PortalError as e:
+        except PortalError as e:
             return self._send(e.status, P.page(
                 "出错了", "<div class='note err'>%s</div>" % P.esc(e.message), nav=DEV_NAV))
         except psycopg.Error as e:
@@ -806,7 +807,7 @@ class DevHandler(BaseHTTPRequestHandler):
         try:
             with P.db() as c:
                 return self._dispatch(c, path, qs, write=True)
-        except P.PortalError as e:
+        except PortalError as e:
             return self._send(e.status, P.page(
                 "出错了", "<div class='note err'>%s</div>" % P.esc(e.message), nav=DEV_NAV))
         except psycopg.Error as e:

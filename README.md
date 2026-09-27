@@ -3,6 +3,8 @@
 > 面向医学硕博的**结构化人才信息数据库**：既能做高自由度的职业分析与人岗匹配，
 > 本身又是一个**可以在线浏览、检索、分析、可视化的数据平台**。
 
+**仓库**：<https://github.com/Golden2002/medtalent-db>（**私有**）
+
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16.8-336791.svg)](https://www.postgresql.org/)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg)](https://www.python.org/)
 [![Tables](https://img.shields.io/badge/tables-78%20%2B%2014%20views-2f81f7.svg)](#数据库已就绪)
@@ -135,8 +137,25 @@ python code\demo\serve_all.py
   [OK  ] 开发者模式（可写） http://127.0.0.1:8083
 ```
 
-只想校验不想起服务：`python code\demo\serve_all.py --check-only`（约 16 秒）。
-Windows 上也可以直接双击 `serve.cmd`。
+### 只想确认"没坏"（约 16 秒）
+
+```powershell
+python code\demo\serve_all.py --check-only     # 只自检，不起服务
+```
+
+它会探活数据库，然后把**两个站点的每个页面都渲染一遍**——这一步能挡住绝大多数
+"改了代码但页面坏了"的情况，而且不需要开端口、不需要人点。
+
+### 起服务给人看
+
+```powershell
+python code\demo\serve_all.py          # 自检 + 起两个站点
+python code\demo\serve_all.py --no-check   # 跳过自检直接起（快）
+serve.cmd                              # Windows 上等价，双击即可
+```
+
+`serve_all.py` 支持 `--portal-only` / `--dev-only` / `--check-only` / `--no-check`。
+两个站点都只监听 `127.0.0.1`，`Ctrl+C` 一起停。
 
 ## 配置
 

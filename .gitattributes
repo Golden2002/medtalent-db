@@ -1,0 +1,24 @@
+# 统一行尾与文本属性，避免 Windows 上出现一片 "LF will be replaced by CRLF" 警告，
+# 也避免同一文件在不同机器上产生整文件级的假 diff。
+# 项目在 Windows 上开发，但脚本要能在其它平台跑，所以仓库内统一存 LF。
+* text=auto eol=lf
+
+# 二进制/生成物（不做行尾转换）
+*.png binary
+*.jpg binary
+*.pdf binary
+*.xlsx binary
+*.dump binary
+*.zip binary
+
+# 明确按 LF 存的文本
+*.py    text eol=lf
+*.sql   text eol=lf
+*.csv   text eol=lf
+*.md    text eol=lf
+*.yml   text eol=lf
+*.json  text eol=lf
+
+# .cmd 必须保持 CRLF —— cmd.exe 对 LF 结尾的批处理在个别情况下会报错
+*.cmd   text eol=crlf
+*.bat   text eol=crlf

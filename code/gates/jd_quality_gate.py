@@ -40,10 +40,16 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 DSN = ("host=127.0.0.1 port=55432 dbname=medtalent user=postgres "
        "client_encoding=UTF8 options='-c search_path=mt,public'")
-CONCEPT_TYPES = ("RT5", "RT6", "RT7", "RT8")
+# 目标值不再在本文件另写一遍：全部取自 metrics（唯一定义）。
+# 这里只把它转成"比率"形式（metrics 里的常量以百分数保存）。
+# jd_total 与 family_sample 是**本门禁特有**的规模目标，metrics 不表达，保留在本地。
 TARGETS = {
-    "jd_total": 3000, "families": 17, "required_complete": 0.99,
-    "traceable": 1.00, "concept_coverage": 0.70, "family_sample": 30,
+    "jd_total": 3000,
+    "families": metrics.FAMILY_TARGET,
+    "required_complete": metrics.REQUIRED_COMPLETE_TARGET / 100.0,
+    "traceable": metrics.TRACEABLE_TARGET / 100.0,
+    "concept_coverage": metrics.COVERAGE_TARGET / 100.0,
+    "family_sample": 30,
 }
 
 
@@ -64,9 +70,10 @@ def main():
     ap.add_argument("--sample", type=int, default=0, help="每族抽检条数，>0 时导出 CSV")
     a = ap.parse_args()
 
-    # 统一用命名参数，避免 %-拼接导致的类型推断失败
+    # 统一用命名参数，避免 %-拼接导致的类型推断失败。
+    # types / quals 来自 metrics.coverage_params()——本文件不再自带一份口径常量。
     WHERE = "WHERE (%(src)s::text IS NULL OR jp.source_id = %(src)s::text)"
-    P = {"src": a.source, "types": list(CONCEPT_TYPES)}
+    P = dict(metrics.coverage_params(), src=a.source)
     fails = []
 
     def verdict(name, value, target, ok, fmt="%s"):
@@ -116,16 +123,20 @@ def main():
         # 概念映射覆盖率：口径来自 code/metrics.py（**单一定义**，不在此另写一遍）。
         # 分母只算"应当映射到能力概念"的类型（RT5 技能 / RT6 知识 / RT7 语言 / RT8 其他）；
         # RT1/RT3/RT4 是资格门槛（学历/经验/证照），由专用字段承载，不计入。
-        p2 = dict(P, quals=list(metrics.QUALIFICATION_TYPES))
+        # P 已含 types/quals，直接传即可。
         with c.cursor() as cur:                       # 需要整行计数，不能用 q1（它只取首列）
             cur.execute(metrics.CONCEPT_COVERAGE_SQL
-                        + " JOIN job_posting jp ON jp.job_id = r.job_id " + WHERE, p2)
+                        + " JOIN job_posting jp ON jp.job_id = r.job_id " + WHERE, P)
             cov_row = cur.fetchone()
         denom = cov_row["denom"] or 0
         numer = cov_row["numer"] or 0
+        # 判定用**未四舍五入**的比率；显示用 metrics.coverage_pct()，
+        # 与门户 /quality、可视化面板 m_gate 走同一个函数（避免 round() 口径不一致）。
         cov = numer / max(denom, 1)
-        verdict("能力概念映射覆盖率", "%.1f%% (%d/%d)" % (cov * 100, numer, denom),
-                "%.0f%%" % (TARGETS["concept_coverage"] * 100), cov >= TARGETS["concept_coverage"])
+        verdict("能力概念映射覆盖率",
+                "%.1f%% (%d/%d)" % (metrics.coverage_pct(cov_row), numer, denom),
+                "%.0f%%" % metrics.COVERAGE_TARGET,
+                cov >= TARGETS["concept_coverage"])
         gate_n = cov_row["qualification"] or 0
         print("     （资格门槛类 %d 条学历/经验/证照要求不计入分母，由专用字段承载）" % gate_n)
 

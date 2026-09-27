@@ -32,43 +32,27 @@ BASE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 for p in ("code", "code/evolve", "code/analytics"):
     sys.path.insert(0, os.path.join(BASE, p))
 
-import psycopg  # noqa: E402
-from psycopg.rows import dict_row  # noqa: E402
-
 import recompute as rc  # noqa: E402
 import promote as pr  # noqa: E402
 import discover as dc  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _harness as H  # noqa: E402
 
 sys.stdout.reconfigure(encoding="utf-8")
 DSN = rc.DSN
 TAG = "EVOTEST" + secrets.token_hex(3).upper()
 SRC = "src_evotest_" + secrets.token_hex(3)
-PASS, FAIL = [], []
+PASS, FAIL = H.PASS, H.FAIL
+check, q, q1 = H.check, H.q, H.q1
 # T6 拆分的**源节点**：它是真实种子节点（label 不含 TAG），清理时必须恢复。
 # 踩过的坑（问题 #34）：只按 label LIKE TAG 清理，会把种子节点永久留在
 # retired 状态，并且留下 to_ids 指向已删节点的悬空变更记录。
 SPLIT_TARGET = []
 
 
-def check(cond, msg):
-    (PASS if cond else FAIL).append(msg)
-    print(("  [PASS] " if cond else "  [FAIL] ") + msg)
-    return cond
-
-
 def db():
-    return psycopg.connect(DSN, row_factory=dict_row)
-
-
-def q(c, sql, p=None):
-    with c.cursor() as cur:
-        cur.execute(sql, p)
-        return cur.fetchall()
-
-
-def q1(c, sql, p=None):
-    r = q(c, sql, p)
-    return list(r[0].values())[0] if r else None
+    return H.connect(DSN)
 
 
 def cleanup(c):
@@ -385,15 +369,7 @@ def main():
     with db() as c:
         cleanup(c)
 
-    print("\n" + "=" * 78)
-    print("结果：PASS %d 项，FAIL %d 项   （测试注入数据已清理）" % (len(PASS), len(FAIL)))
-    print("=" * 78)
-    return 1 if FAIL else 0
-
-
-def _c():
-    """占位（历史遗留），保留以兼容旧调用点。"""
-    return db(), None
+    return H.report(note="（测试注入数据已清理）")
 
 
 if __name__ == "__main__":

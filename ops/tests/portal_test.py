@@ -31,33 +31,27 @@ BASE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, os.path.join(BASE, "code"))
 sys.path.insert(0, os.path.join(BASE, "code", "demo"))
 
-import psycopg  # noqa: E402
-from psycopg.rows import dict_row  # noqa: E402
-
 import portal  # noqa: E402
+import metrics as M  # noqa: E402  ← 覆盖率口径的唯一定义（此前本文件手写过一份错的）
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _harness as H  # noqa: E402
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-PASS, FAIL = [], []
+PASS, FAIL = H.PASS, H.FAIL
 PORT = 8102
 ROOT = "http://127.0.0.1:%d" % PORT
-
-
-def check(cond, msg):
-    (PASS if cond else FAIL).append(msg)
-    print(("  [PASS] " if cond else "  [FAIL] ") + msg)
-    return cond
+check = H.check
 
 
 def conn():
-    return psycopg.connect(portal.DSN, row_factory=dict_row)
+    return H.connect(portal.DSN)
 
 
 def q1(sql, p=None):
-    with conn() as c, c.cursor() as cur:
-        cur.execute(sql, p)
-        r = cur.fetchone()
-        return list(r.values())[0] if r else None
+    """本测试沿历史用法：不传连接，自己开一条（只读查询）。"""
+    with conn() as c:
+        return H.q1(c, sql, p)
 
 
 def get(path, expect=200):
@@ -67,11 +61,6 @@ def get(path, expect=200):
             return r.status, r.read().decode("utf-8")
     except urllib.error.HTTPError as e:
         return e.code, e.read().decode("utf-8")
-
-
-def get_raw(path):
-    with urllib.request.urlopen(ROOT + path, timeout=60) as r:
-        return r.status, r.read().decode("utf-8"), dict(r.headers)
 
 
 def main():
@@ -413,12 +402,19 @@ def main():
                   "列空值率", "审计流水", "备份", "访问策略"):
             check(k in body, "质量页覆盖：%s" % k)
         check("通过" in body or "违反" in body, "完整性不变量给出结论")
-        # 覆盖率数字必须与库一致
-        mapping = q1("""SELECT count(*) FILTER (WHERE concept_id IS NOT NULL
-                           AND requirement_type NOT IN ('RT5','RT6')) AS mapped,
-                               count(*) FILTER (WHERE requirement_type NOT IN ('RT5','RT6')) AS denom
-                          FROM job_requirement""")
-        check("概念映射覆盖率" in body, "给出概念映射覆盖率")
+        # 覆盖率数字必须与库一致。口径**只允许**来自 code/metrics.py：
+        # 这里历史上手写过 `NOT IN ('RT5','RT6')`，正是"质量门 90.2% vs 可视化页 61.7%"
+        # 那次事故的同款写法（把学历/经验/证照也算进了分母），且算出的值当时并未被断言使用。
+        # 三处组件（质量门 / 门户 / 可视化）的交叉一致断言在 ops/tests/viz_test.py T3。
+        with conn() as cc, cc.cursor() as cur:
+            cur.execute(M.CONCEPT_COVERAGE_SQL, M.coverage_params())
+            cov_row = cur.fetchone()
+        cov_pct = M.coverage_pct(cov_row)
+        m_page = re.search(r"能力概念映射覆盖率</td><td class=\"n\"><b>([\d.]+)%", body)
+        check(m_page is not None and float(m_page.group(1)) == cov_pct,
+              "门户覆盖率 %s == metrics 口径 %.1f%%（分子 %d / 分母 %d）"
+              % (m_page.group(1) + "%" if m_page else "缺失", cov_pct,
+                 cov_row["numer"], cov_row["denom"]))
 
         # ===============================================================
         print("\n【T15】开发者模式入口（需求 ⑤）")
@@ -435,13 +431,7 @@ def main():
         srv.shutdown()
         srv.server_close()
 
-    print("\n" + "=" * 74)
-    print("结果：PASS %d 项，FAIL %d 项" % (len(PASS), len(FAIL)))
-    if FAIL:
-        for f in FAIL:
-            print("  [FAIL] " + f)
-    print("=" * 74)
-    return 1 if FAIL else 0
+    return H.report(width=74, list_fails=True)
 
 
 if __name__ == "__main__":

@@ -30,6 +30,8 @@ sys.path.insert(0, os.path.join(BASE, "code"))
 import psycopg  # noqa: E402
 from psycopg.rows import dict_row  # noqa: E402
 
+import metrics  # noqa: E402  ← 概念覆盖口径的唯一定义（RT5..RT8 / RT1,RT3,RT4）
+
 sys.stdout.reconfigure(encoding="utf-8")
 DSN = ("host=127.0.0.1 port=55432 dbname=medtalent user=postgres "
        "client_encoding=UTF8 options='-c search_path=mt,public'")
@@ -152,7 +154,8 @@ def discover_concepts(c, min_evidence: int) -> dict:
     ① **只收能力类要求**。学历(RT1)/经验(RT3)/证照(RT4) 是**资格门槛**，
        由 education_req / license_req 等字段承载，不该进能力本体。
        把"医学相关专业硕士及以上学历"当成候选能力，会让词表迅速被噪声淹没。
-       （与 code/gates/jd_quality_gate.py 的覆盖率分母口径保持一致。）
+       （口径来自 code/metrics.py::CONCEPT_TYPES，与质量门/门户/可视化同源，
+        不在此另写一遍 RT 码——本项目曾因此出现过两个覆盖率数字。）
 
     ② **先别名、后新概念**。若某短语命中既有概念的关键词，说明它只是**同义说法**，
        应当作为别名并入该概念，而不是新建一个重复概念——
@@ -162,7 +165,8 @@ def discover_concepts(c, min_evidence: int) -> dict:
         cur.execute("""SELECT requirement_id, raw_text, requirement_type
                        FROM job_requirement
                        WHERE concept_id IS NULL
-                         AND requirement_type = ANY(%s)""", (["RT5", "RT6", "RT7", "RT8"],))
+                         AND requirement_type = ANY(%s)""",
+                    (list(metrics.CONCEPT_TYPES),))
         reqs = cur.fetchall()
         cur.execute("SELECT count(*) AS n FROM job_requirement WHERE concept_id IS NULL")
         n_excluded = cur.fetchone()["n"] - len(reqs)

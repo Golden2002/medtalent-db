@@ -31,28 +31,23 @@ BASE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, os.path.join(BASE, "code"))
 sys.path.insert(0, os.path.join(BASE, "code", "demo"))
 
-import psycopg  # noqa: E402
-
 import portal as P  # noqa: E402
 import portal_viz as V  # noqa: E402
 import charts as CH  # noqa: E402
 import metrics as M  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _harness as H  # noqa: E402
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-PASS, FAIL = [], []
+PASS, FAIL = H.PASS, H.FAIL
 PORT = 8104
 ROOT = "http://127.0.0.1:%d" % PORT
-
-
-def check(cond, msg):
-    (PASS if cond else FAIL).append(msg)
-    print(("  [PASS] " if cond else "  [FAIL] ") + msg)
-    return cond
+check = H.check
 
 
 def conn():
-    return psycopg.connect(P.DSN, row_factory=P.dict_row)
+    return H.connect(P.DSN)
 
 
 def get(path, timeout=180):
@@ -242,13 +237,7 @@ def main():
         srv.shutdown()
         srv.server_close()
 
-    print("\n" + "=" * 74)
-    print("结果：PASS %d 项，FAIL %d 项" % (len(PASS), len(FAIL)))
-    if FAIL:
-        for f in FAIL:
-            print("  [FAIL] " + f)
-    print("=" * 74)
-    return 1 if FAIL else 0
+    return H.report(width=74, list_fails=True)
 
 
 if __name__ == "__main__":

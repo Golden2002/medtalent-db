@@ -28,15 +28,14 @@ BASE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, os.path.join(BASE, "code"))
 sys.path.insert(0, os.path.join(BASE, "code", "demo"))
 
-import psycopg  # noqa: E402
-from psycopg.rows import dict_row  # noqa: E402
-
 import portal as P  # noqa: E402
 import portal_dev as D  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _harness as H  # noqa: E402
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-PASS, FAIL = [], []
+PASS, FAIL = H.PASS, H.FAIL
 PORT = 8103
 ROOT = "http://127.0.0.1:%d" % PORT
 FIELD = "F_DEV_TEST01"
@@ -45,21 +44,17 @@ PER = "per_dev_test01"
 PROBE_TABLE = "_devmode_probe"
 
 
-def check(cond, msg):
-    (PASS if cond else FAIL).append(msg)
-    print(("  [PASS] " if cond else "  [FAIL] ") + msg)
-    return cond
+check = H.check
 
 
 def conn():
-    return psycopg.connect(P.DSN, row_factory=dict_row)
+    return H.connect(P.DSN)
 
 
 def q1(sql, p=None):
-    with conn() as c, c.cursor() as cur:
-        cur.execute(sql, p)
-        r = cur.fetchone()
-        return list(r.values())[0] if r else None
+    """本测试沿历史用法：不传连接，自己开一条（只读查询）。"""
+    with conn() as c:
+        return H.q1(c, sql, p)
 
 
 def get(path):
@@ -241,13 +236,7 @@ def main():
     check(all(v == 0 for v in left.values()),
           "测试数据已全部清理：%s" % left)
 
-    print("\n" + "=" * 74)
-    print("结果：PASS %d 项，FAIL %d 项" % (len(PASS), len(FAIL)))
-    if FAIL:
-        for f in FAIL:
-            print("  [FAIL] " + f)
-    print("=" * 74)
-    return 1 if FAIL else 0
+    return H.report(width=74, list_fails=True)
 
 
 if __name__ == "__main__":

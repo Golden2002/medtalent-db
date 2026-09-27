@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 ops/tests/collect_test.py —— 采集管道端到端测试（T07）
 
@@ -20,10 +20,8 @@ BASE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, os.path.join(BASE, "code"))
 sys.path.insert(0, os.path.join(BASE, "ops", "tests"))
 
-import psycopg  # noqa: E402
-from psycopg.rows import dict_row  # noqa: E402
-
 from fixture_server import serve  # noqa: E402
+import _harness as H  # noqa: E402
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -36,24 +34,12 @@ SRC = "src_fixture_collecttest"
 LIMIT = 25
 RAW = os.path.join(BASE, "data", "raw", SRC)
 
-PASS, FAIL = [], []
-
-
-def check(cond, msg):
-    (PASS if cond else FAIL).append(msg)
-    print(("  [PASS] " if cond else "  [FAIL] ") + msg)
-    return cond
+PASS, FAIL = H.PASS, H.FAIL
+check, q1 = H.check, H.q1
 
 
 def conn():
-    return psycopg.connect(DSN, row_factory=dict_row)
-
-
-def q1(c, sql, p=None):
-    with c.cursor() as cur:
-        cur.execute(sql, p)
-        r = cur.fetchone()
-        return list(r.values())[0] if r else None
+    return H.connect(DSN)
 
 
 def qrow(c, sql, p=None):
@@ -205,10 +191,7 @@ def main():
     finally:
         srv.shutdown()
 
-    print("\n" + "=" * 78)
-    print("结果：PASS %d 项，FAIL %d 项" % (len(PASS), len(FAIL)))
-    print("=" * 78)
-    return 1 if FAIL else 0
+    return H.report()
 
 
 def _write_urls(urls):

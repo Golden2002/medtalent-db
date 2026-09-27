@@ -88,6 +88,16 @@ def sha256_file(path: str) -> str:
     return h.hexdigest()
 
 
+def qi(name) -> str:
+    """安全地给标识符（表名/列名）加双引号。
+
+    标识符来自 information_schema 或 manifest.json，不能像值那样用 %s 绑定，
+    只能拼接；拼接时内嵌的双引号必须翻倍，否则名字里带 `"` 会让 SQL 语法错位。
+    行为与 psycopg.sql.Identifier 一致（对现有全小写名字产生完全相同的 SQL）。
+    """
+    return '"' + str(name).replace('"', '""') + '"'
+
+
 def run(cmd, env_extra=None):
     env = dict(os.environ)
     env["PGCLIENTENCODING"] = "UTF8"
@@ -103,9 +113,9 @@ def run(cmd, env_extra=None):
 # ---------------------------------------------------------------------------
 def do_backup(include_pii=False, note=None, backup_type="full"):
     with conn() as c:
-        pol = c.cursor()
-        pol.execute("SELECT * FROM backup_policy WHERE enabled ORDER BY policy_id LIMIT 1")
-        policy = pol.fetchone()
+        with c.cursor() as pol:
+            pol.execute("SELECT * FROM backup_policy WHERE enabled ORDER BY policy_id LIMIT 1")
+            policy = pol.fetchone()
     if not policy:
         print("[X] 没有启用的备份策略")
         return 1
@@ -235,7 +245,7 @@ def _export_xlsx(path, include_pii=False) -> dict:
             cols = [r["column_name"] for r in _columns(cur, table)
                     if r["column_name"] not in drop.get(table, [])]
             cur.execute("SELECT %s FROM mt.%s" % (
-                ", ".join('"%s"' % c_ for c_ in cols), table))
+                ", ".join(qi(c_) for c_ in cols), qi(table)))
             rows = cur.fetchall()
             ws = wb.create_sheet(title=table[:31])
             ws.append(cols)
@@ -506,7 +516,7 @@ def do_restore(backup_id, target_db, keep=False):
     try:
         with psycopg.connect(dsn2, row_factory=dict_row) as c2, c2.cursor() as cur:
             for tbl, expect in (man.get("tableCounts") or {}).items():
-                cur.execute("SELECT count(*) AS n FROM mt.%s" % tbl)
+                cur.execute("SELECT count(*) AS n FROM mt.%s" % qi(tbl))
                 got = cur.fetchone()["n"]
                 counts[tbl] = got
                 if got != expect:

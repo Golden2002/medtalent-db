@@ -24,26 +24,20 @@ BASE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, os.path.join(BASE, "code"))
 sys.path.insert(0, os.path.join(BASE, "code", "demo"))
 
-import psycopg  # noqa: E402
-from psycopg.rows import dict_row  # noqa: E402
-
 import app as demo  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _harness as H  # noqa: E402
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-PASS, FAIL = [], []
+PASS, FAIL = H.PASS, H.FAIL
 PORT = 8099
 ROOT = "http://127.0.0.1:%d" % PORT
-
-
-def check(cond, msg):
-    (PASS if cond else FAIL).append(msg)
-    print(("  [PASS] " if cond else "  [FAIL] ") + msg)
-    return cond
+check, q1 = H.check, H.q1
 
 
 def conn():
-    return psycopg.connect(demo.DSN, row_factory=dict_row)
+    return H.connect(demo.DSN)
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -71,17 +65,8 @@ def post(path, data: dict):
         return e.code, e.read().decode("utf-8"), e.headers.get("Location", "")
 
 
-def q1(c, sql, params=None):
-    with c.cursor() as cur:
-        cur.execute(sql, params)
-        r = cur.fetchone()
-        return list(r.values())[0] if r else None
-
-
 def _rows(c, sql, params=None):
-    with c.cursor() as cur:
-        cur.execute(sql, params)
-        return cur.fetchall()
+    return H.q(c, sql, params)
 
 
 def _strip(s: str) -> str:
@@ -230,10 +215,7 @@ def main():
     finally:
         srv.shutdown()
 
-    print("\n" + "=" * 78)
-    print("结果：PASS %d 项，FAIL %d 项" % (len(PASS), len(FAIL)))
-    print("=" * 78)
-    return 1 if FAIL else 0
+    return H.report()
 
 
 if __name__ == "__main__":

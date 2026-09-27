@@ -42,6 +42,7 @@ from psycopg import sql as sql_mod  # noqa: E402
 import charts as CH  # noqa: E402
 import portal as P  # noqa: E402
 import metrics as M  # noqa: E402
+from _portal_shared import PortalError  # noqa: E402  ← 同一个异常类对象，见该模块说明
 
 # ---------------------------------------------------------------------------
 # 度量注册表：每张图的**唯一**口径定义
@@ -279,7 +280,7 @@ def fetch(c, item):
             return CH.scatter([], item["x"], item["y"]), rows
         if k == "stacked":
             return CH.stacked([], [], item["label"]), rows
-        raise P.PortalError(500, "未知图表类型：%s" % k)
+        raise PortalError(500, "未知图表类型：%s" % k)
 
     if item["kind"] == "bar_h":
         if not rows:
@@ -361,7 +362,7 @@ def fetch(c, item):
         return CH.stacked(list(piv.values()), list(cats), lk,
                           unit=item.get("unit", "")), rows
 
-    raise P.PortalError(500, "未知图表类型：%s" % item["kind"])
+    raise PortalError(500, "未知图表类型：%s" % item["kind"])
 
 
 def csv_rows(c, item):
@@ -463,12 +464,12 @@ def build_sql(table, dim, val, agg, limit=60):
     `sql.Identifier` 转义——URL 参数是用户输入，不能直接拼。"""
     m = P.meta()
     if table not in m["by_name"]:
-        raise P.PortalError(404, "未知的表或视图：%s" % table)
+        raise PortalError(404, "未知的表或视图：%s" % table)
     cols = [x["column_name"] for x in m["cols"].get(table, [])]
     if dim not in cols:
-        raise P.PortalError(400, "表 %s 没有列 %s" % (table, dim))
+        raise PortalError(400, "表 %s 没有列 %s" % (table, dim))
     if agg != "count" and val not in cols:
-        raise P.PortalError(400, "表 %s 没有列 %s" % (table, val))
+        raise PortalError(400, "表 %s 没有列 %s" % (table, val))
     a = agg if agg in [k for k, _ in AGGS] else "count"
     measure = (sql_mod.SQL("count(*)")
                if a == "count" else
@@ -517,7 +518,7 @@ def view_build(c, qs) -> bytes:
             if ch["empty"]:
                 chart_html += ('<p class="muted">这条组合返回 0 行。'
                                '换个维度或度量再试——<b>空结果也是结果</b>。</p>')
-        except P.PortalError as e:
+        except PortalError as e:
             err = e.message
         except P.psycopg.Error as e:
             err = str(e).splitlines()[0]

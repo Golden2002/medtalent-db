@@ -40,7 +40,6 @@ import argparse
 import csv
 import html
 import io
-import json
 import os
 import re
 import sys
@@ -57,6 +56,7 @@ from psycopg import sql  # noqa: E402
 from psycopg.rows import dict_row  # noqa: E402
 
 import metrics  # noqa: E402  ← 度量的单一口径定义
+from _portal_shared import PortalError  # noqa: E402  ← 与 portal_viz/portal_dev 共用一个类对象
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -277,15 +277,6 @@ def refresh_meta():
     return meta()
 
 
-class PortalError(Exception):
-    """带 HTTP 状态码的业务错误（未知表名、非法 SQL……）。"""
-
-    def __init__(self, status, message):
-        super().__init__(message)
-        self.status = status
-        self.message = message
-
-
 def require_table(name: str) -> str:
     m = meta()
     if name not in m["by_name"]:
@@ -336,6 +327,26 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .tscroll table{table-layout:auto}
 .kv>div:nth-child(even){white-space:normal;word-break:break-word}
 .tscroll{overflow:auto;max-height:620px;border:1px solid #e6e8eb;border-radius:6px}
+/* 数据窗口：横向 + 纵向都在窗口内滑动，表头吸顶、首列吸左。
+   为什么首列也要吸：横向滑动时如果连"这是哪一行"都看不见，多列就等于没有。
+   宽表（人才库 30 列）靠这两个 sticky 才读得下去。 */
+.tablewin{overflow:auto;max-height:72vh;border:1px solid #e6e8eb;border-radius:6px;
+          position:relative;background:#fff}
+.tablewin table{border-collapse:separate;border-spacing:0}
+.tablewin th,.tablewin td{white-space:nowrap;border-bottom:1px solid #e6e8eb;
+                          border-right:1px solid #f2f4f7}
+.tablewin thead th{position:sticky;top:0;z-index:3;background:#f6f8fa}
+.tablewin tbody tr:hover td{background:#fbfcfd}
+.tablewin th:first-child,.tablewin td:first-child{position:sticky;left:0;z-index:2;
+                          background:#fff;box-shadow:1px 0 0 #e6e8eb}
+.tablewin thead th:first-child{z-index:4;background:#f6f8fa}
+.tablewin tbody tr:hover td:first-child{background:#fbfcfd}
+.colpick{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:2px 14px;
+         margin:8px 0}
+.colpick label{font-weight:400;display:flex;align-items:center;gap:6px;font-size:12.5px}
+.colpick input{width:auto}
+.colgroup{font-size:11.5px;color:#8c959f;grid-column:1/-1;margin-top:8px;
+          text-transform:uppercase;letter-spacing:.04em}
 code,.mono{font-family:ui-monospace,Consolas,"Courier New",monospace;font-size:12px}
 pre{background:#0d1117;color:#c9d1d9;padding:12px;border-radius:6px;overflow:auto;font-size:12px;margin:8px 0}
 pre .k{color:#ff7b72}
@@ -362,6 +373,16 @@ button:hover{filter:brightness(1.06)}
 .note.err{background:#ffebe9;border:1px solid #ffc1bc}
 .note.info{background:#ddf4ff;border:1px solid #a5d6ff}
 .pager a{margin-right:10px;font-size:13px}
+/* 页面内的「分析」按钮：原生折叠控件，零 JS。默认收起，展开后是完整的分析块。 */
+details.analysis{margin:14px 0 0}
+details.analysis>summary{cursor:pointer;display:inline-block;padding:7px 16px;border-radius:6px;
+  background:#1f6feb;color:#fff;font-size:13px;font-weight:500;border:1px solid #1f6feb;
+  list-style:none;user-select:none}
+details.analysis>summary::-webkit-details-marker{display:none}
+details.analysis>summary::before{content:"▸ ";font-size:11px}
+details.analysis[open]>summary::before{content:"▾ "}
+details.analysis[open]>summary{margin-bottom:6px}
+details.analysis>summary:hover{filter:brightness(1.06)}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 @media(max-width:900px){.grid2{grid-template-columns:1fr}}
 .kv{display:grid;grid-template-columns:200px 1fr;gap:0}
@@ -475,6 +496,53 @@ def _is_numberish(v) -> bool:
         return True
     except (TypeError, ValueError):
         return False
+
+
+def _int_param(qs, key, default, lo=None, hi=None) -> int:
+    """从 query string 取一个整数参数；非法值给 400，而不是抛 ValueError。
+
+    为什么不能裸用 `int(qs.get(...))`：`/t/person?page=abc` 会抛 ValueError，
+    而 `do_GET` 只接 `PortalError` 与 `psycopg.Error`——valueerror 会穿透到
+    socketserver，浏览器看到的是"连接被重置"，连错误页都没有。
+    """
+    raw = (qs.get(key, [""])[0] or "").strip()
+    if not raw:
+        return default
+    try:
+        v = int(raw)
+    except ValueError:
+        raise PortalError(400, "参数 %s 需要整数，收到：%s" % (key, raw))
+    if lo is not None:
+        v = max(lo, v)
+    if hi is not None:
+        v = min(hi, v)
+    return v
+
+
+def browse_where(table, fcol, fval):
+    """「按某列筛某值」的 WHERE 子句；列名先过目录白名单，再用 Identifier 转义。
+
+    表详情页与它的 CSV 导出走的是同一条筛选语义，原先各写一遍——两处一旦
+    有一处忘了 require_column，就从"多两行重复"变成"一个注入面"。
+    """
+    if fcol and fval:
+        require_column(table, fcol)
+        return (sql.SQL(" WHERE {} = %s").format(sql.Identifier(fcol)), [fval])
+    return sql.SQL(""), []
+
+
+def pager_links(base, qs, page_no, n_pages, single_label="") -> str:
+    """分页链接条。base 是路径（如 "/t/person"），qs 是当前查询参数。"""
+    if n_pages <= 1:
+        return single_label
+    parts = dict(qs)
+    out = []
+    for i in range(max(1, page_no - 3), min(n_pages, page_no + 3) + 1):
+        parts["page"] = [str(i)]
+        href = "%s?%s" % (base, urllib.parse.urlencode(
+            {k: v[0] for k, v in parts.items() if v and v[0]}))
+        out.append('<a href="%s">%d</a>' % (href, i))
+    return " ".join(out)
 
 
 def render_rows(table, cols, rows, maxlen=70, n_right=()) -> str:
@@ -673,15 +741,13 @@ def view_schema(c, qs) -> bytes:
     body = ('<div class="sub">%d 张基础表 + %d 个视图，行数为 <code>count(*)</code> 精确值。'
             '点表名进入结构 + 真实数据。</div>%s%s'
             % (len([r for r in m["rels"] if r["kind"] == "table"]), len(views), blocks, view_html))
+    body += page_analysis(c, "/schema")
     return page("表与视图", body)
 
 
 # ---------------------------------------------------------------------------
 # ③ 表详情：结构 + 真实数据
 # ---------------------------------------------------------------------------
-SORTABLE = True
-
-
 def view_table(c, name, qs) -> bytes:
     name = require_table(name)
     m = meta()
@@ -690,19 +756,14 @@ def view_table(c, name, qs) -> bytes:
     colnames = [x["column_name"] for x in cols]
 
     # --- 浏览参数（全部与系统目录比对后再用） ---
-    page_no = max(1, int(qs.get("page", ["1"])[0] or 1))
-    size = min(500, max(5, int(qs.get("size", [str(PAGE_SIZE)])[0] or PAGE_SIZE)))
+    page_no = _int_param(qs, "page", 1, lo=1)
+    size = _int_param(qs, "size", PAGE_SIZE, lo=5, hi=500)
     sort = qs.get("sort", [""])[0]
     direction = "DESC" if qs.get("dir", ["asc"])[0] == "desc" else "ASC"
     fcol = qs.get("col", [""])[0]
     fval = qs.get("val", [""])[0]
 
-    where = sql.SQL("")
-    params = []
-    if fcol and fval:
-        require_column(name, fcol)
-        where = sql.SQL(" WHERE {} = %s").format(sql.Identifier(fcol))
-        params.append(fval)
+    where, params = browse_where(name, fcol, fval)
 
     order = sql.SQL("")
     if sort:
@@ -766,9 +827,8 @@ def view_table(c, name, qs) -> bytes:
         return "/t/%s?%s" % (name, urllib.parse.urlencode(
             {k: v[0] for k, v in p.items() if v and v[0]}))
 
-    pager = " ".join('<a href="%s">%s</a>' % (link(page=i), i)
-                     for i in range(max(1, page_no - 3), min(n_pages, page_no + 3) + 1)) \
-        if n_pages > 1 else '<span class="muted">共 1 页</span>'
+    pager = pager_links("/t/%s" % name, qs, page_no, n_pages,
+                        single_label='<span class="muted">共 1 页</span>')
 
     sort_links = " · ".join(
         '<a href="%s">按 %s %s</a>' % (link(sort=x["column_name"],
@@ -833,6 +893,11 @@ append-only 变更流水、扩展属性门禁都挂在触发器上。</p></div>
        len(m["idx"].get(name, [])), idx_rows,
        len(m["trg"].get(name, [])), trg_rows,
        sql_box(shown_sql, "本页执行的 SQL（表名与列名均已与系统目录比对后转义）"))
+    # 分析按钮放在**页面顶部**（像工具栏），不是页面底部：
+    # 表页面很长，滚到底才看见按钮等于没有。分析是"对这一页的动作"。
+    body = analysis_panel(table_profile_blocks(c, name), "分析这张表",
+                          "分析的对象就是这张表本身，所以它长在这一页上，"
+                          "而不是要你先跳到另一个页面再回想刚才看的是哪张表。") + body
     return page(name, body, subtitle="表结构 + 真实数据")
 
 
@@ -889,6 +954,7 @@ def view_entity(c, name, qs) -> bytes:
             % (kv, "".join(blocks) or '<div class="card"><p class="muted">'
                        '没有任何行通过外键指向这条记录。</p></div>',
                sql_box("SELECT * FROM %s.%s WHERE %s = '%s'" % (SCHEMA, name, pk, val))))
+    body += page_analysis(c, "/entity", (name, val))
     return page(title, body, subtitle="实体页 · %s" % esc(name))
 
 
@@ -977,7 +1043,7 @@ def view_search(c, qs) -> bytes:
                 if cc == "id":
                     cells.append('<td><a href="/e/%s?val=%s"><code>%s</code></a></td>'
                                  % (table, urllib.parse.quote(str(rid)), esc(trunc(rid, 40))))
-                elif cc in ("岗位", "职业") and cc == "岗位":
+                elif cc == "岗位":
                     cells.append('<td><a href="/e/job_posting?val=%s"><code>%s</code></a></td>'
                                  % (urllib.parse.quote(str(r[cc])), esc(r[cc])))
                 else:
@@ -1153,7 +1219,6 @@ def analysis_rows(c, sqltext):
 
 
 def view_analyze(c, qs, aid=None, want_csv=False):
-    m = meta()
     if aid is None:
         cards = "".join(
             '<div class="card"><h2><a href="/analyze/%s">%s</a></h2>'
@@ -1161,10 +1226,14 @@ def view_analyze(c, qs, aid=None, want_csv=False):
             '<p class="muted"><a href="/analyze/%s">运行 →</a></p></div>'
             % (a[0], esc(a[1]), esc(a[2]),
                esc(re.sub(r"\s+", " ", a[3].strip())[:150]), a[0]) for a in ANALYSES)
-        return page("分析", '<div class="sub">8 个预置分析，全部跑在真实数据上。'
-                    '每个分析都<b>显示它执行的 SQL</b>，结果可导出 CSV——'
-                    '你能自己核对口径，也能把它搬走。</div>' + cards,
-                    subtitle="基础分析 · 口径可核")
+        return page("分析", '<div class="sub">'
+                    '<b>分析不是另一个页面，而是每个页面上的一颗按钮。</b><br>'
+                    '人才库、职业库、职业树、匹配、扩展与演化、质量、每一张表页面、'
+                    '可视化面板——各自都带一个「分析」折叠块，点开就在<b>当前对象旁边</b>'
+                    '执行该对象的分析，并把执行的 SQL 一起给你核对。'
+                    '这一页只是<b>索引</b>：列出口径清单，方便单独运行或对照。'
+                    '零 JS 的折叠控件，所以它不需要任何脚本。</div>' + cards,
+                    subtitle="分析索引 · 实际入口在各页面上")
 
     a = run_analysis(c, aid)
     try:
@@ -1411,6 +1480,118 @@ SELECT * FROM provenance WHERE source_id = '...';   -- 逐条血缘"""))
 # ---------------------------------------------------------------------------
 # ⑨ 内嵌小分析：各枢纽页复用它，避免每个页面各写一套渲染
 # ---------------------------------------------------------------------------
+def analysis_panel(blocks, title="分析", hint="") -> str:
+    """把若干分析块收进一个原生折叠控件 —— 页面内的「分析」按钮。
+
+    为什么不做成独立页面：分析的对象就在这一页上（这张表、这个职业、这个人）。
+    要人先跳到另一个页面、再回想"我刚才看的是哪张表"，等于把工具和对象拆开了。
+    成熟 BI 的 drill-down 也是这个形态：**分析长在数据旁边**。
+
+    零 JS：`<details>/<summary>` 是浏览器原生折叠控件，不需要任何脚本。
+    项数写进 summary，所以折叠着也知道有 8 项分析——不是藏起来。
+    """
+    blocks = [b for b in blocks if b]
+    if not blocks:
+        return ""
+    return ('<details class="analysis"><summary>%s（%d 项）</summary>%s%s</details>'
+            % (esc(title), len(blocks),
+               '<div class="sub" style="margin:8px 0 10px">%s</div>' % hint if hint else "",
+               "".join(blocks)))
+
+
+def table_profile_blocks(c, name) -> list:
+    """任意一张表的通用画像分析：列空值数排行。
+
+    这个分析对**每一张有数据的表**都成立，所以它是"分析按钮能出现在所有表页面上"的原因。
+    行数为 0 的表返回空列表——不制造没有对象的分析。
+    """
+    m = meta()
+    n = m["by_name"].get(name, {}).get("rows", 0)
+    cols = [x["column_name"] for x in m["cols"].get(name, [])]
+    if not n or not cols:
+        return []
+    exprs = ", ".join('sum(CASE WHEN "%s" IS NULL THEN 1 ELSE 0 END) AS "%s"' % (x, x)
+                      for x in cols)
+    sqltext = 'SELECT %s FROM mt."%s"' % (exprs, name)
+    try:
+        row = q(c, sqltext)[0]
+    except psycopg.Error:
+        return []
+    pairs = sorted(((k, v or 0) for k, v in row.items() if (v or 0) > 0),
+                   key=lambda x: -x[1])[:15]
+    if not pairs:
+        return []
+    body = "".join('<tr><td><code>%s</code></td><td class="n">%s</td>'
+                   '<td class="n">%.1f%%</td></tr>'
+                   % (esc(k), f"{v:,}", 100.0 * v / n) for k, v in pairs)
+    return ['<div class="card"><h2>列空值数 Top 15 '
+            '<span class="muted">· 表内共 %s 行</span></h2>'
+            '<table><tr><th>列</th><th class="n">空值行数</th><th class="n">空值率</th></tr>'
+            '%s</table>'
+            '<p class="muted">空值率高说明「结构建了、数据没到」。'
+            '本库纪律：<b>空就是空</b>，不用默认值或推算值填充。</p>%s</div>'
+            % (f"{n:,}", body, sql_box(sqltext, "这张表的列空值口径："))]
+
+
+def page_analysis(c, page, ctx=None) -> str:
+    """按页面返回该页的「分析」按钮内容。
+
+    统一在这里分派，是为了让"给某页加分析"变成一句 `body += page_analysis(c, "…")`，
+    而不是每页各自去改 HTML 模板的 %s 参数——那样最容易把占位符数改错
+    （本项目已经因此报过两次 "not all arguments converted"）。
+    """
+    b = []
+    if page == "/match":
+        b.append(mini_analysis(c, "三态总体分布（全库）", """
+            SELECT count(*) AS "匹配条数",
+                   sum((score_breakdown->>'met')::numeric) AS "命中合计",
+                   sum((score_breakdown->>'gap')::numeric) AS "缺口合计",
+                   sum((score_breakdown->>'unknown')::numeric) AS "未知合计",
+                   round(avg(score_total), 2) AS "平均得分"
+              FROM match_result"""))
+        b.append(mini_analysis(c, "最常出现的能力缺口", """
+            SELECT c.preferred_label AS "缺口能力", count(*) AS "出现在多少条匹配里"
+              FROM match_result m, unnest(m.gap_concepts) AS g(cid)
+              JOIN concept c ON c.concept_id = g.cid
+             GROUP BY 1 ORDER BY 2 DESC LIMIT 12"""))
+        b.append(mini_analysis(c, "算法版本与批次", """
+            SELECT algo_version AS "算法版本", status AS "状态", count(*) AS "批次数",
+                   sum(person_count) AS "累计人数", sum(job_count) AS "累计岗位"
+              FROM match_run GROUP BY 1, 2 ORDER BY 3 DESC"""))
+    elif page == "/tree":
+        b.append(mini_analysis(c, "各层的节点与岗位数", """
+            SELECT level AS "层级", count(*) AS "节点数",
+                   count(*) FILTER (WHERE status='active') AS "在用",
+                   count(DISTINCT family) AS "覆盖岗位族"
+              FROM occupation GROUP BY 1 ORDER BY 1"""))
+        b.append(mini_analysis(c, "候选池：等评审的新枝", """
+            SELECT '岗位候选' AS "类型", status AS "状态", count(*) AS "数量",
+                   sum(evidence_count) AS "证据条数"
+              FROM occupation_candidate GROUP BY 1, 2
+            UNION ALL
+            SELECT '能力候选', status, count(*), sum(evidence_count)
+              FROM concept_candidate GROUP BY 1, 2 ORDER BY 1, 3 DESC"""))
+    elif page == "/schema":
+        b.append(mini_analysis(c, "结构最复杂的表（列 / 约束 / 触发器）", """
+            SELECT c.relname AS "表",
+                   (SELECT count(*) FROM pg_attribute a
+                     WHERE a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped) AS "列数",
+                   (SELECT count(*) FROM pg_constraint x WHERE x.conrelid=c.oid) AS "约束数",
+                   (SELECT count(*) FROM pg_trigger t
+                     WHERE t.tgrelid=c.oid AND NOT t.tgisinternal) AS "触发器"
+              FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+             WHERE n.nspname='mt' AND c.relkind='r'
+             ORDER BY 2 DESC, 3 DESC LIMIT 15"""))
+    elif page == "/entity":
+        tbl, _val = (ctx or ("", ""))
+        if tbl:
+            # 复用与表页面同一个画像分析：exact count，不用 reltuples 估算
+            return analysis_panel(table_profile_blocks(c, tbl),
+                                  "分析这条记录所在的表",
+                                  "同一个分析也出现在表页面上——同一份定义，不分两处。")
+    return analysis_panel(b, "分析", "分析的对象就是这一页展示的东西，所以它长在这一页上。")
+
+
 def mini_analysis(c, title, sqltext, maxlen=60, show_sql=True) -> str:
     """跑一段分析 SQL 并渲染成卡片；卡片底部给出这段 SQL 本身。"""
     try:
@@ -1426,10 +1607,6 @@ def mini_analysis(c, title, sqltext, maxlen=60, show_sql=True) -> str:
     return ('<div class="card"><h2>%s <span class="muted">· %d 行</span></h2>%s%s</div>'
             % (esc(title), len(rows), body,
                sql_box(sqltext, "本分析的 SQL：") if show_sql else ""))
-
-
-def period_cols(cols, n_right=()) -> tuple:
-    return tuple(c for c in cols if c in n_right)
 
 
 def bar_table(rows, label_key, value_key, href=None, unit="") -> str:
@@ -1506,48 +1683,275 @@ def talent_where(qs):
     return ((" WHERE " + " AND ".join(cond)) if cond else ""), P
 
 
+# ---------------------------------------------------------------------------
+# 人才库列注册表（列清单的**单一定义**）
+# ---------------------------------------------------------------------------
+# 为什么做成注册表而不是把 SQL 写死：人才库要看的字段会随业务增长（这正是本项目
+# "字段必须登记、列可以长"的一贯立场），而"页面上能看什么""CSV 导出什么""按什么排序"
+# 必须来自同一份定义，否则又会出现同一个指标两个口径的问题。
+#
+# 分组参考成熟人才档案产品（Oracle Enhanced Talent Profiles / Taleo / Dynamics 365 HR）
+# 的字段组织：基本信息 / 教育 / 经历 / 资质与成果 / 能力与证据 / 匹配与质量。
+# 其中"数据质量"一列是刻意的——合成数据必须能在列表里被一眼认出。
+TALENT_COLUMNS = [
+    # key, 标题, 分组, 默认显示, SQL 表达式（别名 p = person）, 对齐/格式
+    dict(key="pid", title="person_id", group="基本信息", default=True,
+         sel="p.person_id", fmt="link"),
+    dict(key="code", title="档案号", group="基本信息", default=False,
+         sel="p.subject_code", fmt="text"),
+    dict(key="status", title="状态", group="基本信息", default=False,
+         sel="p.status", fmt="text"),
+    dict(key="channel", title="入组渠道", group="基本信息", default=False,
+         sel="p.enroll_channel", fmt="code:CT_ENROLL_CHANNEL"),
+    dict(key="sex", title="性别", group="基本信息", default=False,
+         sel="(SELECT d.sex FROM person_demographics d WHERE d.person_id=p.person_id)",
+         fmt="code:CT_SEX"),
+    dict(key="age", title="年龄", group="基本信息", default=False,
+         sel="(SELECT (EXTRACT(YEAR FROM current_date)::int - d.birth_year) "
+             "FROM person_demographics d WHERE d.person_id=p.person_id)", fmt="num"),
+    dict(key="province", title="户籍省份", group="基本信息", default=True,
+         sel="(SELECT d.hukou_province FROM person_demographics d "
+             "WHERE d.person_id=p.person_id)", fmt="text"),
+
+    dict(key="degree", title="最高学历", group="教育", default=True,
+         sel="(SELECT e.degree_level FROM education_record e WHERE e.person_id=p.person_id "
+             "ORDER BY e.degree_level DESC NULLS LAST LIMIT 1)",
+         fmt="code:CT_DEGREE_LEVEL"),
+    dict(key="degree_name", title="学位", group="教育", default=False,
+         sel="(SELECT e.degree_name FROM education_record e WHERE e.person_id=p.person_id "
+             "ORDER BY e.degree_level DESC NULLS LAST LIMIT 1)", fmt="text"),
+    dict(key="major", title="专业", group="教育", default=True,
+         sel="(SELECT e.major_raw FROM education_record e WHERE e.person_id=p.person_id "
+             "ORDER BY e.degree_level DESC NULLS LAST LIMIT 1)", fmt="text"),
+    dict(key="school", title="院校", group="教育", default=True,
+         sel="(SELECT e.school_name FROM education_record e WHERE e.person_id=p.person_id "
+             "ORDER BY e.degree_level DESC NULLS LAST LIMIT 1)", fmt="text"),
+    dict(key="clinical", title="临床类专业", group="教育", default=False,
+         sel="(SELECT bool_or(e.is_clinical) FROM education_record e "
+             "WHERE e.person_id=p.person_id)", fmt="bool"),
+    dict(key="overseas", title="海外经历", group="教育", default=False,
+         sel="(SELECT bool_or(e.overseas) FROM education_record e "
+             "WHERE e.person_id=p.person_id)", fmt="bool"),
+    dict(key="edu_n", title="教育记录数", group="教育", default=False,
+         sel="(SELECT count(*) FROM education_record e WHERE e.person_id=p.person_id)",
+         fmt="num"),
+
+    dict(key="emp_years", title="工作年限", group="经历", default=True,
+         sel="(SELECT round(sum((coalesce(w.end_date, current_date) - w.start_date) / 365.25), 1) "
+             "FROM employment_record w WHERE w.person_id=p.person_id)", fmt="num"),
+    dict(key="emp_type", title="当前单位类型", group="经历", default=False,
+         sel="(SELECT w.employer_type FROM employment_record w WHERE w.person_id=p.person_id "
+             "ORDER BY w.is_current DESC NULLS LAST, w.start_date DESC NULLS LAST LIMIT 1)",
+         fmt="code:CT_EMPLOYER_TYPE"),
+    dict(key="emp_title", title="当前岗位", group="经历", default=True,
+         sel="(SELECT w.title_raw FROM employment_record w WHERE w.person_id=p.person_id "
+             "ORDER BY w.is_current DESC NULLS LAST, w.start_date DESC NULLS LAST LIMIT 1)",
+         fmt="text"),
+    dict(key="clin_months", title="临床/规培(月)", group="经历", default=False,
+         sel="(SELECT round(sum(c.duration_months), 1) FROM clinical_exposure c "
+             "WHERE c.person_id=p.person_id)", fmt="num"),
+    dict(key="proj_n", title="项目数", group="经历", default=False,
+         sel="(SELECT count(*) FROM project_record x WHERE x.person_id=p.person_id)", fmt="num"),
+
+    dict(key="cred_n", title="证书数", group="资质与成果", default=False,
+         sel="(SELECT count(*) FROM credential x WHERE x.person_id=p.person_id)", fmt="num"),
+    dict(key="paper_n", title="论文/产出数", group="资质与成果", default=False,
+         sel="(SELECT count(*) FROM research_output x WHERE x.person_id=p.person_id)", fmt="num"),
+    dict(key="paper_fa", title="其中一作", group="资质与成果", default=False,
+         sel="(SELECT count(*) FROM research_output x WHERE x.person_id=p.person_id "
+             "AND x.is_first_author)", fmt="num"),
+    dict(key="if_max", title="最高影响因子", group="资质与成果", default=False,
+         sel="(SELECT max(x.if_value) FROM research_output x WHERE x.person_id=p.person_id)",
+         fmt="num"),
+    dict(key="award_n", title="获奖数", group="资质与成果", default=False,
+         sel="(SELECT count(*) FROM award_honor x WHERE x.person_id=p.person_id)", fmt="num"),
+
+    dict(key="skills", title="能力主张", group="能力与证据", default=True,
+         sel="(SELECT count(*) FROM skill_assertion x WHERE x.person_id=p.person_id)", fmt="num"),
+    dict(key="skill_top", title="代表能力", group="能力与证据", default=False,
+         sel="(SELECT c.preferred_label FROM skill_assertion s JOIN concept c "
+             "ON c.concept_id=s.concept_id WHERE s.person_id=p.person_id "
+             "ORDER BY s.transferability DESC NULLS LAST LIMIT 1)", fmt="text"),
+    dict(key="evs", title="证据", group="能力与证据", default=True,
+         sel="(SELECT count(*) FROM evidence x WHERE x.person_id=p.person_id)", fmt="num"),
+    dict(key="cel_max", title="最高证据等级", group="能力与证据", default=True,
+         sel="(SELECT max(x.cel_level) FROM evidence x WHERE x.person_id=p.person_id)",
+         fmt="code:CT_CEL_LEVEL"),
+    dict(key="transfer", title="平均可迁移性", group="能力与证据", default=False,
+         sel="(SELECT round(avg(s.transferability), 2) FROM skill_assertion s "
+             "WHERE s.person_id=p.person_id)", fmt="num"),
+    dict(key="verified", title="已核验主张", group="能力与证据", default=False,
+         sel="(SELECT count(*) FROM skill_assertion s WHERE s.person_id=p.person_id "
+             "AND s.verify_status IN ('V2','V3','V4'))", fmt="num"),
+    dict(key="windows", title="观测窗口", group="能力与证据", default=False,
+         sel="(SELECT count(*) FROM observation_window x WHERE x.person_id=p.person_id)",
+         fmt="num"),
+
+    dict(key="best_score", title="最高匹配分", group="匹配与质量", default=True,
+         sel="(SELECT max(m.score_total) FROM match_result m WHERE m.person_id=p.person_id)",
+         fmt="num"),
+    dict(key="best_occ", title="最佳匹配职业", group="匹配与质量", default=False,
+         sel="(SELECT o.label_zh FROM match_result m JOIN job_posting jp ON jp.job_id=m.target_id "
+             "JOIN occupation o ON o.occupation_id=jp.occupation_id "
+             "WHERE m.person_id=p.person_id ORDER BY m.score_total DESC NULLS LAST LIMIT 1)",
+         fmt="text"),
+    dict(key="match_n", title="匹配条数", group="匹配与质量", default=False,
+         sel="(SELECT count(*) FROM match_result m WHERE m.person_id=p.person_id)", fmt="num"),
+    dict(key="source", title="数据来源", group="匹配与质量", default=True,
+         sel="CASE WHEN p.quality_flags && ARRAY['synthetic_fixture'] THEN '合成' "
+             "ELSE '演示/真实' END", fmt="text"),
+]
+
+TALENT_PRESETS = {
+    "精简": ["pid", "degree", "major", "school", "province", "skills", "best_score"],
+    "推荐": None,                       # None = 用 default 标记
+    "教育": ["pid", "degree", "degree_name", "major", "school", "clinical", "overseas", "edu_n"],
+    "能力": ["pid", "skills", "skill_top", "transfer", "verified", "evs", "cel_max", "windows"],
+    "成果": ["pid", "cred_n", "paper_n", "paper_fa", "if_max", "award_n", "proj_n"],
+    "匹配": ["pid", "best_score", "best_occ", "match_n", "source"],
+    "全部": None,                       # None + 语义由调用处区分
+}
+
+
+def talent_default_cols() -> list:
+    return [x["key"] for x in TALENT_COLUMNS if x["default"]]
+
+
+def talent_pick_columns(qs) -> list:
+    """决定这次显示哪些列。优先级：显式 cols > preset > 默认。
+
+    列 key 一律与注册表比对（白名单），未知 key 直接忽略——URL 是用户输入。
+    """
+    known = [x["key"] for x in TALENT_COLUMNS]
+    raw = (qs.get("cols", [""])[0] or "").strip()
+    if raw:
+        want = [k.strip() for k in raw.split(",") if k.strip() in known]
+        if want:
+            # person_id 永远在第一位：它是行的身份，不允许被隐藏
+            return ["pid"] + [k for k in want if k != "pid"]
+    pre = (qs.get("preset", [""])[0] or "").strip()
+    if pre == "全部":
+        return known
+    if pre in TALENT_PRESETS and TALENT_PRESETS[pre]:
+        return ["pid"] + [k for k in TALENT_PRESETS[pre] if k != "pid"]
+    return talent_default_cols()
+
+
+def talent_order(qs, colmap) -> str:
+    """排序：只允许按**当前可见**的列排，且方向只有 asc/desc。"""
+    sort = (qs.get("sort", [""])[0] or "").strip()
+    if sort in colmap:
+        return "%s %s NULLS LAST" % (colmap[sort]["sel"],
+                                     "DESC" if qs.get("dir", ["asc"])[0] == "desc" else "ASC")
+    return "p.person_id ASC"
+
+
+def talent_cell(col, row) -> str:
+    """按 fmt 渲染单元格。空值显式显示为 NULL——不用空白假装有值。"""
+    k = col["key"]
+    if k == "pid":
+        return '<a href="/talent/%s"><code>%s</code></a>' % (
+            urllib.parse.quote(str(row[k])), esc(row[k]))
+    v = row.get(k)
+    if v is None:
+        return '<span class="nul">NULL</span>'
+    fmt = col["fmt"]
+    if fmt == "num":
+        try:
+            f = float(v)
+            return '<span title="%s">%s</span>' % (esc(v), f"{f:,.1f}".rstrip("0").rstrip("."))
+        except (TypeError, ValueError):
+            return esc(v)
+    if fmt == "bool":
+        return '<span class="pill p-t">是</span>' if v else '<span class="pill p-n">否</span>'
+    if fmt.startswith("code:"):
+        table = fmt.split(":", 1)[1]
+        lab = lbl(table, v)
+        return '<span title="%s">%s</span>' % (esc(v), esc(lab))
+    return '<span title="%s">%s</span>' % (esc(v), esc(trunc(v, 34)))
+
+
+def talent_csv(c, qs) -> bytes:
+    """导出**当前选择的列**（不是固定 8 列）。导出的口径与页面完全一致。"""
+    where, P = talent_where(qs)
+    cols = talent_pick_columns(qs)
+    colmap = {x["key"]: x for x in TALENT_COLUMNS}
+    picked = [colmap[k] for k in cols if k in colmap]
+    sel_list = ", ".join('%s AS "%s"' % (x["sel"], x["key"]) for x in picked)
+    order = talent_order(qs, colmap)
+    rows = q(c, "SELECT %s FROM person p%s ORDER BY %s" % (sel_list, where, order), P)
+    # 码值在 CSV 里也翻译成中文，否则导出物与页面看到的不一致
+    for r in rows:
+        for x in picked:
+            if x["fmt"].startswith("code:") and r.get(x["key"]) is not None:
+                r[x["key"]] = lbl(x["fmt"].split(":", 1)[1], r[x["key"]])
+            elif x["fmt"] == "bool":
+                r[x["key"]] = "是" if r.get(x["key"]) else "否"
+    return to_csv([x["title"] for x in picked],
+                  [{x["title"]: r.get(x["key"]) for x in picked} for r in rows])
+
+
 def view_talent(c, qs) -> bytes:
     where, P = talent_where(qs)
-    pg = max(1, int(qs.get("page", ["1"])[0] or 1))
+    pg = _int_param(qs, "page", 1, lo=1)
     size = 25
     total = q1(c, "SELECT count(*) AS n FROM person p" + where, P)
+
+    # ---- 列选择：注册表决定能看什么，URL 决定这次看什么 ----
+    cols = talent_pick_columns(qs)
+    colmap = {x["key"]: x for x in TALENT_COLUMNS}
+    picked = [colmap[k] for k in cols if k in colmap]
+    # 所有列都起 AS "key" 别名，这样注册表的 key 就是行字典的键，两边不会错位
+    sel_list = ", ".join('%s AS "%s"' % (x["sel"], x["key"]) for x in picked)
+    order = talent_order(qs, colmap)
     P2 = dict(P, lim=size, off=(pg - 1) * size)
-    rows = q(c, """
-        SELECT p.person_id, p.subject_code,
-               (SELECT array_agg(DISTINCT e.degree_level) FROM education_record e
-                 WHERE e.person_id = p.person_id) AS degrees,
-               (SELECT min(e.major_raw) FROM education_record e
-                 WHERE e.person_id = p.person_id) AS major,
-               (SELECT min(e.school_name) FROM education_record e
-                 WHERE e.person_id = p.person_id) AS school,
-               (SELECT d.hukou_province FROM person_demographics d
-                 WHERE d.person_id = p.person_id LIMIT 1) AS province,
-               (SELECT count(*) FROM skill_assertion s
-                 WHERE s.person_id = p.person_id) AS skills,
-               (SELECT count(*) FROM evidence ev WHERE ev.person_id = p.person_id) AS evs,
-               (SELECT max(m.score_total) FROM match_result m
-                 WHERE m.person_id = p.person_id) AS best_score
-          FROM person p%s ORDER BY p.person_id LIMIT %%(lim)s OFFSET %%(off)s""" % where, P2)
+    rows = q(c, "SELECT %s FROM person p%s ORDER BY %s LIMIT %%(lim)s OFFSET %%(off)s"
+             % (sel_list, where, order), P2)
 
     n_pages = max(1, (total + size - 1) // size)
 
-    def link(**kw):
-        p = dict(qs)
+    def qs_with(**kw):
+        p = {k: v[0] for k, v in qs.items() if v and v[0]}
         for k, v in kw.items():
-            p[k] = [str(v)]
-        return "/talent?" + urllib.parse.urlencode(
-            {k: v[0] for k, v in p.items() if v and v[0]})
+            p[k] = str(v)
+        return urllib.parse.urlencode(p)
 
+    # 表头：每一列都可点排序；当前排序列显示方向
+    cur_sort = (qs.get("sort", [""])[0] or "")
+    cur_dir = qs.get("dir", ["asc"])[0]
+    head = "".join(
+        '<th class="%s"><a href="/talent?%s" style="color:inherit">%s%s</a></th>'
+        % ("n" if x["fmt"] == "num" else "",
+           qs_with(sort=x["key"],
+                   dir=("asc" if (cur_sort == x["key"] and cur_dir == "desc") else "desc")),
+           esc(x["title"]),
+           (" ↓" if cur_sort == x["key"] and cur_dir == "desc"
+            else (" ↑" if cur_sort == x["key"] else "")))
+        for x in picked)
     body_rows = "".join(
-        '<tr><td><a href="/talent/%s"><code>%s</code></a></td>'
-        '<td>%s</td><td>%s</td><td>%s</td><td>%s</td>'
-        '<td class="n">%d</td><td class="n">%d</td><td class="n">%s</td></tr>'
-        % (urllib.parse.quote(r["person_id"]), esc(r["person_id"]),
-           "、".join(lbl("CT_DEGREE_LEVEL", x) for x in (r["degrees"] or [])) or
-           '<span class="nul">无教育记录</span>',
-           esc(r["major"] or ""), esc(trunc(r["school"], 24)), esc(r["province"] or ""),
-           r["skills"], r["evs"], esc(r["best_score"] or "—"))
+        "<tr>%s</tr>" % "".join(
+            '<td class="%s">%s</td>' % ("n" if x["fmt"] == "num" else "",
+                                        talent_cell(x, r))
+            for x in picked)
         for r in rows)
+    if not rows:
+        body_rows = ('<tr><td colspan="%d" class="muted" style="padding:14px">'
+                     '没有符合条件的人才。</td></tr>' % max(len(picked), 1))
+
+    # 列选择器：按分组排布复选框。纯 GET 表单 —— 零 JS，也不需要写权限。
+    picker_parts, on = [], set(cols)
+    for g in dict.fromkeys(x["group"] for x in TALENT_COLUMNS):
+        picker_parts.append('<div class="colgroup">%s</div>' % esc(g))
+        for x in TALENT_COLUMNS:
+            if x["group"] != g:
+                continue
+            dis = ' disabled title="行的身份，不能隐藏"' if x["key"] == "pid" else ""
+            picker_parts.append(
+                '<label><input type="checkbox" name="cols" value="%s"%s%s>%s</label>'
+                % (esc(x["key"]), " checked" if x["key"] in on else "", dis, esc(x["title"])))
+    preset_btns = "".join(
+        '<button type="submit" name="preset" value="%s" class="sec">%s</button>'
+        % (esc(n), esc(n)) for n in ("精简", "推荐", "教育", "能力", "成果", "匹配", "全部"))
 
     degs = q(c, "SELECT degree_level AS v, count(DISTINCT person_id) AS n "
                 "FROM education_record GROUP BY 1 ORDER BY 2 DESC")
@@ -1594,19 +1998,35 @@ def view_talent(c, qs) -> bytes:
 %s
 <div class="cards">%s</div>
 
-<div class="card"><form method="get" action="/talent" class="row">
-  <div><label>学历层次</label><select name="degree">%s</select></div>
-  <div><label>专业方向（模糊匹配）</label><select name="major">%s</select></div>
-  <div><label>户籍省份</label><select name="province">%s</select></div>
-  <div><label>能力（概念名或 ID）</label><input name="skill" value="%s" placeholder="如 临床诊疗 / CON-K1-CLIN"></div>
-  <div style="flex:0 0 100px"><button type="submit">筛选</button></div>
-  <div style="flex:0 0 100px"><a href="/talent"><button type="button" class="sec">重置</button></a></div>
+<div class="card"><form method="get" action="/talent">
+  <div class="row">
+    <div style="flex:2 1 180px"><label>学历层次</label><select name="degree">%s</select></div>
+    <div style="flex:2 1 180px"><label>专业方向（模糊匹配）</label><select name="major">%s</select></div>
+    <div style="flex:2 1 180px"><label>户籍省份</label><select name="province">%s</select></div>
+    <div style="flex:2 1 200px"><label>能力（概念名或 ID）</label>
+      <input name="skill" value="%s" placeholder="如 临床诊疗 / CON-K1-CLIN"></div>
+  </div>
+  <div style="margin-top:10px">
+    <div class="muted" style="margin-bottom:4px">显示字段（%d / %d）——勾选后点「筛选 / 应用」</div>
+    <div class="colpick">%s</div>
+    <div class="row" style="margin-top:8px">
+      <div style="flex:0 0 120px"><button type="submit">筛选 / 应用</button></div>
+      <div style="flex:0 0 110px"><a href="/talent"><button type="button" class="sec">重置</button></a></div>
+      <div style="flex:1 1 auto;text-align:right">%s</div>
+    </div>
+    <p class="muted">预设按钮直接换一套字段。<b>表格窗口可左右滑动</b>，表头吸顶、首列吸左——
+    宽表靠这两个 sticky 才读得下去。勾选状态跟着 URL 走（零 JS）。</p>
+  </div>
 </form></div>
 
-<div class="card"><h2>人才清单 <span class="muted">· 命中 %d 人，第 %d / %d 页</span></h2>
-<table><tr><th>person_id</th><th>学历</th><th>专业</th><th>院校</th><th>省份</th>
-<th class="n">能力主张</th><th class="n">证据</th><th class="n">最高匹配分</th></tr>%s</table>
-<div class="pager" style="margin-top:10px">%s</div></div>
+<div class="card"><h2>人才清单 <span class="muted">· 命中 %s 人，第 %d / %d 页 · %d 列</span>
+<span style="float:right"><a href="/talent.csv?%s">下载 CSV（当前 %d 列）</a></span></h2>
+<div class="tablewin"><table>
+<thead><tr>%s</tr></thead>
+<tbody>%s</tbody></table></div>
+<div class="pager" style="margin-top:10px">%s</div>
+<p class="muted">灰色斜体 <span class="nul">NULL</span> 表示该字段为空——这是"没有记录"，
+不是"值为 0"。<b>数据来源</b>列标出哪些行是合成数据；合成数据不对应任何真实个人。</p></div>
 
 %s
 %s
@@ -1615,12 +2035,17 @@ def view_talent(c, qs) -> bytes:
        sel("major", qs.get("major", [""])[0], majors, "全部专业"),
        sel("province", qs.get("province", [""])[0], provs, "全部省份"),
        esc(qs.get("skill", [""])[0]),
-       total, pg, n_pages, body_rows,
-       " ".join('<a href="%s">%d</a>' % (link(page=i), i)
-                for i in range(max(1, pg - 3), min(n_pages, pg + 3) + 1))
-       if n_pages > 1 else '<span class="muted">共 1 页</span>',
-       "".join(mini_analysis(c, t, s) for t, s in TALENT_ANALYSES[:3]),
-       "".join(mini_analysis(c, t, s) for t, s in TALENT_ANALYSES[3:]))
+       len(picked), len(TALENT_COLUMNS), "".join(picker_parts), preset_btns,
+       total, pg, n_pages, len(picked),
+       qs_with(cols=",".join(cols)), len(picked),
+       head, body_rows,
+       pager_links("/talent", qs, pg, n_pages),
+       analysis_panel([mini_analysis(c, t, s) for t, s in TALENT_ANALYSES],
+                      "分析这个人才库",
+                      "6 个分析实时查库，每个都给出它执行的 SQL。"
+                      "它们说的是**整库**口径，不受上面的筛选与字段选择影响——"
+                      "筛选改变的是「你看哪些行」，分析回答的是「这批人整体什么样」。"),
+       "")
     return page("人才库", body, subtitle="供给端 · 浏览 + 在线分析")
 
 
@@ -1710,6 +2135,17 @@ def view_talent_one(c, pid, qs) -> bytes:
 %s
 """ % (kv, len(sk), sk_html, len(mm), mm_html, win_html,
        "".join(blocks))
+    body += analysis_panel([
+        mini_analysis(c, "这个人的能力分布 vs 全库", """
+            SELECT c.preferred_label AS "能力", s.level AS "熟练度",
+                   s.transferability AS "可迁移性",
+                   (SELECT count(*) FROM skill_assertion x
+                     WHERE x.concept_id = s.concept_id) AS "全库具备人数"
+              FROM skill_assertion s JOIN concept c ON c.concept_id = s.concept_id
+             WHERE s.person_id = '{pid}' ORDER BY 4 DESC LIMIT 15""".format(pid=pid)),
+    ], "分析这份档案",
+        "看这个人的能力里哪些是「稀缺」的——全库具备人数越少越稀缺。"
+        "这比单纯列出能力更有用：能立刻看出他靠什么区别于其他人。")
     return page(pid, body, subtitle="人才档案 · 供给端实体页")
 
 
@@ -1725,7 +2161,7 @@ def view_occupations(c, qs) -> bytes:
         P["fam"] = fam
     if lvl:
         cond.append("o.level = %(lvl)s")
-        P["lvl"] = int(lvl)
+        P["lvl"] = _int_param(qs, "level", 0)
     where = " WHERE " + " AND ".join(cond)
     rows = q(c, """
         SELECT o.occupation_id, o.label_zh, o.level, o.family,
@@ -1821,7 +2257,9 @@ def view_occupations(c, qs) -> bytes:
         metric(f"{q1(c, 'SELECT count(*) FROM v_competency_current'):,}", "当前能力权重"),
         metric(f"{q1(c, 'SELECT count(*) FROM concept'):,}", "能力概念"),
     ]), fam_opts, lvl_opts, len(rows), body_rows,
-        "".join(mini_analysis(c, t, s) for t, s in AN))
+        analysis_panel([mini_analysis(c, t, s) for t, s in AN],
+                       "分析这个职业库",
+                       "6 个分析实时查库，每个都给出它执行的 SQL。"))
     return page("职业库", body, subtitle="需求端 · 浏览 + 在线分析")
 
 
@@ -1888,6 +2326,23 @@ def view_occupation_one(c, oid, qs) -> bytes:
 SELECT * FROM v_competency_current WHERE occupation_id = '%s';
 SELECT * FROM occupation_migration WHERE old_id = '%s' OR new_id = '%s';"""
                % (oid, oid, oid, oid)))
+    body += analysis_panel([
+        mini_analysis(c, "同族里其他职业要、而这个职业没要的能力", """
+            SELECT c.preferred_label AS "能力",
+                   count(DISTINCT w.occupation_id) AS "同族中几个职业要它",
+                   round(avg(w.importance), 3) AS "平均重要性"
+              FROM job_competency_weight w
+              JOIN occupation o2 ON o2.occupation_id = w.occupation_id
+              JOIN concept c ON c.concept_id = w.concept_id
+             WHERE w.valid_to IS NULL AND o2.family = '{fam}'
+               AND w.concept_id NOT IN (
+                   SELECT w2.concept_id FROM job_competency_weight w2
+                    WHERE w2.occupation_id = '{oid}' AND w2.valid_to IS NULL)
+             GROUP BY 1 ORDER BY 2 DESC, 3 DESC LIMIT 12""".format(
+            fam=(o["family"] or "").replace("'", "''"), oid=oid.replace("'", "''"))),
+    ], "分析这个职业",
+        "「同族有、这个职业没要」的能力，往往正是它区别于同族其他岗位的地方——"
+        "这比单看它要什么更能说明问题。")
     return page(o["label_zh"], body, subtitle="职业详情 · %s" % esc(oid))
 
 
@@ -2002,6 +2457,7 @@ def view_tree(c, qs) -> bytes:
         len(rows), tree_html,
         sql_box("SELECT * FROM occupation_asof('%s'::date) ORDER BY level, occupation_id;"
                 % (asof or "current_date")))
+    body += page_analysis(c, "/tree")
     return page("职业树", body, subtitle="层级浏览 + as-of 时间旅行")
 
 
@@ -2155,6 +2611,7 @@ def view_match(c, qs) -> bytes:
         else '<p class="muted">没有匹配批次。</p>',
         sql_box("""SELECT * FROM match_result WHERE person_id = '%s' ORDER BY rank;
 SELECT * FROM match_run ORDER BY started_at DESC;""" % who))
+    body += page_analysis(c, "/match")
     return page(title, body, subtitle="能力 ↔ 职业 · 三态可解释")
 
 
@@ -2162,7 +2619,6 @@ SELECT * FROM match_run ORDER BY started_at DESC;""" % who))
 # ⑭ 扩展与演化：三条扩展机制 + 职业树/能力的持续生长
 # ---------------------------------------------------------------------------
 def view_extend(c, qs) -> bytes:
-    m = meta()
     h = q(c, "SELECT * FROM v_evolution_health")[0]
     usage = {
         "attribute_definition": q1(c, "SELECT count(*) FROM attribute_definition"),
@@ -2277,22 +2733,14 @@ def view_extend(c, qs) -> bytes:
         f"{q1(c, 'SELECT count(*) FROM code_table'):,}",
         f"{q1(c, 'SELECT count(*) FROM code_value'):,}",
         f"{n_empty_ct:,}",
-        mini_analysis(c, "哪些代码表还没有取值", """
-            SELECT t.code_table_id AS "代码表", t.name AS "名称", t.status AS "状态"
-              FROM code_table t
-             WHERE NOT EXISTS (SELECT 1 FROM code_value v
-                                WHERE v.code_table_id = t.code_table_id)
-             ORDER BY 1""", show_sql=False),
+        "",
         f"{q1(c, 'SELECT count(*) FROM field_catalog'):,}", used("attribute_definition"),
         used("field_value"), used("category_node"), used("first_occurrence"),
         len(form),
         render_rows(None, list(form[0].keys()), form[:12], maxlen=40) if form
         else '<p class="muted">（空）</p>',
         f"{usage['assertion']:,}",
-        mini_analysis(c, "断言的 predicate 分布", """
-            SELECT predicate AS "谓词", subject_type AS "主体类型",
-                   count(*) AS "条数", count(*) FILTER (WHERE status='active') AS "有效"
-              FROM assertion GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 15""", show_sql=False),
+        "",
         f"{usage['occupation_candidate']:,}", f"{usage['concept_candidate']:,}",
         used("occupation_migration"), used("occupation_change"),
         f"{h['active_nodes']:,}", f"{h['retired_nodes']:,}",
@@ -2303,6 +2751,24 @@ def view_extend(c, qs) -> bytes:
         f"{q1(c, 'SELECT count(*) FROM v_competency_current'):,}",
         f"{q1(c, 'SELECT count(*) FROM job_competency_weight'):,}",
         f"{usage['evolution_policy']:,}",
+        "",
+        api_html,
+        sql_box("""-- 三条机制的入口函数
+SELECT mt.add_dimension('person','F_X','新维度','[{"code":"A1","label":"选项一"}]'::jsonb);
+SELECT mt.create_instance('person','per_001','{"person_id":"per_001"}'::jsonb);
+SELECT mt.set_value('person','per_001','F_X','A1');
+SELECT * FROM mt.form_schema('person');"""))
+    body += analysis_panel([
+        mini_analysis(c, "哪些代码表还没有取值", """
+            SELECT t.code_table_id AS "代码表", t.name AS "名称", t.status AS "状态"
+              FROM code_table t
+             WHERE NOT EXISTS (SELECT 1 FROM code_value v
+                                WHERE v.code_table_id = t.code_table_id)
+             ORDER BY 1"""),
+        mini_analysis(c, "断言的 predicate 分布", """
+            SELECT predicate AS "谓词", subject_type AS "主体类型",
+                   count(*) AS "条数", count(*) FILTER (WHERE status='active') AS "有效"
+              FROM assertion GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 15"""),
         mini_analysis(c, "能力漂移（最近版本，非稳定项）", """
             SELECT d.drift_type AS "漂移类型", o.label_zh AS "职业",
                    c.preferred_label AS "能力", d.from_importance AS "上版",
@@ -2313,13 +2779,9 @@ def view_extend(c, qs) -> bytes:
              WHERE d.drift_type <> 'stable'
                AND d.to_run_id = (SELECT run_id FROM competency_run
                                    ORDER BY created_at DESC LIMIT 1)
-             ORDER BY abs(coalesce(d.delta,0)) DESC LIMIT 12""", show_sql=False),
-        api_html,
-        sql_box("""-- 三条机制的入口函数
-SELECT mt.add_dimension('person','F_X','新维度','[{"code":"A1","label":"选项一"}]'::jsonb);
-SELECT mt.create_instance('person','per_001','{"person_id":"per_001"}'::jsonb);
-SELECT mt.set_value('person','per_001','F_X','A1');
-SELECT * FROM mt.form_schema('person');"""))
+             ORDER BY abs(coalesce(d.delta,0)) DESC LIMIT 12"""),
+    ], "分析这个演化层",
+        "三个分析分别看：词表有没有空壳、断言缓冲里堆了什么、能力需求最近一版漂了多少。")
     return page("扩展与演化", body, subtitle="结构能长 · 而且真的在长")
 
 
@@ -2378,7 +2840,6 @@ def view_quality(c, qs) -> bytes:
         for name, sqltext in inv)
 
     # 岗位侧质量门（与 code/gates/jd_quality_gate.py 同口径）
-    from collections import Counter
     gate = q(c, """
         SELECT count(*) AS jd,
                count(DISTINCT job_family) AS fams,
@@ -2401,11 +2862,13 @@ def view_quality(c, qs) -> bytes:
     audit = q(c, """SELECT object_type AS 对象类型, object_name AS 对象,
                            count(*) AS 变更次数, max(at) AS 最近
                       FROM change_log GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 15""")
-    bk = q(c, "SELECT * FROM v_backup_health")[0] if q(c, "SELECT * FROM v_backup_health") else {}
+    bk_rows = q(c, "SELECT * FROM v_backup_health")   # 原先这条查询跑了两次
+    bk = bk_rows[0] if bk_rows else {}
     pol = q(c, "SELECT * FROM access_policy ORDER BY object_type, object_id LIMIT 20")
     rel = q(c, "SELECT release_id, name, version, status, doc_codebook_uri FROM dataset_release")
     n_cons = q1(c, "SELECT count(*) FROM pg_constraint x JOIN pg_namespace n "
                    "ON n.oid = x.connamespace WHERE n.nspname = %s", (SCHEMA,))
+    cl_n = q1(c, "SELECT count(*) FROM change_log")   # 页面上两处要用同一个数
 
     body = """
 <div class="sub">"成熟"不是形容词，是一组可核的数字：结构完整性、列填充率、映射覆盖率、
@@ -2453,7 +2916,7 @@ def view_quality(c, qs) -> bytes:
 </div>
 %s
 """ % ("".join([
-        metric(f"{q1(c, 'SELECT count(*) FROM change_log'):,}", "审计流水行数"),
+        metric(f"{cl_n:,}", "审计流水行数"),
         metric(f"{len(filled)}/{len(tables)}", "非空表"),
         metric(f"{cov}%", "概念映射覆盖率", "目标 ≥70%"),
         metric(f"{n_cons:,}", "约束总数"),
@@ -2470,7 +2933,7 @@ def view_quality(c, qs) -> bytes:
         render_rows(None, list(worst[0].keys()), worst, maxlen=30) if worst else "",
         render_rows(None, list(audit[0].keys()), audit, maxlen=34) if audit
         else '<p class="muted">（无）</p>',
-        f"{q1(c, 'SELECT count(*) FROM change_log'):,}",
+        f"{cl_n:,}",
         render_rows(None, list(bk.keys()), [bk], maxlen=40) if bk else "<tr><td>（无）</td></tr>",
         render_rows(None, list(pol[0].keys()), pol, maxlen=40) if pol
         else '<p class="muted">（无策略）</p>',
@@ -2584,6 +3047,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, view_sql(c, qs))
                 if path == "/talent":
                     return self._send(200, view_talent(c, qs))
+                if path == "/talent.csv":
+                    return self._send(200, talent_csv(c, qs), "text/csv; charset=utf-8",
+                                      {"Content-Disposition":
+                                       'attachment; filename="talent.csv"'})
                 if path == "/occupations":
                     return self._send(200, view_occupations(c, qs))
                 if path == "/tree":
@@ -2603,7 +3070,11 @@ class Handler(BaseHTTPRequestHandler):
                         return self._send(200, V.view_viz(c, qs))
                     if path == "/viz/build":
                         return self._send(200, V.view_build(c, qs))
+                    # 顺序要紧：/viz/build.csv 也匹配下面的面板正则（group="build"），
+                    # 必须先在这里处理，否则会被当成"未知面板 build"。
                     if path == "/viz/build.csv":
+                        # build_csv 同样会经 build_sql 做目录校验；它的 PortalError
+                        # 由外层统一的 PortalError 分支接住（这里已在 try 内）。
                         return self._send(200, V.build_csv(c, qs), "text/csv; charset=utf-8",
                                           {"Content-Disposition":
                                            'attachment; filename="build.csv"'})
@@ -2665,12 +3136,7 @@ class Handler(BaseHTTPRequestHandler):
         cols = [x["column_name"] for x in m["cols"].get(name, [])]
         fcol = qs.get("col", [""])[0]
         fval = qs.get("val", [""])[0]
-        where = sql.SQL("")
-        params = []
-        if fcol and fval:
-            require_column(name, fcol)
-            where = sql.SQL(" WHERE {} = %s").format(sql.Identifier(fcol))
-            params.append(fval)
+        where, params = browse_where(name, fcol, fval)
         rows = q(c, sql.SQL("SELECT * FROM {}.{}{}").format(
             sql.Identifier(SCHEMA), sql.Identifier(name), where), params)
         return to_csv(cols, rows)

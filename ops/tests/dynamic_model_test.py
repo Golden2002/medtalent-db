@@ -27,27 +27,15 @@ import psycopg  # noqa: E402
 from psycopg.rows import dict_row  # noqa: E402
 
 sys.stdout.reconfigure(encoding="utf-8")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _harness as H  # noqa: E402
 
 DSN = ("host=127.0.0.1 port=55432 dbname=medtalent user=postgres "
        "client_encoding=UTF8 options='-c search_path=mt,public'")
 
-PASS, FAIL = [], []
+PASS, FAIL = H.PASS, H.FAIL
 TIMINGS = {}
-
-
-def ok(msg):
-    PASS.append(msg)
-    print("  [PASS] " + msg)
-
-
-def fail(msg):
-    FAIL.append(msg)
-    print("  [FAIL] " + msg)
-
-
-def check(cond, msg):
-    (ok if cond else fail)(msg)
-    return cond
+check, ok, fail = H.check, H.ok, H.fail
 
 
 def one(cur, sql, params=None):
@@ -317,12 +305,13 @@ def main():
     check(after["entities"] - base["entities"] == 1, "新增 1 个已登记实体")
 
     conn.rollback()
-    print("\n" + "=" * 78)
-    print("结果：PASS %d 项，FAIL %d 项   （事务已回滚，库中无残留）" % (len(PASS), len(FAIL)))
-    print("耗时：新增维度 %.1f ms；批量创建 20 行 %.1f ms（%.2f ms/行）"
-          % (TIMINGS["add_dimension"], TIMINGS["insert_20"], TIMINGS["insert_20"] / 20))
-    print("=" * 78)
-    return 1 if FAIL else 0
+
+    def _timing():
+        print("耗时：新增维度 %.1f ms；批量创建 20 行 %.1f ms（%.2f ms/行）"
+              % (TIMINGS["add_dimension"], TIMINGS["insert_20"],
+                 TIMINGS["insert_20"] / 20))
+
+    return H.report(note="（事务已回滚，库中无残留）", extra=_timing)
 
 
 if __name__ == "__main__":

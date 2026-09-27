@@ -27,21 +27,15 @@ sys.path.insert(0, os.path.join(BASE, "code", "demo"))
 sys.path.insert(0, os.path.join(BASE, "code", "bridge"))
 sys.path.insert(0, os.path.join(BASE, "code"))
 
-import psycopg  # noqa: E402
-from psycopg.rows import dict_row  # noqa: E402
-
 import console as con  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _harness as H  # noqa: E402
 
 sys.stdout.reconfigure(encoding="utf-8")
 PORT = 8095
 ROOT = "http://127.0.0.1:%d" % PORT
-PASS, FAIL = [], []
-
-
-def check(cond, msg):
-    (PASS if cond else FAIL).append(msg)
-    print(("  [PASS] " if cond else "  [FAIL] ") + msg)
-    return cond
+PASS, FAIL = H.PASS, H.FAIL
+check, q1 = H.check, H.q1
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -53,14 +47,7 @@ OPENER = urllib.request.build_opener(NoRedirect)
 
 
 def db():
-    return psycopg.connect(con.DSN, row_factory=dict_row)
-
-
-def q1(c, sql, p=None):
-    with c.cursor() as cur:
-        cur.execute(sql, p)
-        r = cur.fetchone()
-        return list(r.values())[0] if r else None
+    return H.connect(con.DSN)
 
 
 def get(path):
@@ -242,10 +229,7 @@ def main():
     finally:
         srv.shutdown()
 
-    print("\n" + "=" * 78)
-    print("结果：PASS %d 项，FAIL %d 项" % (len(PASS), len(FAIL)))
-    print("=" * 78)
-    return 1 if FAIL else 0
+    return H.report()
 
 
 if __name__ == "__main__":

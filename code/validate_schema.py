@@ -222,10 +222,6 @@ def main(root):
     def norm(n):
         return n.split(".")[-1]
 
-    seen_order = set()
-    idx = 0
-    for fname in files:
-        pass
     # 按语句顺序重放：用 defined 的顺序列表近似（同文件内按出现顺序）
     order_index = {}
     for i, name in enumerate(order):

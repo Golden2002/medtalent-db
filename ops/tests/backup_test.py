@@ -27,27 +27,17 @@ import psycopg  # noqa: E402
 from psycopg.rows import dict_row  # noqa: E402
 
 import backup as bk  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _harness as H  # noqa: E402
 
 sys.stdout.reconfigure(encoding="utf-8")
 DSN = bk.DSN
-PASS, FAIL = [], []
-
-
-def check(cond, msg):
-    (PASS if cond else FAIL).append(msg)
-    print(("  [PASS] " if cond else "  [FAIL] ") + msg)
-    return cond
+PASS, FAIL = H.PASS, H.FAIL
+check, q1 = H.check, H.q1
 
 
 def db():
-    return psycopg.connect(DSN, row_factory=dict_row)
-
-
-def q1(c, sql, p=None):
-    with c.cursor() as cur:
-        cur.execute(sql, p)
-        r = cur.fetchone()
-        return list(r.values())[0] if r else None
+    return H.connect(DSN)
 
 
 def main():
@@ -204,10 +194,7 @@ def main():
             c.commit()
     print("    已删除测试备份：%s" % "、".join(sorted(set(made))))
 
-    print("\n" + "=" * 78)
-    print("结果：PASS %d 项，FAIL %d 项" % (len(PASS), len(FAIL)))
-    print("=" * 78)
-    return 1 if FAIL else 0
+    return H.report()
 
 
 if __name__ == "__main__":
