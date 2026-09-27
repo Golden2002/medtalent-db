@@ -558,8 +558,11 @@ def view_intake(c, msg="", kind="note") -> bytes:
                 parts.append('<input type="number" step="any" name="%s">' % fid)
             else:
                 parts.append('<input type="text" name="%s">' % fid)
+    # "清空"用链接而不是 `<button onclick="location.href=…">`：
+    # 业务控制台虽然不在"两个门户站点"的名下，但同一个仓库里出现内联 JS，
+    # 就会让"零 JS"这句话变成需要加限定条件的说法 —— 那还不如把这一行改掉。
     parts.append('<div style="margin-top:16px"><button type="submit">提交并写入数据库</button>'
-                 ' <button class="sec" type="button" onclick="location.href=\'/intake\'">清空</button></div>')
+                 ' <a class="btnlink sec" href="/intake">清空</a></div>')
     parts.append("</form></div>")
 
     people = q(c, """SELECT p.person_id, p.subject_code,

@@ -352,6 +352,15 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .tscroll table{table-layout:auto}
 .kv>div:nth-child(even){white-space:normal;word-break:break-word}
 .tscroll{overflow:auto;max-height:620px;border:1px solid #e6e8eb;border-radius:6px}
+/* `.tscroll` 也要吸左首列。原来只有 `.tablewin` 有（人才库走的正是它），
+   而全库最宽的表 `job_posting`（实测 41 列）走的是 `.tscroll` ——
+   横向滑动时看不见"这是哪一行"，多列就等于没有。
+   同一套需求在两处容器上只实现了一处，看到的人才库能读、点进表页面就又不能读了。 */
+.tscroll thead th{position:sticky;top:0;z-index:3;background:#f6f8fa}
+.tscroll th:first-child,.tscroll td:first-child{position:sticky;left:0;z-index:2;
+                          background:#fff;box-shadow:1px 0 0 #e6e8eb}
+.tscroll thead th:first-child{z-index:4;background:#f6f8fa}
+.tscroll tbody tr:hover td:first-child{background:#fbfcfd}
 /* 数据窗口：横向 + 纵向都在窗口内滑动，表头吸顶、首列吸左。
    为什么首列也要吸：横向滑动时如果连"这是哪一行"都看不见，多列就等于没有。
    宽表（人才库 30 列）靠这两个 sticky 才读得下去。 */
@@ -1373,9 +1382,14 @@ def view_analyze(c, qs, aid=None, want_csv=False):
         return to_csv(cols, rows)
 
     cols = list(rows[0].keys()) if rows else []
+    # 右对齐判据用**值本身的类型**，不要猜中文列名。
+    # 原写法 `any(k in cn for k in ("数","率","量",…))` 会猜错两个方向：
+    # 列名带"较上年""分类"的非数值列被误判成数值列；
+    # 真正的数值列只要名字里没这些字就右对齐不了。
+    # 分析结果集来自任意 SQL，拿不到 information_schema 的类型，所以看返回值 ——
+    # 列名是给人看的，类型是数据库给的。
     n_right = tuple(cn for cn in cols
-                    if any(k in cn for k in ("数", "率", "量", "重要性", "变化", "上", "下",
-                                             "可信度", "%", "样本")))
+                    if any(is_numeric_value(r.get(cn)) for r in rows[:20]))
     nav = " · ".join('<a href="/analyze/%s">%s</a>' % (x[0], esc(x[1]))
                      for x in ANALYSES if x[0] != aid)
     chart = auto_chart(cols, rows)
@@ -1718,6 +1732,20 @@ def page_analysis(c, page, ctx=None) -> str:
     return analysis_panel(b, "分析", "分析的对象就是这一页展示的东西，所以它长在这一页上。")
 
 
+def is_numeric_value(v) -> bool:
+    """值本身是不是数字。比猜列名可靠：列名是给人看的，类型是数据库给的。
+
+    `mini_analysis` 跑的是**任意 SQL**，拿不到 information_schema 的 data_type，
+    所以只能看返回值。这也比"列名里有没有『数』『分』"这种猜测准 ——
+    原来的写法会把「较上年」「分类」误判成数值列，也会漏掉名字里没这些字的数值列。
+    """
+    if v is None or isinstance(v, bool):
+        return False
+    if isinstance(v, (int, float)):
+        return True
+    return type(v).__name__ == "Decimal"
+
+
 def mini_analysis(c, title, sqltext, maxlen=60, show_sql=True) -> str:
     """跑一段分析 SQL 并渲染成卡片；卡片底部给出这段 SQL 本身。"""
     try:
@@ -1727,7 +1755,7 @@ def mini_analysis(c, title, sqltext, maxlen=60, show_sql=True) -> str:
                 % (esc(title), esc(str(e).splitlines()[0]), sql_box(sqltext)))
     cols = list(rows[0].keys()) if rows else []
     n_right = tuple(cn for cn in cols
-                    if any(k in cn for k in ("数", "率", "量", "均", "分", "人", "%", "比", "级")))
+                    if any(is_numeric_value(r.get(cn)) for r in rows[:20]))
     body = (render_rows(None, cols, rows, maxlen=maxlen, n_right=n_right) if rows
             else '<p class="muted">（0 行）——当前库里没有符合这个口径的数据。</p>')
     return ('<div class="card"><h2>%s <span class="muted">· %d 行</span></h2>%s%s</div>'
@@ -2868,7 +2896,26 @@ SELECT * FROM occupation_migration WHERE old_id = '%s' OR new_id = '%s';"""
 # ⑫ 职业树浏览器（含 as-of 时间旅行）
 # ---------------------------------------------------------------------------
 def view_tree(c, qs) -> bytes:
-    asof = qs.get("asof", [""])[0]
+    # `asof` 是用户输入，**必须先校验再进 SQL**。原来直接拼进 `%s::date`：
+    # 传 `?asof=昨天` 会让 PostgreSQL 抛参数类型错误，而那是在**取数之后**才发生的，
+    # 表现出来是"连接被重置"（连 4xx 都拿不到）—— 同一文件 `_int_param` 的说明里
+    # 早写过这个现象，只是这里没有照做。
+    asof = (qs.get("asof", [""])[0] or "").strip()
+    if asof:
+        # 用 Python 的 date.fromisoformat 校验，**不要**交给数据库去试：
+        # 正则只挡形状，`2026-13-99` 这种形状对、日期错的仍会让 PostgreSQL 抛错，
+        # 而那时的表现是 500 / 连接被重置，用户看不到原因（实测过）。
+        import datetime as _dt
+        try:
+            _dt.date.fromisoformat(asof)
+        except ValueError:
+            asof_bad, asof = asof, ""
+            return page("职业树", '<div class="note err"><b>as-of 日期不合法：</b>'
+                        '<code>%s</code>。请用 <code>YYYY-MM-DD</code>（例如 '
+                        '<code>2026-01-01</code>）。这里在应用层校验而不是直接丢给数据库，'
+                        '是因为数据库报错会表现为 500 或连接被重置，看不到原因。</div>'
+                        '<p><a href="/tree">回到当前时点</a></p>'
+                        % esc(asof_bad), subtitle="时间旅行")
     if asof:
         rows = q(c, "SELECT * FROM occupation_asof(%s::date)", (asof,))
         src = "occupation_asof('%s')" % asof
@@ -2976,7 +3023,11 @@ def view_tree(c, qs) -> bytes:
         sql_box("SELECT * FROM occupation_asof('%s'::date) ORDER BY level, occupation_id;"
                 % (asof or "current_date")))
     body += page_analysis(c, "/tree")
-    return page("职业树", body, subtitle="层级浏览 + as-of 时间旅行")
+    # as-of 日期进页头：它只在 KPI 说明位和 SQL 块里出现过，
+    # 截图或收藏这一页时看不出"这是哪一天的树" —— 而这一页的全部意义就是时间旅行。
+    return page("职业树", body,
+                subtitle="层级浏览 + as-of 时间旅行 · 当前视图：%s"
+                         % (asof or "当前时点"), crumbs=[("/tree", "职业树")])
 
 
 # ---------------------------------------------------------------------------
@@ -3580,6 +3631,13 @@ def view_quality(c, qs) -> bytes:
     null_rows.sort(key=lambda x: (-x["空值率%"], x["表"], x["列"]))
     worst = null_rows[:25]
 
+    # 空表清单：**逐表精确 count(*)**。曾经这里是拿 `pg_class.reltuples = 0` 判的，
+    # 而 reltuples 是估算值 —— 本文件另外 3 处出现 reltuples 全都是在说"不要用它"，
+    # README 的设计纪律第 6 条也明令禁止。在一个自称"可核的数字"的页面上
+    # 给出估算口径的 SQL，是自己打自己的脸（由 docs/17 的调研查出）。
+    empty = [t for t in sorted(meta()["by_name"])
+             if q1(c, 'SELECT count(*) AS n FROM mt."%s"' % t.replace('"', '""')) == 0]
+
     # 完整性不变量（与 ops/tests/regression_guards.sql 的 11–13 号同口径）
     inv = [
         ("变更记录不得有悬空 to_ids",
@@ -3708,10 +3766,11 @@ def view_quality(c, qs) -> bytes:
         render_rows(None, list(rel[0].keys()), rel, maxlen=34) if rel else
         ('<p class="muted">还没有发布记录。<b>按设计：没有 codebook 就不发布</b>——'
          '这条规则由 <code>dataset_release</code> 上的 CHECK 约束执行。</p>'),
-        sql_box("""-- 空表清单
-SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
- WHERE n.nspname='mt' AND c.relkind='r' AND c.reltuples = 0;
--- 完整性不变量见 ops/tests/regression_guards.sql"""))
+        sql_box("""-- 空表清单：逐表精确计数（**不是** pg_class.reltuples 估算）
+SELECT count(*) AS n FROM mt.<每张基础表>;   -- 在应用层逐表执行，n = 0 即计入
+-- 本次实测空表 %d 张：%s
+-- 完整性不变量见 ops/tests/regression_guards.sql""" % (
+            len(empty), "、".join(empty[:8]) if empty else "无")))
     return page("数据质量", body, subtitle="可核的数字，不是形容词")
 
 

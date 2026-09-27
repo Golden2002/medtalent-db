@@ -513,6 +513,42 @@ def main():
               % bd2.count("F_PSN_"))
 
         # ===============================================================
+        print("\n【T17】两条「宣称」必须变成可断言的性质（不是文案）")
+        # 起因：docs/17 的调研发现两处"说的和做的不一致"——
+        #   ① 页面宣称"零 JS"，但 /viz/build 的表单上有 onchange="this.form.submit()"，
+        #      而当时的测试只断言页面**写着**"零 JS"（守的是广告词，不是性质）；
+        #   ② /quality 自称"可核 SQL"，但那段 SQL 用的是 pg_class.reltuples 估算，
+        #      而项目自己的设计纪律明令禁止 reltuples（README 第 6 条，portal.py 里
+        #      另 3 处出现 reltuples 也全是在说"不要用它"）。
+        # 断言必须是**关于页面本身的**，否则同类问题还会再犯。
+        pages = ["/", "/viz", "/viz/build", "/quality", "/talent", "/tree", "/match",
+                 "/real", "/schema", "/t/", "/e/", "/search", "/analyze", "/sql",
+                 "/lineage", "/extend", "/occupations", "/dev"]
+        bad_js, bad_rt = [], []
+        for p in pages:
+            st, body = get(p)
+            if st != 200:
+                continue
+            low = body.lower()
+            for pat in ("<script", "onchange=", "onclick=", "onload=",
+                        'oninput=', "javascript:"):
+                if pat in low:
+                    bad_js.append("%s→%s" % (p, pat))
+            # 只有当 reltuples 出现在**可执行部分**（非注释行）才算问题：
+            # 解释性文字里写"我们不用 reltuples"是正当的，而且应该保留 ——
+            # 断言要盯的是"拿它当判据"，不是"提到它"。
+            for blk in re.findall(r"<pre[^>]*>(.*?)</pre>", body, re.S):
+                code_only = "\n".join(ln for ln in blk.splitlines()
+                                      if not ln.strip().startswith("--"))
+                if "reltuples" in code_only:
+                    bad_rt.append(p)
+                    break
+        check(not bad_js, "两个站点没有任何内联 JS / 事件处理器（违规：%s）"
+              % ("；".join(bad_js[:4]) or "无"))
+        check(not bad_rt, "没有任何页面把 reltuples 估算当成可核 SQL 展示（违规：%s）"
+              % ("；".join(sorted(set(bad_rt))) or "无"))
+
+        # ===============================================================
         print("\n【T16】开发者模式入口（需求 ⑤）")
         st, body = get("/dev")
         check(st == 200, "/dev 返回 200")

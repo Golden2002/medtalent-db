@@ -562,7 +562,7 @@ def view_build(c, qs) -> bytes:
 <div class="card"><form method="get" action="/viz/build">
   <div class="row">
     <div style="flex:2 1 220px"><label>表 / 视图</label>
-      <select name="t" onchange="this.form.submit()">%s</select></div>
+      <select name="t">%s</select></div>
     <div style="flex:2 1 200px"><label>维度（分组列）</label>
       <select name="dim"><option value="">（请选择）</option>%s</select></div>
     <div style="flex:2 1 200px"><label>度量列</label>
