@@ -376,3 +376,210 @@ CT_CAREER_GOAL,CG5,数据与算法,Data & Algorithms,,1,50,,{}
 CT_CAREER_GOAL,CG6,公共部门,Public Sector,,1,60,,{}
 CT_CAREER_GOAL,CG7,学术科研,Academia,,1,70,,{}
 CT_CAREER_GOAL,CG8,创业/自由职业,Entrepreneur / Freelance,,1,80,,{}
+CT_AGE_BAND,AG1,25岁以下,Under 25,,1,10,,{}
+CT_AGE_BAND,AG2,25-29岁,25-29,,1,20,,{}
+CT_AGE_BAND,AG3,30-34岁,30-34,,1,30,,{}
+CT_AGE_BAND,AG4,35-39岁,35-39,,1,40,,{}
+CT_AGE_BAND,AG5,40-44岁,40-44,,1,50,,{}
+CT_AGE_BAND,AG6,45岁及以上,45+,,1,60,,{}
+CT_AGE_BAND,AG9,未提供,Not Provided,,1,90,,{}
+CT_ASSESSMENT_DIMENSION,AD1,逻辑推理,Logical Reasoning,,1,10,,{}
+CT_ASSESSMENT_DIMENSION,AD2,数据分析,Data Analysis,,1,20,,{}
+CT_ASSESSMENT_DIMENSION,AD3,沟通表达,Communication,,1,30,,{}
+CT_ASSESSMENT_DIMENSION,AD4,学习敏捷度,Learning Agility,,1,40,,{}
+CT_ASSESSMENT_DIMENSION,AD5,抗压与情绪稳定,Stress Resilience,,1,50,,{}
+CT_ASSESSMENT_DIMENSION,AD6,团队协作,Teamwork,,1,60,,{}
+CT_ASSESSMENT_DIMENSION,AD7,数字素养,Digital Literacy,,1,70,,{}
+CT_ASSESSMENT_DIMENSION,AD8,英语读写,English Literacy,,1,80,,{}
+CT_AWARD_LEVEL,AW1,国家级,National,,1,10,与现有原值「国家级」对应,{}
+CT_AWARD_LEVEL,AW2,省部级,Provincial or Ministerial,,1,20,与现有原值「省级」对应,{}
+CT_AWARD_LEVEL,AW3,市级,Municipal,,1,30,,{}
+CT_AWARD_LEVEL,AW4,校级或院级,University or School,,1,40,与现有原值「校级」对应,{}
+CT_AWARD_LEVEL,AW5,学会或协会,Society or Association,,1,50,,{}
+CT_AWARD_LEVEL,AW6,企业或机构奖,Corporate or Institutional,,1,60,,{}
+CT_CITY,RG1,华北,North China,,1,10,,{}
+CT_CITY,RG2,华东,East China,,1,20,,{}
+CT_CITY,RG3,华南,South China,,1,30,,{}
+CT_CITY,RG4,华中,Central China,,1,40,,{}
+CT_CITY,RG5,西南,Southwest China,,1,50,,{}
+CT_CITY,RG6,西北,Northwest China,,1,60,,{}
+CT_CITY,RG7,东北,Northeast China,,1,70,,{}
+CT_CITY,RG8,海外,Overseas,,1,80,,{}
+CT_CITY,RG9,其他,Other,,1,90,,{}
+CT_CITY,CTY01,北京,Beijing,RG1,2,110,,{}
+CT_CITY,CTY02,天津,Tianjin,RG1,2,120,,{}
+CT_CITY,CTY03,石家庄,Shijiazhuang,RG1,2,130,,{}
+CT_CITY,CTY04,太原,Taiyuan,RG1,2,140,,{}
+CT_CITY,CTY05,上海,Shanghai,RG2,2,150,,{}
+CT_CITY,CTY06,南京,Nanjing,RG2,2,160,,{}
+CT_CITY,CTY07,苏州,Suzhou,RG2,2,170,,{}
+CT_CITY,CTY08,无锡,Wuxi,RG2,2,180,,{}
+CT_CITY,CTY09,杭州,Hangzhou,RG2,2,190,,{}
+CT_CITY,CTY10,宁波,Ningbo,RG2,2,200,,{}
+CT_CITY,CTY11,合肥,Hefei,RG2,2,210,,{}
+CT_CITY,CTY12,济南,Jinan,RG2,2,220,,{}
+CT_CITY,CTY13,青岛,Qingdao,RG2,2,230,,{}
+CT_CITY,CTY14,福州,Fuzhou,RG2,2,240,,{}
+CT_CITY,CTY15,厦门,Xiamen,RG2,2,250,,{}
+CT_CITY,CTY16,广州,Guangzhou,RG3,2,260,,{}
+CT_CITY,CTY17,深圳,Shenzhen,RG3,2,270,,{}
+CT_CITY,CTY18,佛山,Foshan,RG3,2,280,,{}
+CT_CITY,CTY19,东莞,Dongguan,RG3,2,290,,{}
+CT_CITY,CTY20,武汉,Wuhan,RG4,2,300,,{}
+CT_CITY,CTY21,长沙,Changsha,RG4,2,310,,{}
+CT_CITY,CTY22,郑州,Zhengzhou,RG4,2,320,,{}
+CT_CITY,CTY23,南昌,Nanchang,RG4,2,330,,{}
+CT_CITY,CTY24,成都,Chengdu,RG5,2,340,,{}
+CT_CITY,CTY25,重庆,Chongqing,RG5,2,350,,{}
+CT_CITY,CTY26,昆明,Kunming,RG5,2,360,,{}
+CT_CITY,CTY27,贵阳,Guiyang,RG5,2,370,,{}
+CT_CITY,CTY28,西安,Xian,RG6,2,380,,{}
+CT_CITY,CTY29,兰州,Lanzhou,RG6,2,390,,{}
+CT_CITY,CTY30,乌鲁木齐,Urumqi,RG6,2,400,,{}
+CT_CITY,CTY31,沈阳,Shenyang,RG7,2,410,,{}
+CT_CITY,CTY32,大连,Dalian,RG7,2,420,,{}
+CT_CITY,CTY33,长春,Changchun,RG7,2,430,,{}
+CT_CITY,CTY34,哈尔滨,Harbin,RG7,2,440,,{}
+CT_CITY,CTY35,海外城市,Overseas City,RG8,2,450,,{}
+CT_CITY,CTY99,其他城市,Other City,RG9,2,460,,{}
+CT_CLINICAL_DEPARTMENT,DP01,内科,General Internal Medicine,,1,10,,{}
+CT_CLINICAL_DEPARTMENT,DP02,外科,General Surgery,,1,20,,{}
+CT_CLINICAL_DEPARTMENT,DP03,妇产科,Obstetrics & Gynecology,,1,30,,{}
+CT_CLINICAL_DEPARTMENT,DP04,儿科,Pediatrics,,1,40,,{}
+CT_CLINICAL_DEPARTMENT,DP05,急诊科,Emergency Medicine,,1,50,,{}
+CT_CLINICAL_DEPARTMENT,DP06,重症医学科,Critical Care,,1,60,,{}
+CT_CLINICAL_DEPARTMENT,DP07,麻醉科,Anesthesiology,,1,70,,{}
+CT_CLINICAL_DEPARTMENT,DP08,骨科,Orthopedics,,1,80,,{}
+CT_CLINICAL_DEPARTMENT,DP09,神经内科,Neurology,,1,90,,{}
+CT_CLINICAL_DEPARTMENT,DP10,神经外科,Neurosurgery,,1,100,,{}
+CT_CLINICAL_DEPARTMENT,DP11,心血管内科,Cardiology,,1,110,,{}
+CT_CLINICAL_DEPARTMENT,DP12,心血管外科,Cardiac Surgery,,1,120,,{}
+CT_CLINICAL_DEPARTMENT,DP13,呼吸与危重症医学科,Pulmonary & Critical Care,,1,130,,{}
+CT_CLINICAL_DEPARTMENT,DP14,消化内科,Gastroenterology,,1,140,,{}
+CT_CLINICAL_DEPARTMENT,DP15,内分泌科,Endocrinology,,1,150,,{}
+CT_CLINICAL_DEPARTMENT,DP16,肿瘤科,Oncology,,1,160,,{}
+CT_CLINICAL_DEPARTMENT,DP17,影像科与放射科,Radiology,,1,170,,{}
+CT_CLINICAL_DEPARTMENT,DP18,超声医学科,Ultrasound,,1,180,,{}
+CT_CLINICAL_DEPARTMENT,DP19,核医学科,Nuclear Medicine,,1,190,,{}
+CT_CLINICAL_DEPARTMENT,DP20,检验科与病理科,Laboratory & Pathology,,1,200,,{}
+CT_CLINICAL_DEPARTMENT,DP21,口腔科,Stomatology,,1,210,,{}
+CT_CLINICAL_DEPARTMENT,DP22,中医科与针灸推拿,TCM & Acupuncture,,1,220,,{}
+CT_CLINICAL_DEPARTMENT,DP23,药学与临床药学,Pharmacy,,1,230,,{}
+CT_CLINICAL_DEPARTMENT,DP24,护理单元,Nursing Unit,,1,240,,{}
+CT_CLINICAL_DEPARTMENT,DP25,全科与社区卫生,General Practice & Community,,1,250,,{}
+CT_CLINICAL_DEPARTMENT,DP26,临床试验病房,Clinical Trial Ward,,1,260,,{}
+CT_CLINICAL_DEPARTMENT,DP27,手术室,Operating Room,,1,270,现有数据里出现 6 次,{}
+CT_CLINICAL_DEPARTMENT,DP28,病区（未细分）,General Ward,,1,280,现有数据里出现 内科病区/外科病区/儿科病区,{}
+CT_CLINICAL_DEPARTMENT,DP29,疼痛科,Pain Medicine,,1,290,,{}
+CT_EVIDENCE_STRENGTH,EG0,仅自述,Self-reported Only,,1,10,,{}
+CT_EVIDENCE_STRENGTH,EG1,自述加单一材料,Self-report + 1 Material,,1,20,,{}
+CT_EVIDENCE_STRENGTH,EG2,材料可核验,Verifiable Material,,1,30,,{}
+CT_EVIDENCE_STRENGTH,EG3,第三方验证,Third-party Verified,,1,40,,{}
+CT_EVIDENCE_STRENGTH,EG4,履职记录或雇主确认,Employment Record Confirmed,,1,50,,{}
+CT_GROWTH_PREF,GP1,重视平台稳定性,Platform Stability,,1,10,与现有 PF7 原值对应,{}
+CT_GROWTH_PREF,GP2,重视学习与成长,Learning & Growth,,1,20,,{}
+CT_GROWTH_PREF,GP3,重视晋升速度,Promotion Speed,,1,30,,{}
+CT_GROWTH_PREF,GP4,重视收入增长,Income Growth,,1,40,与现有 PF7 原值「重视收入」对应,{}
+CT_GROWTH_PREF,GP5,重视行业前景,Industry Outlook,,1,50,,{}
+CT_INTEREST_DOMAIN,IN01,临床与医疗健康,Clinical & Healthcare,,1,10,兴趣域,"{""job_family"":[""F01"",""F02""]}"
+CT_INTEREST_DOMAIN,IN02,药物研发与注册,Drug R&D & Regulatory,,1,20,兴趣域,"{""job_family"":[""F02"",""F05""]}"
+CT_INTEREST_DOMAIN,IN03,医疗器械与IVD,Medical Device & IVD,,1,30,兴趣域,"{""job_family"":[""F03""]}"
+CT_INTEREST_DOMAIN,IN04,临床试验与CRO,Clinical Trial & CRO,,1,40,兴趣域,"{""job_family"":[""F04""]}"
+CT_INTEREST_DOMAIN,IN05,生物技术与基因治疗,Biotech & Gene Therapy,,1,50,兴趣域,"{""job_family"":[""F05""]}"
+CT_INTEREST_DOMAIN,IN06,医疗人工智能与算法,Medical AI & Algorithms,,1,60,兴趣域,"{""job_family"":[""F08"",""F15""]}"
+CT_INTEREST_DOMAIN,IN07,数据分析与统计建模,Data Analysis & Modeling,,1,70,兴趣域,"{""job_family"":[""F08"",""F07""]}"
+CT_INTEREST_DOMAIN,IN08,数字健康与互联网医疗,Digital Health,,1,80,兴趣域,"{""job_family"":[""F08""]}"
+CT_INTEREST_DOMAIN,IN09,公共卫生与流行病学,Public Health & Epidemiology,,1,90,兴趣域,"{""job_family"":[""F09"",""F10""]}"
+CT_INTEREST_DOMAIN,IN10,健康保险与支付,Health Insurance & Payment,,1,100,兴趣域,"{""job_family"":[""F06""]}"
+CT_INTEREST_DOMAIN,IN11,医院管理与运营,Hospital Management,,1,110,兴趣域,"{""job_family"":[""F01"",""F09""]}"
+CT_INTEREST_DOMAIN,IN12,咨询与战略,Consulting & Strategy,,1,120,兴趣域,"{""job_family"":[""F07""]}"
+CT_INTEREST_DOMAIN,IN13,投资与证券研究,Investment & Equity Research,,1,130,兴趣域,"{""job_family"":[""F07""]}"
+CT_INTEREST_DOMAIN,IN14,金融与风险管理,Finance & Risk,,1,140,兴趣域,"{""job_family"":[""F07"",""F06""]}"
+CT_INTEREST_DOMAIN,IN15,法律与知识产权,Legal & IP,,1,150,兴趣域,"{""job_family"":[""F12""]}"
+CT_INTEREST_DOMAIN,IN16,学术科研与教学,Academia & Teaching,,1,160,兴趣域,"{""job_family"":[""F10"",""F13""]}"
+CT_INTEREST_DOMAIN,IN17,出版编辑与科普传播,Publishing & SciComm,,1,170,兴趣域,"{""job_family"":[""F11""]}"
+CT_INTEREST_DOMAIN,IN18,教育培训与课程开发,Education & Curriculum,,1,180,兴趣域,"{""job_family"":[""F13""]}"
+CT_INTEREST_DOMAIN,IN19,市场与品牌传播,Marketing & Branding,,1,190,兴趣域,"{""job_family"":[""F14""]}"
+CT_INTEREST_DOMAIN,IN20,销售与商务拓展,Sales & Business Development,,1,200,兴趣域,"{""job_family"":[""F14""]}"
+CT_INTEREST_DOMAIN,IN21,产品与用户研究,Product & User Research,,1,210,兴趣域,"{""job_family"":[""F15"",""F08""]}"
+CT_INTEREST_DOMAIN,IN22,供应链与生产制造,Supply Chain & Manufacturing,,1,220,兴趣域,"{""job_family"":[""F16""]}"
+CT_INTEREST_DOMAIN,IN23,政府与公共政策,Government & Public Policy,,1,230,兴趣域,"{""job_family"":[""F09""]}"
+CT_INTEREST_DOMAIN,IN24,创业与商业模式,Entrepreneurship,,1,240,兴趣域,"{""job_family"":[""F17""]}"
+CT_INTEREST_DOMAIN,IN25,人工智能通用技术,General AI Technology,,1,250,兴趣域,"{""job_family"":[""F15""]}"
+CT_INTEREST_DOMAIN,IN26,软件工程与系统开发,Software Engineering,,1,260,兴趣域,"{""job_family"":[""F15"",""F08""]}"
+CT_INTEREST_DOMAIN,IN27,能源环境与可持续发展,Energy & Sustainability,,1,270,兴趣域,"{""job_family"":[""F16""]}"
+CT_INTEREST_DOMAIN,IN28,文化娱乐与内容创作,Culture & Content Creation,,1,280,兴趣域,"{""job_family"":[""F16""]}"
+CT_INTEREST_DOMAIN,IN99,其他,Other,,1,990,兜底项：不在选项内的自写取值先走候选池，不直接进词表,{}
+CT_PREFERENCE_TYPE,PF9,兴趣方向,Interest Domain,,1,90,多选；选项表 CT_INTEREST_DOMAIN,"{""option_table"":""CT_INTEREST_DOMAIN""}"
+CT_PREFERENCE_TYPE,PF10,工作风格,Work Style,,1,100,多选；选项表 CT_WORK_STYLE,"{""option_table"":""CT_WORK_STYLE""}"
+CT_PREFERENCE_TYPE,PF11,价值观取向,Value Orientation,,1,110,多选；选项表 CT_VALUE_ORIENT,"{""option_table"":""CT_VALUE_ORIENT""}"
+CT_PREFERENCE_TYPE,PF12,职业目标,Career Goal,,1,120,多选；选项表 CT_CAREER_GOAL,"{""option_table"":""CT_CAREER_GOAL""}"
+CT_PREFERENCE_TYPE,PF13,工作方式偏好,Work Mode Preference,,1,130,多选；选项表 CT_WORK_MODE,"{""option_table"":""CT_WORK_MODE""}"
+CT_PREFERENCE_TYPE,PF14,值班意愿,Shift Willingness,,1,140,单选；选项表 CT_SHIFT_WILLING,"{""option_table"":""CT_SHIFT_WILLING""}"
+CT_PREFERENCE_TYPE,PF15,地域流动意愿,Mobility Willingness,,1,150,单选；选项表 CT_MOBILITY,"{""option_table"":""CT_MOBILITY""}"
+CT_PREFERENCE_TYPE,PF16,组织文化偏好,Org Culture Preference,,1,160,多选；选项表 CT_ORG_CULTURE,"{""option_table"":""CT_ORG_CULTURE""}"
+CT_PROJECT_ROLE,PR1,负责人或主持,Principal Investigator,,1,10,,{}
+CT_PROJECT_ROLE,PR2,核心成员,Core Member,,1,20,,{}
+CT_PROJECT_ROLE,PR3,一般成员,Member,,1,30,,{}
+CT_PROJECT_ROLE,PR4,数据与统计角色,Data & Statistics,,1,40,,{}
+CT_PROJECT_ROLE,PR5,协调与联络角色,Coordinator,,1,50,,{}
+CT_PROJECT_ROLE,PR6,观察与参与,Observer,,1,60,,{}
+CT_PROJECT_TYPE,PJ1,科研课题（纵向）,Funded Research Project,,1,10,,{}
+CT_PROJECT_TYPE,PJ2,横向合作项目,Industry-sponsored Project,,1,20,,{}
+CT_PROJECT_TYPE,PJ3,临床试验项目,Clinical Trial,,1,30,,{}
+CT_PROJECT_TYPE,PJ4,公共卫生项目,Public Health Program,,1,40,,{}
+CT_PROJECT_TYPE,PJ5,产品研发项目,Product Development,,1,50,,{}
+CT_PROJECT_TYPE,PJ6,质量改进项目,Quality Improvement,,1,60,,{}
+CT_PROJECT_TYPE,PJ7,教学与课程建设,Teaching & Curriculum,,1,70,,{}
+CT_PROJECT_TYPE,PJ8,信息化与数据项目,IT & Data Project,,1,80,,{}
+CT_PROJECT_TYPE,PJ9,公益与志愿服务,Volunteer Program,,1,90,,{}
+CT_PROJECT_TYPE,PJ10,其他,Other,,1,990,,{}
+CT_RANK_BAND,RB1,前5%,Top 5%,,1,10,,{}
+CT_RANK_BAND,RB2,前10%,Top 10%,,1,20,,{}
+CT_RANK_BAND,RB3,前25%,Top 25%,,1,30,,{}
+CT_RANK_BAND,RB4,前50%,Top 50%,,1,40,,{}
+CT_RANK_BAND,RB5,后50%,Bottom 50%,,1,50,,{}
+CT_RANK_BAND,RB9,未提供,Not Provided,,1,90,,{}
+CT_STABILITY_PREF,ST1,追求体制内稳定,Public-sector Stability,,1,10,,{}
+CT_STABILITY_PREF,ST2,偏好大型机构,Large Institution,,1,20,,{}
+CT_STABILITY_PREF,ST3,可接受成长期公司,Growth-stage Company,,1,30,,{}
+CT_STABILITY_PREF,ST4,偏好创业环境,Startup Environment,,1,40,,{}
+CT_STABILITY_PREF,ST5,无明确偏好,No Preference,,1,50,,{}
+CT_VALUE_ORIENT,VO1,专业精进,Craft Mastery,,1,10,,{}
+CT_VALUE_ORIENT,VO2,助人与利他,Altruism,,1,20,,{}
+CT_VALUE_ORIENT,VO3,影响力与社会价值,Social Impact,,1,30,,{}
+CT_VALUE_ORIENT,VO4,收入回报,Compensation,,1,40,,{}
+CT_VALUE_ORIENT,VO5,稳定与安全,Stability & Security,,1,50,,{}
+CT_VALUE_ORIENT,VO6,工作生活平衡,Work-life Balance,,1,60,,{}
+CT_VALUE_ORIENT,VO7,自主与自由,Autonomy,,1,70,,{}
+CT_VALUE_ORIENT,VO8,声望与认可,Recognition,,1,80,,{}
+CT_VALUE_ORIENT,VO9,团队归属,Belonging,,1,90,,{}
+CT_VALUE_ORIENT,VO10,创新与挑战,Innovation & Challenge,,1,100,,{}
+CT_VOLUME_BAND,VB0,无操作经历,None,,1,10,,{}
+CT_VOLUME_BAND,VB1,1-49例,1-49,,1,20,,{}
+CT_VOLUME_BAND,VB2,50-199例,50-199,,1,30,,{}
+CT_VOLUME_BAND,VB3,200-499例,200-499,,1,40,,{}
+CT_VOLUME_BAND,VB4,500-999例,500-999,,1,50,,{}
+CT_VOLUME_BAND,VB5,1000例以上,1000+,,1,60,,{}
+CT_WORK_INTENSITY,WI1,规律作息优先,Regular Schedule,,1,10,,{}
+CT_WORK_INTENSITY,WI2,可接受适度加班,Moderate Overtime,,1,20,,{}
+CT_WORK_INTENSITY,WI3,可接受高强度,High Intensity,,1,30,与现有 PF5 原值「可接受高强度」对应,{}
+CT_WORK_INTENSITY,WI4,可接受夜班与轮班,Night Shift OK,,1,40,与现有 PF5 原值「可接受夜班」对应,{}
+CT_WORK_INTENSITY,WI5,可接受频繁出差,Frequent Travel OK,,1,50,,{}
+CT_WORK_STYLE,WS1,结构化流程型,Process-driven,,1,10,,{}
+CT_WORK_STYLE,WS2,自主探索型,Explorer,,1,20,,{}
+CT_WORK_STYLE,WS3,团队协作者,Team Collaborator,,1,30,,{}
+CT_WORK_STYLE,WS4,独立攻坚型,Independent Solver,,1,40,,{}
+CT_WORK_STYLE,WS5,目标导向型,Goal-oriented,,1,50,,{}
+CT_WORK_STYLE,WS6,细节审慎型,Detail-cautious,,1,60,,{}
+CT_WORK_STYLE,WS7,快速试错型,Fast Iteration,,1,70,,{}
+CT_WORK_STYLE,WS8,长周期深耕型,Long-horizon,,1,80,,{}
+CT_WORK_STYLE,WS9,跨部门协调型,Cross-functional Coordinator,,1,90,,{}
+CT_WORK_STYLE,WS10,客户前台型,Client-facing,,1,100,,{}
+CT_WORK_STYLE,WS11,幕后支持型,Back-office Support,,1,110,,{}
+CT_WORK_STYLE,WS12,多任务并行型,Multi-tasking,,1,120,,{}
+CT_YES_NO,Y,是,Yes,,1,10,,{}
+CT_YES_NO,N,否,No,,1,20,,{}
+CT_YES_NO,U,不确定,Uncertain,,1,30,,{}
+CT_RESEARCH_OUTPUT_TYPE,RO10,著作（含译作）,Book/Translation,,1,100,公开出版的图书、文集或译作；非学术论文类产出,{}
+CT_RESEARCH_OUTPUT_TYPE,RO11,科普与公众传播作品,Science Communication,,1,110,面向公众的科普文章、专栏、课程或媒体作品,{}

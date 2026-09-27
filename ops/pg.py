@@ -23,6 +23,7 @@ ops/pg.py — 便携版 PostgreSQL 集群管理（无需管理员权限）
 """
 import argparse
 import glob
+import hashlib
 import os
 import subprocess
 import sys
@@ -183,37 +184,125 @@ def cmd_createdb(a):
         print("[=] 数据库 %s 已存在" % DBNAME)
 
 
-def cmd_apply(a):
-    # 001~005 是基线迁移（非幂等）。在已有结构的库上重跑会中途报错，
-    # 这里先探测并给出明确指引，避免误以为迁移失败。
-    r = subprocess.run([exe("psql"), "-h", HOST, "-p", PORT, "-U", SUPERUSER,
-                        "-d", DBNAME, "-tAc",
-                        "SELECT count(*) FROM information_schema.tables "
-                        "WHERE table_schema='mt' AND table_type='BASE TABLE'"],
-                       capture_output=True, text=True)
-    try:
-        existing = int((r.stdout or "0").strip() or 0)
-    except ValueError:
-        existing = 0
-    if existing > 0 and not getattr(a, "force", False):
-        print("[!] schema mt 已存在 %d 张表。基线迁移（001~005）不是幂等的，"
-              "直接 apply 会在中途报错。" % existing)
-        print("    要重建请用：python ops\\pg.py reset --yes")
-        print("    只加新迁移：把新文件编号续在最大编号之后，然后 apply --force")
-        sys.exit(1)
+MIGRATION_LEDGER = "schema_migration"
 
+
+def _applied_ledger():
+    """读迁移台账 {filename: sha256}。表不存在则返回 None（尚未启用台账）。"""
+    r = psql(["-tAc", "SELECT to_regclass('mt.%s') IS NOT NULL" % MIGRATION_LEDGER],
+             capture=True, quiet_ok=True)
+    if "t" not in (r.stdout or ""):
+        return None
+    r = psql(["-tAF", "|", "-c", "SELECT filename, coalesce(sha256,'') FROM mt.%s"
+              % MIGRATION_LEDGER], capture=True, quiet_ok=True)
+    out = {}
+    for ln in (r.stdout or "").splitlines():
+        if "|" in ln:
+            k, v = ln.split("|", 1)
+            out[k.strip()] = v.strip()
+    return out
+
+
+def _ledger_ensure():
+    psql(["-c", "CREATE SCHEMA IF NOT EXISTS mt"], quiet_ok=True)
+    psql(["-c", """CREATE TABLE IF NOT EXISTS mt.%s (
+                     filename    TEXT PRIMARY KEY,
+                     sha256      TEXT,
+                     applied_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+                     note        TEXT)""" % MIGRATION_LEDGER], quiet_ok=True)
+
+
+def _file_sha(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _ledger_record(name, sha, note=""):
+    psql(["-c", """INSERT INTO mt.%s (filename, sha256, note) VALUES ('%s','%s','%s')
+                   ON CONFLICT (filename) DO UPDATE SET sha256=EXCLUDED.sha256,
+                     note=EXCLUDED.note, applied_at=now()"""
+          % (MIGRATION_LEDGER, name.replace("'", "''"), sha, note.replace("'", "''"))],
+         quiet_ok=True)
+
+
+def cmd_apply(a):
+    """按**迁移台账**只应用尚未应用的迁移。
+
+    为什么改（这是本项目的一个真实缺陷，由审查 subagent 发现）：
+      原实现只有"全跑"和"直接拒绝"两种行为 —— 在已有结构的库上，不加 --force 被拒，
+      加 --force 从 001 重跑、第一句就报 `type "verify_status_t" already exists`。
+      结果是**新增迁移根本没有可用的应用路径**，013 只能绕过 pg.py 用 `sql` 手跑。
+      而"迁移必须可重放、必须有唯一入口"正是本项目的纪律，工具自己先破了纪律。
+
+    现在：每个迁移文件记录 filename + sha256 + applied_at，只跑未记录的；文件被改过会告警。
+    旧库（台账还不存在）做一次 **baseline 采纳**：把已存在的对象对应的文件直接记入台账，
+    不重跑 —— 因为重跑非幂等的基线迁移只会坏掉一个正在工作的库。
+    """
     files = sorted(glob.glob(os.path.join(PROJECT, "schema", "sql", "*.sql")))
     if not files:
         print("[X] 没有找到 SQL 文件")
         sys.exit(1)
+
+    force = getattr(a, "force", False)
+    _ledger_ensure()
+    ledger = _applied_ledger() or {}
+
+    # 库里有表但没有台账 → 说明这个库是在台账之前建的，做一次 baseline 采纳
+    if not ledger and not force:
+        r = psql(["-tAc", "SELECT count(*) FROM information_schema.tables "
+                          "WHERE table_schema='mt' AND table_type='BASE TABLE'"],
+                 capture=True, quiet_ok=True)
+        try:
+            existing = int((r.stdout or "0").strip() or 0)
+        except ValueError:
+            existing = 0
+        if existing > 0:
+            print("[=] 检测到已有结构的库（mt 下 %d 张表），但还没有迁移台账。" % existing)
+            print("    将把 schema/sql/*.sql 全部**记入台账**而不重跑 ——")
+            print("    重跑非幂等的基线迁移（001~005）只会弄坏一个正在工作的库。")
+            for f in files:
+                _ledger_record(os.path.basename(f), _file_sha(f), "baseline-adopted")
+            print("[✓] baseline 采纳完成：%d 个迁移已登记。以后 apply 只跑新增的。\n"
+                  % len(files))
+            ledger = _applied_ledger() or {}
+
+    todo, changed = [], []
     for f in files:
         name = os.path.basename(f)
+        sha = _file_sha(f)
+        if name in ledger:
+            if ledger[name] and ledger[name] != sha:
+                changed.append(name)
+            continue
+        todo.append((name, f, sha))
+
+    for name in changed:
+        print("[!] %s 已被修改（内容哈希与台账不符）。迁移应当是追加式的："
+              "改已应用的迁移会让别人的库和你的库结构不一致。" % name)
+        print("    如果你确实要改结构，请**新增**一个迁移文件。")
+
+    if not todo:
+        print("[✓] 没有待应用的迁移（台账已登记 %d 个）" % len(ledger))
+        return
+
+    print("待应用 %d 个：%s\n" % (len(todo), "、".join(n for n, _f, _s in todo)))
+    for name, f, sha in todo:
         if name.startswith("004_vector") and not vector_available():
             print("[skip] %s —— pgvector 未安装，跳过（见 docs/05 §8 分期）" % name)
+            _ledger_record(name, sha, "skipped: pgvector unavailable")
             continue
-        print("\n=== 应用 %s ===" % name)
-        psql(["-v", "ON_ERROR_STOP=1", "-f", f])
-    print("\n[✓] 全部迁移应用完成")
+        print("=== 应用 %s ===" % name)
+        rc = psql(["-v", "ON_ERROR_STOP=1", "-f", f], quiet_ok=True)
+        if rc is None or getattr(rc, "returncode", 1) != 0:
+            print("[X] %s 应用失败，台账未登记。修好后重跑 apply 即可（不会重跑已成功的）"
+                  % name)
+            sys.exit(1)
+        _ledger_record(name, sha)
+        print("    [✓] 已登记到台账")
+    print("\n[✓] 全部待应用迁移完成（共 %d 个）" % len(todo))
 
 
 def vector_available():

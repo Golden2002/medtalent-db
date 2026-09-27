@@ -417,7 +417,103 @@ def main():
                  cov_row["numer"], cov_row["denom"]))
 
         # ===============================================================
-        print("\n【T15】开发者模式入口（需求 ⑤）")
+        print("\n【T15】人才库字段筛选：预设、多值 cols、列选择的跨页保持")
+        # 这一套断言是补的欠账：字段筛选此前**一条断言都没有**，于是下面这些
+        # 坏法全都活了下来（都是实测出来的，不是假想）：
+        #   · cols 是多值参数，代码只取 [0] → 用户点一次「筛选 / 应用」，
+        #     35 列塌成只剩 person_id 一列；
+        #   · 预设按钮和 35 个复选框在同一个 form 里 → 点预设时浏览器把
+        #     勾选一起发出去，预设永远被 cols 覆盖，等于点了没反应；
+        #   · 排序表头 / 分页 / CSV 三条链接都走同一段坏编码 → 点一下也塌成 1 列。
+        def heads(body):
+            m = re.search(r"<thead><tr>(.*?)</tr></thead>", body, re.S)
+            return [] if not m else re.findall(r"<th[^>]*>", m.group(1))
+
+        def form_cols(keys):
+            return "&".join("cols=" + k for k in keys.split(",")) + "&pick=1"
+
+        DEFAULT = [x["key"] for x in portal.TALENT_COLUMNS if x["default"]]
+        _, body = get("/talent")
+        check(len(heads(body)) == len(DEFAULT),
+              "默认列出默认字段数（%d 列）" % len(DEFAULT))
+        check('class="pickerbox">' in body,
+              "字段选择器默认收起——35 个复选框常驻铺开会把人才清单挤出首屏")
+
+        # ① 多值 cols（表单提交的真实形状）必须全量生效
+        _, b1 = get("/talent?" + form_cols(",".join(DEFAULT)))
+        check(len(heads(b1)) == len(DEFAULT),
+              "表单提交多值 cols 后仍是 %d 列（曾经塌成 1 列）" % len(DEFAULT))
+
+        # ② 预设链接必须不带 cols，且点了真能换字段
+        m = re.search(r'<a class="btnlink[^"]*" href="/talent\?([^"]*)">教育</a>', body)
+        check(m is not None, "预设是链接（不是与复选框同表单的 submit 按钮）")
+        if m:
+            href = m.group(1).replace("&amp;", "&")
+            check("cols=" not in href, "预设链接里不带 cols（否则会被旧勾选覆盖）")
+            _, b2 = get("/talent?" + href)
+            check(len(heads(b2)) == 8, "点「教育」预设得到 8 列（实得 %d）" % len(heads(b2)))
+            check("最高学历" in b2 and "教育记录数" in b2, "预设字段正是教育组那几列")
+
+        # ③ 取消全部勾选是明确状态，不该偷偷回到默认
+        _, b3 = get("/talent?pick=1")
+        check(len(heads(b3)) == 1,
+              "pick=1 且无 cols → 只剩 person_id（实得 %d 列）" % len(heads(b3)))
+
+        # ④ 逗号串与多值两种形状必须等价（页面自己生成的链接用前者）
+        _, b4 = get("/talent?cols=pid,degree,major&pick=1")
+        _, b5 = get("/talent?" + form_cols("pid,degree,major"))
+        check(len(heads(b4)) == 3 and len(heads(b4)) == len(heads(b5)),
+              "cols=pid,degree,major 与多值写法等价（3 列）")
+
+        # ⑤ 排序表头 / 分页 / CSV 三条链接都不能弄丢列
+        _, bd = get("/talent?" + form_cols(",".join(DEFAULT)))
+        m = re.search(r'<th[^>]*><a href="/talent\?([^"]+)"', bd)
+        check(m is not None, "表头有排序链接")
+        if m:
+            _, bs = get("/talent?" + m.group(1).replace("&amp;", "&"))
+            check(len(heads(bs)) == len(DEFAULT),
+                  "点表头排序后列数不变（%d 列，曾经塌成 1 列）" % len(DEFAULT))
+        m = re.search(r'<div class="pager"[^>]*>\s*<a href="/talent\?([^"]+)"', bd)
+        if m:
+            _, bp = get("/talent?" + m.group(1).replace("&amp;", "&"))
+            check(len(heads(bp)) == len(DEFAULT), "翻页后列数不变")
+        m = re.search(r'/talent\.csv\?([^"]+)"', bd)
+        if m:
+            _, bcsv = get("/talent.csv?" + m.group(1).replace("&amp;", "&"))
+            check(len(bcsv.splitlines()[0].split(",")) == len(DEFAULT),
+                  "CSV 导出的列数 == 当前显示列数（%d）" % len(DEFAULT))
+
+        # ⑥ 字段名白名单是安全属性：未登记的名字必须被拒，且要明说
+        _, bx = get("/talent?cols=pid,nosuchkey,evil%20drop&pick=1")
+        check(len(heads(bx)) == 1, "未登记的列名进不了查询")
+        check("不在列注册表里" in bx, "被拒的列名明确告知用户，而不是静默吞掉")
+
+        # ⑦ 组级操作与计数
+        check("全选本组" in bd, "每个组头有「全选本组」链接")
+        check(re.search(r'class="cgn">\d+ / \d+<', bd) is not None, "组头显示「选中 n / m」")
+
+        # ⑧ 口径债必须显式写在页面上，而不是藏在代码注释里
+        _, bt = get("/talent")
+        check("口径债" in bt and "hukou_province" in bt,
+              "页面显式声明户籍列存的是城市名这一口径债")
+
+        # ⑨ 画像向量必须真的把 50 个维度算成"已登记的字段"。
+        # 这一条守的是 014 迁移的成果：person 侧字段（F_PSN_*）登记好了，
+        # 但如果页面去查**物理落点**字段名（那些登记在 education_record 等实体下），
+        # 就会显示"已登记 0 个"，等于页面否定自己已完成的工作。实测踩过。
+        pid_row = q1("SELECT person_id FROM person ORDER BY person_id LIMIT 1")
+        pid = pid_row["person_id"] if isinstance(pid_row, dict) else pid_row
+        _, bd2 = get("/talent/%s" % pid)
+        m = re.search(r"已登记为字段 (\d+) 个", bd2)
+        check(m is not None and int(m.group(1)) >= 50,
+              "画像向量里 50 个维度都算作已登记字段（实得 %s）"
+              % (m.group(1) if m else "缺失"))
+        check(bd2.count("F_PSN_") >= 50,
+              "页面展示的是 person 侧登记字段名 F_PSN_*（出现 %d 次）"
+              % bd2.count("F_PSN_"))
+
+        # ===============================================================
+        print("\n【T16】开发者模式入口（需求 ⑤）")
         st, body = get("/dev")
         check(st == 200, "/dev 返回 200")
         check("只读" in body and "另一个进程" in body,

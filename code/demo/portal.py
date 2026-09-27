@@ -40,6 +40,7 @@ import argparse
 import csv
 import html
 import io
+import json
 import os
 import re
 import sys
@@ -86,7 +87,11 @@ DOMAIN_TABLES = {
     "字典与语义": ["code_table", "code_value", "entity_catalog", "field_catalog", "concept",
                    "concept_ancestor", "concept_mapping", "concept_relation",
                    "attribute_definition", "metric_definition", "category_node",
-                   "search_document"],
+                   "search_document",
+                   # 人才画像维度注册表（schema/sql/013_dimensions.sql）。它是"受控"的
+                   # 元数据——一行一个维度，说清 kind/comparator/权重——和 field_catalog、
+                   # metric_definition 同类，所以归到这里，而不是归到人才档案（它不存人）。
+                   "dimension"],
     "人才档案": ["person", "person_demographics", "person_pii", "person_constraint",
                  "education_record", "employment_record", "training_record", "credential",
                  "clinical_exposure", "project_record", "research_output", "award_honor",
@@ -101,7 +106,10 @@ DOMAIN_TABLES = {
                      "derived_feature", "assertion"],
     "治理与合规": ["access_log", "access_policy", "consent_record", "consent_withdrawal_action",
                    "data_lifecycle_run", "incident_report", "retention_policy",
-                   "subject_request", "talent_deletion_request", "tombstone", "change_log"],
+                   "subject_request", "talent_deletion_request", "tombstone", "change_log",
+                   # 迁移台账（ops/pg.py 创建）：记录每个迁移文件的 sha256 与应用时间，
+                   # 使"只跑未应用的迁移"成为可能。运维元数据，归治理域比新开一组贴切。
+                   "schema_migration"],
     "小程序接入": ["external_identity", "response_session", "answer", "experience_episode",
                    "experience_task", "crosswalk", "sync_event"],
     "备份与发布": ["backup_policy", "backup_run", "restore_run", "dataset_release"],
@@ -303,21 +311,38 @@ nav .brand{font-weight:600;margin-right:16px;color:#fff;padding:12px 0}
 nav a{color:#b6c2cf;text-decoration:none;padding:12px 11px;font-size:13px;border-bottom:2px solid transparent}
 nav a:hover{color:#fff;background:#161b22}
 nav a.on{color:#fff;border-bottom-color:#2f81f7}
+/* 开发者模式是可写的另一个进程（8083），它在只读门户的导航里必须一眼可辨，
+   否则"只读"这个前提在导航条上就自相矛盾。分隔线 + 「可写」标签就是干这个的。 */
+nav .navsep{width:1px;height:18px;background:#30363d;margin:0 9px}
+nav a .wtag{font-size:10px;line-height:15px;border:1px solid #9e6a03;color:#d29922;
+  border-radius:9px;padding:0 5px;margin-left:5px;vertical-align:1px}
 .wrap{max-width:1400px;margin:0 auto;padding:20px 18px 60px}
-h1{font-size:21px;margin:6px 0 4px}
+h1{font-size:21px;margin:0}
 h2{font-size:15px;margin:0 0 10px}
 h3{font-size:13px;margin:16px 0 6px;color:#57606a;text-transform:uppercase;letter-spacing:.04em}
 a{color:#0969da}
+/* 页头带：标题 + 副标题 + 面包屑。13 个顶级导航项说不出"你在第几层"，
+   所以表详情 / 实体页 / 人才页 / 职业页必须自己声明层级（面包屑只放祖先，不放当前页）。 */
+.phead{border-bottom:1px solid #d8dee4;padding-bottom:12px;margin-bottom:16px}
+.phead .sub{margin:6px 0 0}
+.crumbs{font-size:12px;color:#57606a;margin:0 0 6px}
+.crumbs a{color:#0969da;text-decoration:none}
+.crumbs a:hover{text-decoration:underline}
+.crumbs .sep{color:#8c959f;margin:0 6px}
 .sub{color:#57606a;margin-bottom:16px;font-size:13px}
 .card{background:#fff;border:1px solid #d0d7de;border-radius:8px;padding:16px;margin-bottom:14px}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:16px}
 .metric{background:#fff;border:1px solid #d0d7de;border-radius:8px;padding:12px 14px}
 .metric .n{font-size:23px;font-weight:600;color:#0d1117;line-height:1.25}
 .metric .t{font-size:12px;color:#57606a}
-.metric .d{font-size:11px;color:#8c959f;margin-top:2px}
+/* 灰阶文案统一到 #59636e / #6e7781：#8c959f 在 #fff 上只有 2.9:1，
+   低于 WCAG AA 的 4.5:1（正文）与 3:1（大字）。11px 的说明行本来就要放大看，
+   再给它最浅的灰等于不给看。 */
+.metric .d{font-size:11.5px;color:#656d76;margin-top:3px}
 table{border-collapse:collapse;width:100%;font-size:13px}
 th,td{border-bottom:1px solid #e6e8eb;padding:6px 9px;text-align:left;vertical-align:top}
-th{background:#f6f8fa;font-weight:600;color:#424a53;white-space:nowrap;position:sticky;top:0}
+th{background:#f6f8fa;font-weight:600;color:#424a53;white-space:nowrap;position:sticky;top:0;
+   box-shadow:inset 0 -1px 0 #d0d7de}
 td code{word-break:break-word}
 tr:hover td{background:#fbfcfd}
 td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
@@ -341,18 +366,46 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
                           background:#fff;box-shadow:1px 0 0 #e6e8eb}
 .tablewin thead th:first-child{z-index:4;background:#f6f8fa}
 .tablewin tbody tr:hover td:first-child{background:#fbfcfd}
-.colpick{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:2px 14px;
-         margin:8px 0}
-.colpick label{font-weight:400;display:flex;align-items:center;gap:6px;font-size:12.5px}
-.colpick input{width:auto}
-.colgroup{font-size:11.5px;color:#8c959f;grid-column:1/-1;margin-top:8px;
-          text-transform:uppercase;letter-spacing:.04em}
+/* ---- 字段选择器 ----------------------------------------------------------
+   改版前的问题（实测，不是审美）：35 个复选框常驻铺开 = 2765 个字符的文字墙，
+   而它排在数据表**前面**，于是首屏只看到筛选器和一墙复选框，一行数据都看不到。
+   改版后：整体收进原生 <details>（零 JS），组内用边框盒子分区，勾中的项上底色，
+   组头带"选中 n / m"计数和"全选本组 / 清空本组"链接——形状能看出状态，
+   操作能一步到位，而不是 Ctrl 点 35 次。 */
+.pickerbox{border:1px solid #d0d7de;border-radius:8px;background:#fafbfc;margin-top:10px}
+.pickerbox>summary{cursor:pointer;padding:10px 12px;font-size:13px;list-style:none;
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;border-radius:8px}
+.pickerbox>summary::-webkit-details-marker{display:none}
+.pickerbox>summary::before{content:"▸";color:#0969da;font-size:11px}
+.pickerbox[open]>summary::before{content:"▾"}
+.pickerbox[open]>summary{border-bottom:1px solid #e6e8eb}
+.pickerbox>summary:hover{background:#f3f5f8}
+.colgrps{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:10px;padding:10px}
+.colgrp{border:1px solid #e6e8eb;border-radius:6px;background:#fff;padding:8px 10px}
+.colgrphd{display:flex;align-items:baseline;gap:8px;font-size:12.5px;color:#24292f;
+          border-bottom:1px solid #eaeef2;padding-bottom:5px;margin-bottom:6px}
+.colgrphd .cgn{color:#656d76;font-size:11.5px;font-variant-numeric:tabular-nums}
+.colgrphd .cgop{margin-left:auto;font-size:11.5px;white-space:nowrap}
+.colpick{display:grid;grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:1px 8px}
+.colpick label{font-weight:400;display:flex;align-items:center;gap:5px;font-size:12.5px;
+               padding:2px 4px;border-radius:4px;margin:0}
+.colpick label.on{background:#ddf4ff;color:#0a3069}
+.colpick label.off{color:#656d76}
+.colpick input{width:auto;margin:0;padding:0}
+/* 链接做成按钮的样子：预设切换是**导航**（换一套字段），不是提交表单。
+   原来它们是 35 个复选框同一个 form 里的 submit 按钮，浏览器会把勾选一起发出去，
+   于是"点预设"和"点筛选"走了同一条路，预设永远被 cols 覆盖 —— 实测点了没反应。 */
+.btnlink{display:inline-block;padding:7px 12px;border:1px solid #d0d7de;border-radius:6px;
+         background:#f6f8fa;color:#24292f;font-size:13px;text-decoration:none;cursor:pointer}
+.btnlink:hover{filter:brightness(0.97);text-decoration:none}
+.btnlink.on{background:#1f6feb;border-color:#1f6feb;color:#fff;font-weight:500}
+.btnlink.sec{background:#fff}
 code,.mono{font-family:ui-monospace,Consolas,"Courier New",monospace;font-size:12px}
 pre{background:#0d1117;color:#c9d1d9;padding:12px;border-radius:6px;overflow:auto;font-size:12px;margin:8px 0}
 pre .k{color:#ff7b72}
 details{margin:8px 0}
 summary{cursor:pointer;color:#0969da;font-size:13px;outline:none}
-.nul{color:#b1b8bf;font-style:italic}
+.nul{color:#6e7781;font-style:italic}
 .pill{display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;border:1px solid}
 .p-t{background:#ddf4e4;border-color:#a2d5b3;color:#116329}
 .p-v{background:#ddf4ff;border-color:#a5d6ff;color:#0a3069}
@@ -385,13 +438,26 @@ details.analysis[open]>summary{margin-bottom:6px}
 details.analysis>summary:hover{filter:brightness(1.06)}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 @media(max-width:900px){.grid2{grid-template-columns:1fr}}
+/* 一组并排的小按钮。全局 button{width:100%} 会把它们撑成一列整宽按钮——
+   实测：人才库的 7 个预设字段按钮竖着排，把那一行撑到 260px 高（见 before-talent.png）。 */
+.btnrow{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-items:center}
+.btnrow button{width:auto;padding:7px 12px}
+/* 空状态：库里 0 行是事实，不是故障。虚线框说清"这里本来就该是空的"。 */
+.empty{border:1px dashed #d0d7de;border-radius:8px;padding:20px 14px;text-align:center;
+       color:#57606a;background:#fafbfc;font-size:13px}
+/* 键盘焦点：默认那圈细描边在浅灰底上几乎看不见（WCAG 2.4.7）。 */
+:focus-visible{outline:2px solid #1f6feb;outline-offset:1px;border-radius:3px}
 .kv{display:grid;grid-template-columns:200px 1fr;gap:0}
+/* 字段表：宽屏排成两对一行。职业详情有 25 个字段，单列要滚 25 行，双列 13 行看完——
+   信息一个不少，滚动少一半。 */
+@media(min-width:1180px){.kv{grid-template-columns:190px minmax(0,1fr) 190px minmax(0,1fr)}}
 .kv>div{padding:5px 9px;border-bottom:1px solid #eaeef2}
 .kv>div:nth-child(odd){color:#57606a;background:#fafbfc;font-size:12.5px}
 """
 
 NAV = [("/", "总览"), ("/viz", "可视化"), ("/talent", "人才库"), ("/occupations", "职业库"),
-       ("/tree", "职业树"), ("/match", "匹配"), ("/extend", "扩展与演化"),
+       ("/tree", "职业树"), ("/match", "匹配"), ("/real", "真实案例"),
+       ("/extend", "扩展与演化"),
        ("/schema", "表与视图"), ("/search", "检索"), ("/analyze", "分析"),
        ("/quality", "质量"), ("/lineage", "血缘"), ("/sql", "SQL"),
        ("/dev", "开发者模式")]
@@ -401,16 +467,38 @@ def esc(s) -> str:
     return html.escape("" if s is None else str(s))
 
 
-def page(title, body, msg="", kind="info", subtitle="", nav=None) -> bytes:
-    nav_html = "".join('<a href="%s" class="%s">%s</a>' % (u, "on" if title == t else "", t)
-                       for u, t in (nav or NAV))
+def page(title, body, msg="", kind="info", subtitle="", nav=None,
+         here=None, crumbs=None) -> bytes:
+    """页面外壳。
+
+    `here`：当前所在的顶级栏目（用于高亮导航）。详情页的 h1 是记录名/表名/分析名，
+    跟导航标签对不上——不显式指定，这些页面上一个导航项都不会高亮，用户就丢了位置。
+    `crumbs`：[祖先链]，元素是 (href, 文本)，href 为 None 表示纯文本。只放祖先，不放当前页。
+    """
+    active = here or title
+    parts = []
+    for u, t in (nav or NAV):
+        cls = "on" if t == active else ""
+        cur = ' aria-current="page"' if cls else ""
+        if t == "开发者模式":
+            parts.append('<span class="navsep" aria-hidden="true"></span>')
+            parts.append('<a href="%s" class="%s"%s>%s<span class="wtag">可写</span></a>'
+                         % (u, cls, cur, t))
+        else:
+            parts.append('<a href="%s" class="%s"%s>%s</a>' % (u, cls, cur, t))
+    nav_html = "".join(parts)
     m = '<div class="note %s">%s</div>' % (kind, esc(msg)) if msg else ""
     sub = '<div class="sub">%s</div>' % subtitle if subtitle else ""
+    crumb_html = ""
+    if crumbs:
+        segs = ['<a href="%s">%s</a>' % (href, esc(text)) if href else esc(text)
+                for href, text in crumbs]
+        crumb_html = '<div class="crumbs">%s</div>' % '<span class="sep">›</span>'.join(segs)
     doc = """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <title>%s · 医学生人才信息库</title><style>%s</style></head><body>
-<nav><span class="brand">医学生人才信息库 · 数据库门户</span>%s</nav>
-<div class="wrap"><h1>%s</h1>%s%s%s</div></body></html>""" % (
-        esc(title), CSS, nav_html, esc(title), sub, m, body)
+<nav aria-label="主导航"><span class="brand">医学生人才信息库 · 数据库门户</span>%s</nav>
+<div class="wrap"><div class="phead">%s<h1>%s</h1>%s</div>%s%s</div></body></html>""" % (
+        esc(title), CSS, nav_html, crumb_html, esc(title), sub, m, body)
     return doc.encode("utf-8")
 
 
@@ -531,24 +619,58 @@ def browse_where(table, fcol, fval):
     return sql.SQL(""), []
 
 
+def qs_encode(qs, **over) -> str:
+    """把 parse_qs 的结果重新编码成查询串，并叠加/删除若干参数。
+
+    为什么不能写 `{k: v[0] for k, v in qs.items()}`（原来的写法）：
+    **`cols` 是多值参数**。人才库的字段选择器是 35 个同名 checkbox，浏览器会为
+    每一个勾选的框发一条 `cols=<key>`，于是 parse_qs 得到的是一个**列表**。
+    取 `v[0]` 等于把用户勾的 35 列悄悄砍成第 1 列——实测：
+
+        /talent?cols=pid&cols=degree&…&preset=教育   →  表头只剩 person_id
+
+    这不是显示问题，是"点一下筛选就丢 34 列"。排序表头链接、分页链接、CSV 导出
+    都走同一个编码路径，所以三处一起坏。统一收到这里，只在一个地方修。
+
+    over 的值传 None 表示**删除**该参数（用于"切预设时必须丢掉旧 cols"）。
+    """
+    drop = {k for k, v in over.items() if v is None}
+    pairs = []
+    for k in sorted(qs):
+        if k in over or k in drop:
+            continue
+        for v in qs[k]:
+            if v != "":
+                pairs.append((k, v))
+    for k in sorted(over):
+        v = over[k]
+        if v is None:
+            continue
+        for item in (v if isinstance(v, (list, tuple)) else [v]):
+            pairs.append((k, str(item)))
+    return urllib.parse.urlencode(pairs, doseq=True)
+
+
 def pager_links(base, qs, page_no, n_pages, single_label="") -> str:
-    """分页链接条。base 是路径（如 "/t/person"），qs 是当前查询参数。"""
+    """分页链接条。base 是路径（如 "/t/person"），qs 是当前查询参数。
+
+    这里必须用 qs_encode 而不是自己拼：分页时翻页不该把用户的列选择弄丢。
+    """
     if n_pages <= 1:
         return single_label
-    parts = dict(qs)
     out = []
     for i in range(max(1, page_no - 3), min(n_pages, page_no + 3) + 1):
-        parts["page"] = [str(i)]
-        href = "%s?%s" % (base, urllib.parse.urlencode(
-            {k: v[0] for k, v in parts.items() if v and v[0]}))
+        href = "%s?%s" % (base, qs_encode(qs, page=str(i)))
         out.append('<a href="%s">%d</a>' % (href, i))
     return " ".join(out)
 
 
 def render_rows(table, cols, rows, maxlen=70, n_right=()) -> str:
+    """结果表。表头用 thead + scope="col"：屏幕阅读器要靠它才知道"这一列是什么"，
+    而 sticky 表头也需要一个明确的表头行。数字列右对齐（n_right）——位数对齐了才比得出大小。"""
     if not rows:
         return '<p class="muted">（0 行）</p>'
-    head = "".join('<th class="%s">%s</th>' % ("n" if c in n_right else "", esc(c))
+    head = "".join('<th scope="col" class="%s">%s</th>' % ("n" if c in n_right else "", esc(c))
                    for c in cols)
     body = []
     for r in rows:
@@ -557,7 +679,8 @@ def render_rows(table, cols, rows, maxlen=70, n_right=()) -> str:
                            cell_html(table, c, r.get(c), maxlen))
                         for c in cols)
         body.append("<tr>%s</tr>" % cells)
-    return ('<div class="tscroll"><table><tr>%s</tr>%s</table></div>' % (head, "".join(body)))
+    return ('<div class="tscroll"><table><thead><tr>%s</tr></thead>'
+            '<tbody>%s</tbody></table></div>' % (head, "".join(body)))
 
 
 def constraint_def_html(x) -> str:
@@ -898,7 +1021,8 @@ append-only 变更流水、扩展属性门禁都挂在触发器上。</p></div>
     body = analysis_panel(table_profile_blocks(c, name), "分析这张表",
                           "分析的对象就是这张表本身，所以它长在这一页上，"
                           "而不是要你先跳到另一个页面再回想刚才看的是哪张表。") + body
-    return page(name, body, subtitle="表结构 + 真实数据")
+    return page(name, body, subtitle="表结构 + 真实数据", here="表与视图",
+                crumbs=[("/schema", "表与视图")])
 
 
 # ---------------------------------------------------------------------------
@@ -951,11 +1075,12 @@ def view_entity(c, name, qs) -> bytes:
             '这是基因组学数据库那种"每个实体一个稳定 ID 页面"的形态：'
             '任何数字都能顺着外键走回去看原始记录。</div>'
             '<div class="card"><h2>字段</h2><div class="kv">%s</div></div>%s%s'
-            % (kv, "".join(blocks) or '<div class="card"><p class="muted">'
-                       '没有任何行通过外键指向这条记录。</p></div>',
+            % (kv, "".join(blocks) or '<div class="card"><div class="empty">'
+                       '没有任何行通过外键指向这条记录。</div></div>',
                sql_box("SELECT * FROM %s.%s WHERE %s = '%s'" % (SCHEMA, name, pk, val))))
     body += page_analysis(c, "/entity", (name, val))
-    return page(title, body, subtitle="实体页 · %s" % esc(name))
+    return page(title, body, subtitle="实体页 · %s" % esc(name), here="表与视图",
+                crumbs=[("/schema", "表与视图"), ("/t/%s" % name, name)])
 
 
 # ---------------------------------------------------------------------------
@@ -1273,7 +1398,8 @@ def view_analyze(c, qs, aid=None, want_csv=False):
                    render_rows(None, cols, rows, maxlen=60, n_right=n_right),
                    chart_block,
                    sql_box(a[3], "本分析执行的 SQL："), nav),
-                subtitle="分析 · %s" % esc(a[1]))
+                subtitle="分析 · %s" % esc(a[1]), here="分析",
+                crumbs=[("/analyze", "分析")])
 
 
 # ---------------------------------------------------------------------------
@@ -1709,9 +1835,11 @@ TALENT_COLUMNS = [
     dict(key="age", title="年龄", group="基本信息", default=False,
          sel="(SELECT (EXTRACT(YEAR FROM current_date)::int - d.birth_year) "
              "FROM person_demographics d WHERE d.person_id=p.person_id)", fmt="num"),
-    dict(key="province", title="户籍省份", group="基本信息", default=True,
+    dict(key="province", title="户籍城市", group="基本信息", default=True,
          sel="(SELECT d.hukou_province FROM person_demographics d "
-             "WHERE d.person_id=p.person_id)", fmt="text"),
+             "WHERE d.person_id=p.person_id)", fmt="text",
+         hint="列名是历史遗留：person_demographics.hukou_province 里实际存的是城市名"
+              "（实测 18 个去重值全是城市）。按城市比对，不要当省用。"),
 
     dict(key="degree", title="最高学历", group="教育", default=True,
          sel="(SELECT e.degree_level FROM education_record e WHERE e.person_id=p.person_id "
@@ -1776,7 +1904,9 @@ TALENT_COLUMNS = [
          sel="(SELECT count(*) FROM evidence x WHERE x.person_id=p.person_id)", fmt="num"),
     dict(key="cel_max", title="最高证据等级", group="能力与证据", default=True,
          sel="(SELECT max(x.cel_level) FROM evidence x WHERE x.person_id=p.person_id)",
-         fmt="code:CT_CEL_LEVEL"),
+         fmt="code:CT_CEL_LEVEL", show_code=True,
+         hint="E0–E4 有序：E4 履职记录 > E3 作品 > E2 第三方评估 > E1 证书 > E0 自述。"
+              "词表的 label 是**类别名**不是等级名，所以这里连码一起显示。"),
     dict(key="transfer", title="平均可迁移性", group="能力与证据", default=False,
          sel="(SELECT round(avg(s.transferability), 2) FROM skill_assertion s "
              "WHERE s.person_id=p.person_id)", fmt="num"),
@@ -1799,7 +1929,10 @@ TALENT_COLUMNS = [
          sel="(SELECT count(*) FROM match_result m WHERE m.person_id=p.person_id)", fmt="num"),
     dict(key="source", title="数据来源", group="匹配与质量", default=True,
          sel="CASE WHEN p.quality_flags && ARRAY['synthetic_fixture'] THEN '合成' "
-             "ELSE '演示/真实' END", fmt="text"),
+             "WHEN p.quality_flags && ARRAY['real_public_case'] THEN '真实公开案例' "
+             "ELSE '演示/无标记' END", fmt="text",
+         hint="合成 / 真实公开案例 / 演示无标记。这一列是刻意的："
+              "成熟的数据集必须能一句话筛出哪些行可以对外。"),
 ]
 
 TALENT_PRESETS = {
@@ -1817,24 +1950,68 @@ def talent_default_cols() -> list:
     return [x["key"] for x in TALENT_COLUMNS if x["default"]]
 
 
+def talent_all_cols() -> list:
+    return [x["key"] for x in TALENT_COLUMNS]
+
+
+def talent_preset_cols(name) -> list:
+    """预设名 → 列 key 列表。`None` 的语义收口在这里，别让调用处各判一次。"""
+    if name == "全部":
+        return talent_all_cols()
+    keys = TALENT_PRESETS.get(name)
+    return list(keys) if keys else talent_default_cols()
+
+
+def talent_col_keys(qs) -> list:
+    """解析 cols 参数：**所有**同名值都算，值里的逗号也当分隔符。
+
+    为什么要容忍两种形状：
+      · 浏览器提交表单 → 每个勾选框一条 `cols=pid&cols=degree&…`（多值）
+      · 页面自己生成的链接 → `cols=pid,degree,…`（单值逗号串）
+    两者必须等价，否则"点表头排序"和"点筛选按钮"会得到不同的列。
+    """
+    out = []
+    for v in qs.get("cols", []) or []:
+        for k in (v or "").split(","):
+            k = k.strip()
+            if k and k not in out:
+                out.append(k)
+    return out
+
+
 def talent_pick_columns(qs) -> list:
     """决定这次显示哪些列。优先级：显式 cols > preset > 默认。
 
-    列 key 一律与注册表比对（白名单），未知 key 直接忽略——URL 是用户输入。
+    三条语义是实测钉出来的，改任何一条都会让界面骗人：
+      1. **cols 是多值参数，必须全量解析**。原实现 `qs.get("cols", [""])[0]`
+         只取第一条，于是正常的表单提交（35 个 checkbox）会把表格砍成只剩
+         person_id 一列 —— 用户点一下"筛选 / 应用"就丢掉 34 列。
+      2. **"点了选择器但一个都没勾" ≠ "没给 cols"**。前者是用户明确要清空，
+         后者是首次访问。靠隐藏域 `pick=1` 区分；否则用户取消全部勾选后，
+         页面会自作主张把默认列又摆回来，看起来像"没生效"。
+      3. person_id 永远在第一位：它是行的身份，也是外键联查的钥匙，不允许隐藏。
     """
     known = [x["key"] for x in TALENT_COLUMNS]
-    raw = (qs.get("cols", [""])[0] or "").strip()
-    if raw:
-        want = [k.strip() for k in raw.split(",") if k.strip() in known]
-        if want:
-            # person_id 永远在第一位：它是行的身份，不允许被隐藏
-            return ["pid"] + [k for k in want if k != "pid"]
+    want = [k for k in talent_col_keys(qs) if k in known]
+    if want:
+        return ["pid"] + [k for k in want if k != "pid"]
+    if (qs.get("pick", [""])[0] or "") == "1":
+        return ["pid"]
     pre = (qs.get("preset", [""])[0] or "").strip()
-    if pre == "全部":
-        return known
-    if pre in TALENT_PRESETS and TALENT_PRESETS[pre]:
-        return ["pid"] + [k for k in TALENT_PRESETS[pre] if k != "pid"]
+    if pre == "全部" or pre in TALENT_PRESETS:
+        return ["pid"] + [k for k in talent_preset_cols(pre) if k != "pid"]
     return talent_default_cols()
+
+
+def talent_view_name(qs) -> str:
+    """当前这套列是哪个预设，还是用户自己拼的。界面要回显，否则用户不知道自己在哪。"""
+    cur = set(talent_pick_columns(qs)) | {"pid"}
+    for name in TALENT_PRESETS:
+        if (set(talent_preset_cols(name)) | {"pid"}) == cur:
+            return name
+    if cur == {"pid"}:
+        return "仅 ID"
+    return "自定义"
 
 
 def talent_order(qs, colmap) -> str:
@@ -1867,7 +2044,10 @@ def talent_cell(col, row) -> str:
     if fmt.startswith("code:"):
         table = fmt.split(":", 1)[1]
         lab = lbl(table, v)
-        return '<span title="%s">%s</span>' % (esc(v), esc(lab))
+        # 有些词表的 label 是"类别名"（CT_CEL_LEVEL 的 E4 = 履职记录），单看标签
+        # 读不出等级高低。这类列把码一起显示：E4 · 履职记录。
+        shown = ("%s · %s" % (v, lab)) if col.get("show_code") else lab
+        return '<span title="%s">%s</span>' % (esc(v), esc(shown))
     return '<span title="%s">%s</span>' % (esc(v), esc(trunc(v, 34)))
 
 
@@ -1891,6 +2071,169 @@ def talent_csv(c, qs) -> bytes:
                   [{x["title"]: r.get(x["key"]) for x in picked} for r in rows])
 
 
+def person_dimensions(c, pid) -> list:
+    """按 `mt.dimension` 注册表取一个人的**全部维度取值**。
+
+    这是"看见对每个样本的建模"的核心：不再把维度写死在页面里，而是**读注册表**，
+    于是新增一个维度只要往 `dimension` 插一行，这里自动就显示它。
+
+    解析 `person_locator` 的四种形态（注册表里实际出现的）：
+      `表.列`            → 直接取该表该列（表/列先与系统目录比对，防注入）
+      `preference:PFx`   → 取 preference 表里这个人的该类型偏好
+      `concept:Kx`       → 取能力主张里属于该概念族的
+      `derived:`/`unavailable` → 不解析，如实说明"由其它维度派生"或"未登记来源"
+    """
+    m = meta()
+    dims = q(c, "SELECT * FROM dimension WHERE status='active' "
+                "ORDER BY group_id, sort_order")
+    # 字段登记状态：维度必须同时是 field_catalog 里的一个字段，才算"字段结构化存储"。
+    # 这是最初设计的形态（docs/01 §239 + docs/09 §16）：主数据留类型化表，
+    # 长尾维度登记成字段、值落 field_value。注册表只负责**匹配语义**，不充当存储。
+    #
+    # 为什么用 `dim_field_id(group_id, dimension_id)` 反查、而不是直接读
+    # `dimension.person_field_id`：
+    #   `person_field_id` 指的是**物理落点**字段（如 education_record.degree_level
+    #   对应的 F_EDU_DEGREE_LEVEL），它登记在**别的实体**名下（education_record），
+    #   所以按 entity_id='person' 查永远查不到 → 页面上 50 个维度全显示"未登记"。
+    #   014 迁移为每个维度登记了 person 侧的 F_PSN_* 字段，并留下这个函数做确定性反查。
+    #   这里是**同一个事实的两种问法**，必须问对那一种，否则页面会否定自己已完成的工作。
+    reg = {r["field_id"]: r for r in q(c, """
+        SELECT f.field_id, f.title, f.data_type, f.cardinality, f.code_table_id,
+               f.allow_custom, f.status, f.related_fields,
+               (SELECT count(*) FROM field_value v
+                 WHERE v.field_id = f.field_id AND v.subject_id = %s) AS n_values
+          FROM field_catalog f WHERE f.entity_id = 'person'""", (pid,))}
+    out = []
+    for d in dims:
+        loc = (d["person_locator"] or "").strip()
+        fid = (d["person_field_id"] or "").strip()
+        # person 侧的登记字段：优先用约定函数反查，查不到再退回物理落点字段名
+        # （q1 返回的是标量，不是行字典 —— 这里踩过一次 'str' has no attribute 'get'）
+        try:
+            pfid = q1(c, "SELECT dim_field_id(%s, %s)",
+                      (d["group_id"], d["dimension_id"])) or fid
+        except psycopg.Error:
+            pfid = fid
+        fld = reg.get(pfid) if pfid else None
+        val, note, codes = None, "", []
+        try:
+            if loc.startswith("preference:"):
+                pt = loc.split(":", 1)[1].strip()
+                rows = q(c, """SELECT value_code, value_raw, weight FROM preference
+                                WHERE person_id=%s AND pref_type=%s
+                                ORDER BY weight DESC NULLS LAST LIMIT 3""", (pid, pt))
+                if rows:
+                    codes = [r["value_code"] or r["value_raw"] for r in rows]
+            elif loc.startswith("concept:"):
+                kx = loc.split(":", 1)[1].strip()
+                rows = q(c, """SELECT c.preferred_label FROM skill_assertion s
+                                 JOIN concept c ON c.concept_id = s.concept_id
+                                WHERE s.person_id=%s AND c.concept_id LIKE %s
+                                ORDER BY s.level DESC NULLS LAST LIMIT 3""",
+                         (pid, kx + "%"))
+                if rows:
+                    val = "、".join(r["preferred_label"] for r in rows)
+            elif loc.startswith("derived:"):
+                note = "由其它维度派生（%s）" % loc.split(":", 1)[1].strip()[:28]
+            elif not loc or loc == "unavailable":
+                # 没有类型化落点 → 按设计应当落在统一值表 field_value（零 DDL）
+                if fld and fld["n_values"]:
+                    rows = q(c, """SELECT coalesce(value_code, value_codes::text, value_text,
+                                                 value_num::text) AS v
+                                     FROM field_value WHERE field_id=%s AND subject_id=%s
+                                    ORDER BY array_index NULLS FIRST LIMIT 5""", (pfid, pid))
+                    codes = [r["v"] for r in rows if r["v"] not in (None, "")]
+                    # 取数说明必须跟着**这个主体**的真实取值走。
+                    # fld["n_values"] 是**全库**该字段的行数（任何人的值都算），
+                    # 拿它当"本人有值"的证据会写出"未覆盖 但来自统一值表"这种自相矛盾的说明
+                    # —— 真实案例（三个真人）一上页就露出来了。
+                    note = ("来自统一值表 field_value" if codes
+                            else "已登记为字段，但本人没有值")
+                elif fld:
+                    note = "已登记为字段，但还没有值"
+                else:
+                    note = "未登记为字段（不在字典体系中）"
+            elif "." in loc:
+                tbl, col = (x.strip() for x in loc.split(".", 1))
+                if tbl not in m["by_name"]:
+                    note = "来源表不在系统目录中"
+                elif col not in [x["column_name"] for x in m["cols"].get(tbl, [])]:
+                    note = "来源列不在系统目录中"
+                else:
+                    # 找该表指向 person 的外键列（不假设一定叫 person_id）
+                    fk = m["fk_cols"].get(tbl, {})
+                    key = next((k for k, v in fk.items() if v[0] == "person"), None)
+                    if not key:
+                        note = "该表没有指向 person 的外键"
+                    else:
+                        rows = q(c, sql.SQL("SELECT {}::text AS v FROM mt.{} WHERE {} = %s LIMIT 3")
+                                 .format(sql.Identifier(col), sql.Identifier(tbl),
+                                         sql.Identifier(key)), (pid,))
+                        vals = [r["v"] for r in rows if r["v"] not in (None, "")]
+                        if vals:
+                            codes = vals
+            else:
+                note = "无法解析的 locator"
+        except psycopg.Error as e:
+            note = "读取失败：" + str(e).splitlines()[0][:48]
+
+        # ---- 取值规范化：这几种脏形态都是实测踩出来的 ----
+        #  · text[] 的文本形态是 '{a,b}'，要拆开；'{}' 是空数组，等于"无记录"
+        #  · boolean 要翻成 是/否，否则页面上写着 true
+        #  · 多行取值要去重（同一张表里这个人可能有多条记录）
+        if codes:
+            flat = []
+            for x in codes:
+                if x is None:
+                    continue
+                s = str(x).strip()
+                if s in ("", "{}", "[]", "NULL"):
+                    continue
+                if s.startswith("{") and s.endswith("}"):
+                    flat.extend([p.strip().strip('"') for p in s[1:-1].split(",") if p.strip()])
+                else:
+                    flat.append(s)
+            seen, uniq = set(), []
+            for x in flat:
+                if x not in seen:
+                    seen.add(x)
+                    uniq.append(x)
+            codes = uniq
+        if not codes:
+            codes = []
+        # 码表翻译；某个值不在词表里就原样显示，不假装翻译成功
+        if codes:
+            ct = d["code_table_id"]
+            shown = []
+            for x in codes:
+                # 布尔列 ::text 出来是 'true'/'false'。像 DIM_IS_CLINICAL_MAJOR 这种
+                # 码表是 CT_YES_NO（码是 Y/N），拿 'true' 去查必然查不到 —— 所以
+                # 布尔先翻译成中文，不要指望码表能覆盖它。
+                if x in ("true", "false"):
+                    shown.append("是" if x == "true" else "否")
+                else:
+                    shown.append(lbl(ct, x) if ct else x)
+            val = "、".join(shown)
+        # ordinal/range 维度但取到的是**原始数值**（如 birth_year、例数、等级）：
+        # 注册表只写了"来源列"，没写"怎么把原值变成档位"。不臆造映射，如实标注。
+        if val and d["kind"] in ("ordinal", "range") and d["code_table_id"]:
+            if not any(lbl(d["code_table_id"], x) != x for x in codes):
+                note = (note + " " if note else "") + \
+                    "取到的是原始值，档位映射在注册表中未定义（见 docs/14 向量组装层）"
+        out.append({"group": d["group_title"], "title": d["title_zh"],
+                    "kind": d["kind"], "role": d["role"],
+                    "code_table": d["code_table_id"],
+                    "value": val, "note": note,
+                    "raw": "、".join(codes) if codes else None,
+                    "allow_custom": d["allow_custom"],
+                    "field_id": pfid,          # person 侧登记字段（014 起的 F_PSN_*）
+                    "landing_field": fid,      # 物理落点字段（可能登记在别的实体下）
+                    "registered": bool(fld),
+                    "field_values": (fld or {}).get("n_values", 0),
+                    "job": (d["job_locator"] or "")[:40]})
+    return out
+
+
 def view_talent(c, qs) -> bytes:
     where, P = talent_where(qs)
     pg = _int_param(qs, "page", 1, lo=1)
@@ -1910,11 +2253,9 @@ def view_talent(c, qs) -> bytes:
 
     n_pages = max(1, (total + size - 1) // size)
 
-    def qs_with(**kw):
-        p = {k: v[0] for k, v in qs.items() if v and v[0]}
-        for k, v in kw.items():
-            p[k] = str(v)
-        return urllib.parse.urlencode(p)
+    def lqs(**kw):
+        """本地链接编码：等价于 qs_encode + HTML 转义（& 要写成 &amp; 才是合法 HTML）。"""
+        return html.escape(qs_encode(qs, **kw), quote=True)
 
     # 表头：每一列都可点排序；当前排序列显示方向
     cur_sort = (qs.get("sort", [""])[0] or "")
@@ -1922,8 +2263,8 @@ def view_talent(c, qs) -> bytes:
     head = "".join(
         '<th class="%s"><a href="/talent?%s" style="color:inherit">%s%s</a></th>'
         % ("n" if x["fmt"] == "num" else "",
-           qs_with(sort=x["key"],
-                   dir=("asc" if (cur_sort == x["key"] and cur_dir == "desc") else "desc")),
+           lqs(sort=x["key"],
+               dir=("asc" if (cur_sort == x["key"] and cur_dir == "desc") else "desc")),
            esc(x["title"]),
            (" ↓" if cur_sort == x["key"] and cur_dir == "desc"
             else (" ↑" if cur_sort == x["key"] else "")))
@@ -1939,19 +2280,65 @@ def view_talent(c, qs) -> bytes:
                      '没有符合条件的人才。</td></tr>' % max(len(picked), 1))
 
     # 列选择器：按分组排布复选框。纯 GET 表单 —— 零 JS，也不需要写权限。
-    picker_parts, on = [], set(cols)
-    for g in dict.fromkeys(x["group"] for x in TALENT_COLUMNS):
-        picker_parts.append('<div class="colgroup">%s</div>' % esc(g))
+    # ---- 字段选择器 ----
+    # 用原生 <details> 收起：35 个复选框常驻铺开会把人才清单挤出首屏（见 CSS 注释）。
+    # 已经有显式 cols / pick 时默认展开——用户正在管字段，不该每次重新点开。
+    picker_open = bool(talent_col_keys(qs)) or ((qs.get("pick", [""])[0] or "") == "1")
+    view_name = talent_view_name(qs)
+    picked_set = set(cols)
+    group_names = list(dict.fromkeys(x["group"] for x in TALENT_COLUMNS))
+    boxes = []
+    for g in group_names:
+        gk = [x["key"] for x in TALENT_COLUMNS if x["group"] == g]
+        on_g = [k for k in gk if k in picked_set]
+        labels = []
         for x in TALENT_COLUMNS:
             if x["group"] != g:
                 continue
+            is_on = x["key"] in picked_set
             dis = ' disabled title="行的身份，不能隐藏"' if x["key"] == "pid" else ""
-            picker_parts.append(
-                '<label><input type="checkbox" name="cols" value="%s"%s%s>%s</label>'
-                % (esc(x["key"]), " checked" if x["key"] in on else "", dis, esc(x["title"])))
+            tip = (' title="%s"' % esc(x["hint"])) if x.get("hint") else ""
+            labels.append(
+                '<label class="%s"%s><input type="checkbox" name="cols" value="%s"%s%s>%s</label>'
+                % ("on" if is_on else "off", tip, esc(x["key"]),
+                   " checked" if is_on else "", dis, esc(x["title"])))
+        # 组级操作做成**链接**而不是 checkbox：一个链接就能表达"整组替换"，
+        # 不需要 JS，也不会和提交按钮的语义打架。顺序按注册表排，保持稳定。
+        keep = [k for k in cols if k not in gk]
+        ops = ('<a href="/talent?%s">全选本组</a>'
+               % lqs(cols=keep + gk, pick="1", preset=None))
+        if on_g and len(on_g) < len(gk):
+            ops += ' · <a href="/talent?%s">清空本组</a>' % lqs(cols=keep, pick="1", preset=None)
+        boxes.append(
+            '<div class="colgrp"><div class="colgrphd"><b>%s</b>'
+            '<span class="cgn">%d / %d</span><span class="cgop">%s</span></div>'
+            '<div class="colpick">%s</div></div>'
+            % (esc(g), len(on_g), len(gk), ops, "".join(labels)))
+    # 切预设必须**丢掉 cols**：预设的定义就是"换一套字段"，
+    # 带着旧 cols 去点预设，等于让视图参数被旧值覆盖（这正是改版前的死法）。
     preset_btns = "".join(
-        '<button type="submit" name="preset" value="%s" class="sec">%s</button>'
-        % (esc(n), esc(n)) for n in ("精简", "推荐", "教育", "能力", "成果", "匹配", "全部"))
+        '<a class="btnlink%s" href="/talent?%s">%s</a>'
+        % (" on" if n == view_name else "", lqs(preset=n, cols=None, pick=None), esc(n))
+        for n in ("精简", "推荐", "教育", "能力", "成果", "匹配", "全部"))
+    preset_btns += ('<a class="btnlink%s" href="/talent?%s">仅 ID</a>'
+                    % (" on" if view_name == "仅 ID" else "",
+                       lqs(cols="pid", pick="1", preset=None)))
+    # 筛选表单要带上排序状态：不带的话，按某列排序后再改筛选条件，排序就悄悄丢了。
+    keep_hidden = "".join(
+        '<input type="hidden" name="%s" value="%s">' % (esc(k), esc((qs.get(k, [""])[0] or "")))
+        for k in ("sort", "dir") if (qs.get(k, [""])[0] or ""))
+    # 字段名的白名单是安全属性，不是体验问题：能显示什么由**列注册表**决定，
+    # 谁也不能靠改 URL 让页面去查一个没登记的表达式。被挡掉的要说出来，不能静默吞掉。
+    known_keys = {x["key"] for x in TALENT_COLUMNS}
+    unknown_cols = [k for k in talent_col_keys(qs) if k not in known_keys]
+    col_note = ""
+    if unknown_cols:
+        col_note = ('<div class="note err"><b>有 %d 个字段名不在列注册表里，已忽略：</b>'
+                    '<code>%s</code>。页面能显示哪些列由注册表决定，不由 URL 决定。</div>'
+                    % (len(unknown_cols), esc("、".join(unknown_cols))))
+    elif picker_open and cols == ["pid"]:
+        col_note = ('<div class="note info">一个字段都没勾选，已只保留 <code>person_id</code>'
+                    '——它是行的身份，不允许被隐藏。</div>')
 
     degs = q(c, "SELECT degree_level AS v, count(DISTINCT person_id) AS n "
                 "FROM education_record GROUP BY 1 ORDER BY 2 DESC")
@@ -1995,57 +2382,74 @@ def view_talent(c, qs) -> bytes:
     body = """
 <div class="sub">人才库（供给端）。列表可筛选，下面 6 个分析全部实时查库，
 每个都给出它执行的 SQL——口径可核，不是截图。</div>
-%s
-<div class="cards">%s</div>
+%(syn_note)s
+<div class="cards">%(kpi)s</div>
 
 <div class="card"><form method="get" action="/talent">
+  <input type="hidden" name="pick" value="1">%(hidden)s
   <div class="row">
-    <div style="flex:2 1 180px"><label>学历层次</label><select name="degree">%s</select></div>
-    <div style="flex:2 1 180px"><label>专业方向（模糊匹配）</label><select name="major">%s</select></div>
-    <div style="flex:2 1 180px"><label>户籍省份</label><select name="province">%s</select></div>
+    <div style="flex:2 1 180px"><label>学历层次</label><select name="degree">%(deg)s</select></div>
+    <div style="flex:2 1 180px"><label>专业方向（选了就按它模糊匹配）</label><select name="major">%(maj)s</select></div>
+    <div style="flex:2 1 180px"><label>户籍城市</label><select name="province">%(pv)s</select></div>
     <div style="flex:2 1 200px"><label>能力（概念名或 ID）</label>
-      <input name="skill" value="%s" placeholder="如 临床诊疗 / CON-K1-CLIN"></div>
+      <input name="skill" value="%(skill)s" placeholder="如 临床诊疗 / CON-K1-CLIN"></div>
   </div>
-  <div style="margin-top:10px">
-    <div class="muted" style="margin-bottom:4px">显示字段（%d / %d）——勾选后点「筛选 / 应用」</div>
-    <div class="colpick">%s</div>
-    <div class="row" style="margin-top:8px">
-      <div style="flex:0 0 120px"><button type="submit">筛选 / 应用</button></div>
-      <div style="flex:0 0 110px"><a href="/talent"><button type="button" class="sec">重置</button></a></div>
-      <div style="flex:1 1 auto;text-align:right">%s</div>
-    </div>
-    <p class="muted">预设按钮直接换一套字段。<b>表格窗口可左右滑动</b>，表头吸顶、首列吸左——
-    宽表靠这两个 sticky 才读得下去。勾选状态跟着 URL 走（零 JS）。</p>
+
+  <details class="pickerbox"%(open)s>
+    <summary>显示字段 <b>%(npick)d</b> / %(nall)d · %(ngrp)d 组
+      · 当前视图 <span class="pill p-v">%(view)s</span>
+      <span class="muted">展开勾选，然后点「筛选 / 应用」</span></summary>
+    <div class="colgrps">%(boxes)s</div>
+    <p class="muted" style="padding:0 12px 10px;margin:0">
+      预设按钮直接换一套字段（换预设会丢掉手改的勾选，这是刻意的——预设的定义就是"一套字段"）。
+      <b>全选本组 / 清空本组</b>是链接，点一下立即生效。
+      <b>表格窗口可左右滑动</b>，表头吸顶、首列吸左——宽表靠这两个 sticky 才读得下去。
+      勾选状态跟着 URL 走（零 JS）。</p>
+  </details>
+
+  <div class="row" style="margin-top:10px">
+    <div style="flex:0 0 120px"><button type="submit">筛选 / 应用</button></div>
+    <div style="flex:0 0 100px"><a class="btnlink sec" href="/talent">重置</a></div>
+    <div class="btnrow" style="flex:1 1 auto">%(presets)s</div>
   </div>
 </form></div>
 
-<div class="card"><h2>人才清单 <span class="muted">· 命中 %s 人，第 %d / %d 页 · %d 列</span>
-<span style="float:right"><a href="/talent.csv?%s">下载 CSV（当前 %d 列）</a></span></h2>
-<div class="tablewin"><table>
-<thead><tr>%s</tr></thead>
-<tbody>%s</tbody></table></div>
-<div class="pager" style="margin-top:10px">%s</div>
+<div class="card"><h2>人才清单 <span class="muted">· 命中 %(total)s 人，第 %(pg)d / %(npages)d 页 · %(ncol)d 列</span>
+<span style="float:right"><a href="/talent.csv?%(csvqs)s">下载 CSV（当前 %(ncol)d 列）</a></span></h2>
+%(col_note)s<div class="tablewin"><table>
+<thead><tr>%(head)s</tr></thead>
+<tbody>%(body)s</tbody></table></div>
+<div class="pager" style="margin-top:10px">%(pager)s</div>
 <p class="muted">灰色斜体 <span class="nul">NULL</span> 表示该字段为空——这是"没有记录"，
-不是"值为 0"。<b>数据来源</b>列标出哪些行是合成数据；合成数据不对应任何真实个人。</p></div>
+不是"值为 0"。<b>数据来源</b>列标出哪些行是合成数据；合成数据不对应任何真实个人。<br>
+<b>两处已知口径债</b>（不藏起来，因为字段筛选会把它直接摆到你面前）：
+① <code>person_demographics.hukou_province</code> 里实际存的是<b>城市名</b>（实测 18 个去重值
+全是城市），本页按实际内容标为「户籍城市」，列名迁移在路线图里；
+② <code>CT_CEL_LEVEL</code> 的标签是<b>类别名</b>（E4 = 履职记录），读不出等级高低，
+所以「最高证据等级」连码一起显示。两处都在鼠标悬停时有说明。</p></div>
 
-%s
-%s
-""" % (syn_note, "".join(kpi),
-       sel("degree", qs.get("degree", [""])[0], degs, "全部学历"),
-       sel("major", qs.get("major", [""])[0], majors, "全部专业"),
-       sel("province", qs.get("province", [""])[0], provs, "全部省份"),
-       esc(qs.get("skill", [""])[0]),
-       len(picked), len(TALENT_COLUMNS), "".join(picker_parts), preset_btns,
-       total, pg, n_pages, len(picked),
-       qs_with(cols=",".join(cols)), len(picked),
-       head, body_rows,
-       pager_links("/talent", qs, pg, n_pages),
-       analysis_panel([mini_analysis(c, t, s) for t, s in TALENT_ANALYSES],
-                      "分析这个人才库",
-                      "6 个分析实时查库，每个都给出它执行的 SQL。"
-                      "它们说的是**整库**口径，不受上面的筛选与字段选择影响——"
-                      "筛选改变的是「你看哪些行」，分析回答的是「这批人整体什么样」。"),
-       "")
+%(analyses)s
+%(tail)s
+""" % dict(syn_note=syn_note, kpi="".join(kpi),
+           hidden=keep_hidden,
+           deg=sel("degree", qs.get("degree", [""])[0], degs, "全部学历"),
+           maj=sel("major", qs.get("major", [""])[0], majors, "全部专业"),
+           pv=sel("province", qs.get("province", [""])[0], provs, "全部省份"),
+           skill=esc(qs.get("skill", [""])[0]),
+           open=" open" if picker_open else "",
+           npick=len(picked), nall=len(TALENT_COLUMNS), ngrp=len(group_names),
+           view=esc(view_name), boxes="".join(boxes), presets=preset_btns,
+           total=total, pg=pg, npages=n_pages, ncol=len(picked),
+           csvqs=lqs(cols=",".join(cols), pick=None),
+           col_note=col_note,
+           head=head, body=body_rows,
+           pager=pager_links("/talent", qs, pg, n_pages),
+           analyses=analysis_panel([mini_analysis(c, t, s) for t, s in TALENT_ANALYSES],
+                                   "分析这个人才库",
+                                   "6 个分析实时查库，每个都给出它执行的 SQL。"
+                                   "它们说的是**整库**口径，不受上面的筛选与字段选择影响——"
+                                   "筛选改变的是「你看哪些行」，分析回答的是「这批人整体什么样」。"),
+           tail="")
     return page("人才库", body, subtitle="供给端 · 浏览 + 在线分析")
 
 
@@ -2135,6 +2539,55 @@ def view_talent_one(c, pid, qs) -> bytes:
 %s
 """ % (kv, len(sk), sk_html, len(mm), mm_html, win_html,
        "".join(blocks))
+    # ---- 画像向量：按维度注册表逐条列出这个人的建模 ----
+    dv = person_dimensions(c, pid)
+    n_have = len([x for x in dv if x["value"]])
+    n_gate = len([x for x in dv if x["role"] == "gate"])
+    vec_rows, cur_group = [], None
+    n_reg = len([x for x in dv if x["registered"]])
+    for x in dv:
+        if x["group"] != cur_group:
+            cur_group = x["group"]
+            vec_rows.append('<tr><td colspan="5" style="background:#f6f8fa;'
+                            'font-weight:600;color:#424a53">%s</td></tr>' % esc(cur_group))
+        if x["value"]:
+            cell = '<b>%s</b>' % esc(trunc(x["value"], 42))
+            if x["raw"] and x["raw"] != x["value"]:
+                cell += ' <span class="muted">（%s）</span>' % esc(trunc(x["raw"], 26))
+        else:
+            cell = '<span class="nul">无记录</span>'
+        role_txt = {"gate": '<span class="pill p-red">硬门槛</span>',
+                    "score": '<span class="pill p-v">参与打分</span>',
+                    "modifier": '<span class="pill p-e">修正项</span>',
+                    "display": '<span class="pill p-n">仅展示</span>'}.get(x["role"], x["role"])
+        fld_txt = ('<code>%s</code>' % esc(x["field_id"])) if x["registered"] else \
+            '<span class="pill p-red">未登记</span>'
+        vec_rows.append('<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td>'
+                        '<td class="muted">%s</td></tr>'
+                        % (esc(x["title"]), cell, role_txt, fld_txt,
+                           esc(x["note"] or ("可自写补充" if x["allow_custom"] else ""))))
+    vec_block = ('<div class="card"><h2>画像向量 '
+                 '<span class="muted">· %d 个维度：已有取值 %d 个（%.0f%%）· '
+                 '已登记为字段 %d 个 · 硬门槛 %d 个</span></h2>'
+                 '<div class="sub">按 <code>mt.dimension</code> 读维度清单、按 '
+                 '<code>field_catalog</code> 判断该维度是否已<b>登记为字段</b>。'
+                 '设计上：主数据维度留类型化表（要约束与索引），长尾维度登记成字段、'
+                 '值落统一值表 <code>field_value</code>（零 DDL）——'
+                 '<b>注册表只负责匹配语义，不充当存储</b>。'
+                 '新增一个维度只要往注册表插一行 + 往字段目录插一行，这里自动出现。</div>'
+                 '<div class="tscroll"><table>'
+                 '<thead><tr><th>维度</th><th>取值</th><th>匹配角色</th>'
+                 '<th>字段登记</th><th>说明</th></tr></thead>'
+                 '<tbody>%s</tbody></table></div>'
+                 '<p class="muted">「无记录」<b>不等于</b>「不具备」——这是本库的三态纪律：'
+                 '空值只说明没有观测到，不参与扣分。</p></div>'
+                 % (len(dv), n_have, 100.0 * n_have / max(len(dv), 1), n_reg, n_gate,
+                    "".join(vec_rows)))
+
+    # 「画像向量」放在**基本信息之后、明细之前**：它是这一页的主角。
+    # 放到页面底部等于没做——用户要看的正是"这个样本被建成了什么样"。
+    body = body.replace('<div class="card"><h2>能力主张',
+                        vec_block + '<div class="card"><h2>能力主张', 1)
     body += analysis_panel([
         mini_analysis(c, "这个人的能力分布 vs 全库", """
             SELECT c.preferred_label AS "能力", s.level AS "熟练度",
@@ -2146,7 +2599,8 @@ def view_talent_one(c, pid, qs) -> bytes:
     ], "分析这份档案",
         "看这个人的能力里哪些是「稀缺」的——全库具备人数越少越稀缺。"
         "这比单纯列出能力更有用：能立刻看出他靠什么区别于其他人。")
-    return page(pid, body, subtitle="人才档案 · 供给端实体页")
+    return page(pid, body, subtitle="人才档案 · 供给端实体页", here="人才库",
+                crumbs=[("/talent", "人才库")])
 
 
 # ---------------------------------------------------------------------------
@@ -2343,7 +2797,8 @@ SELECT * FROM occupation_migration WHERE old_id = '%s' OR new_id = '%s';"""
     ], "分析这个职业",
         "「同族有、这个职业没要」的能力，往往正是它区别于同族其他岗位的地方——"
         "这比单看它要什么更能说明问题。")
-    return page(o["label_zh"], body, subtitle="职业详情 · %s" % esc(oid))
+    return page(o["label_zh"], body, subtitle="职业详情 · %s" % esc(oid), here="职业库",
+                crumbs=[("/occupations", "职业库")])
 
 
 # ---------------------------------------------------------------------------
@@ -2453,7 +2908,7 @@ def view_tree(c, qs) -> bytes:
         metric(f"{h['occ_ready']}", "岗位候选待评审"),
         metric(f"{h['runs']}", "能力权重版本", "每次重算=一版"),
     ]), esc(asof), esc(src),
-        render_rows(None, list(tl[0].keys()), tl), tl_note,
+        render_rows(None, list(tl[0].keys()), tl, n_right=("节点数", "岗位数")), tl_note,
         len(rows), tree_html,
         sql_box("SELECT * FROM occupation_asof('%s'::date) ORDER BY level, occupation_id;"
                 % (asof or "current_date")))
@@ -2507,10 +2962,10 @@ def view_match(c, qs) -> bytes:
              WHERE w.occupation_id = %s AND w.valid_to IS NULL
              ORDER BY w.importance DESC LIMIT 20""", (oid,))
         res_html = render_rows(None, list(res[0].keys()), res, maxlen=40) if res else \
-            '<p class="muted">这个职业还没有匹配结果。</p>'
+            '<div class="empty">这个职业还没有匹配结果。</div>'
         extra = '<div class="card"><h2>这个职业要什么（能力权重）</h2>%s</div>' % (
             render_rows(None, list(need[0].keys()), need, maxlen=40) if need
-            else '<p class="muted">没有能力权重。</p>')
+            else '<div class="empty">没有能力权重。</div>')
         title = "匹配 · 按职业"
     else:
         res = q(c, """
@@ -2542,14 +2997,14 @@ def view_match(c, qs) -> bytes:
              WHERE m.person_id = %s AND w.concept_id = ANY(m.gap_concepts)
              ORDER BY w.importance DESC LIMIT 30""", (pid,))
         res_html = render_rows(None, list(res[0].keys()), res, maxlen=36) if res else \
-            '<p class="muted">这个人才还没有匹配结果。</p>'
+            '<div class="empty">这个人才还没有匹配结果。</div>'
         extra = ('<div class="card"><h2>缺口 → 补齐路径</h2>%s'
                  '<p class="muted">注意口径：<code>gap_analysis</code> 表当前为空，'
                  '所以这里展示的是<b>从能力权重现场推导</b>出的"目标职业对该能力的要求强度"，'
                  '不是系统给出的学习建议。真正的补齐建议需要填充 remedy 库——'
                  '没做就不假装做了。</p></div>'
                  % (render_rows(None, list(gaps[0].keys()), gaps, maxlen=40) if gaps
-                    else '<p class="muted">没有识别到缺口。</p>'))
+                    else '<div class="empty">没有识别到缺口。</div>'))
         title = "匹配 · 按人才"
 
     dist = q(c, """
@@ -2606,18 +3061,228 @@ def view_match(c, qs) -> bytes:
     ]), p_opts, o_opts,
         extra, esc(who), res_html,
         render_rows(None, list(dist[0].keys()), dist, maxlen=30) if dist
-        else '<p class="muted">没有匹配数据。</p>',
+        else '<div class="empty">没有匹配数据。</div>',
         render_rows(None, list(runs[0].keys()), runs, maxlen=30) if runs
-        else '<p class="muted">没有匹配批次。</p>',
+        else '<div class="empty">没有匹配批次。</div>',
         sql_box("""SELECT * FROM match_result WHERE person_id = '%s' ORDER BY rank;
 SELECT * FROM match_run ORDER BY started_at DESC;""" % who))
     body += page_analysis(c, "/match")
-    return page(title, body, subtitle="能力 ↔ 职业 · 三态可解释")
+    # h1 是「匹配 · 按人才 / 按职业」，跟导航标签「匹配」不相等——不显式指定 here，
+    # 这一页一个导航项都不会高亮（改前的实测现象）。
+    return page(title, body, subtitle="能力 ↔ 职业 · 三态可解释", here="匹配")
 
 
 # ---------------------------------------------------------------------------
 # ⑭ 扩展与演化：三条扩展机制 + 职业树/能力的持续生长
 # ---------------------------------------------------------------------------
+def view_real(c, qs) -> bytes:
+    """真实公开案例验证报告（/real）。
+
+    为什么单独做一页，而不是混在人才库里：
+      合成样本证明的是"结构能装下"，真实案例证明的是"结构够不够用"。
+      后者会暴露前者的假象（合成数据里 35/50 维度 100% 覆盖，真实公开数据只有 6–10/50），
+      这两种结论必须分开呈现，混在一起会把"合成数据填得满"读成"字段设计得好"。
+
+    页面的每一块都对应一个可证伪的问题，不写没有对应证据的话：
+      画像向量 → 这些维度在真人身上取到值了吗？
+      匹配结果 → 排上去的岗位对不对？如果不对，是算法错还是语料没覆盖？
+      三项体检 → 维度正交吗？两侧够用吗？分数分得开人吗？
+    """
+    cases = q(c, """
+        SELECT p.person_id, p.subject_code, p.access_tier, p.quality_flags,
+               p.attrs->>'public_case_label' AS label,
+               p.attrs->>'public_case_gaps'  AS gaps,
+               p.attrs->>'public_case_unmapped' AS unmapped,
+               d.birth_year, d.sex,
+               (SELECT count(*) FROM evidence e WHERE e.person_id=p.person_id) AS n_ev,
+               (SELECT max(e.cel_level) FROM evidence e WHERE e.person_id=p.person_id) AS cel
+          FROM person p LEFT JOIN person_demographics d ON d.person_id=p.person_id
+         WHERE p.person_id LIKE 'per_real\\_%'
+         ORDER BY p.person_id""")
+
+    tg = {}
+    tpath = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__)))), "ops", "fixtures", "real_targets.json")
+    if os.path.isfile(tpath):
+        with open(tpath, encoding="utf-8") as fh:
+            for x in json.load(fh).get("cases", []):
+                tg[x["person_id"]] = x
+
+    blocks = []
+    for cs in cases:
+        pid = cs["person_id"]
+        # ---- 履历：教育 + 任职，按开始时间排 ----
+        hist = []
+        for e in q(c, """SELECT degree_level, school_name, major_raw, major_code,
+                                start_date, end_date, is_clinical, overseas, attrs
+                           FROM education_record WHERE person_id=%s""", (pid,)):
+            hist.append(("教育", e["start_date"], "%s · %s%s%s"
+                         % (e["school_name"],
+                            lbl("CT_DEGREE_LEVEL", e["degree_level"]) or e["degree_level"],
+                            "（%s）" % e["major_raw"] if e["major_raw"] else "",
+                            "　专业码 %s" % e["major_code"] if e["major_code"] else
+                            "　专业码：未归一化")))
+        for w in q(c, """SELECT employer_name, employer_type, title_raw,
+                                start_date, end_date, is_current
+                           FROM employment_record WHERE person_id=%s""", (pid,)):
+            hist.append(("任职", w["start_date"], "%s · %s　单位类型 %s"
+                         % (w["employer_name"], w["title_raw"] or "（职务未公开）",
+                            lbl("CT_EMPLOYER_TYPE", w["employer_type"]) or w["employer_type"])))
+        hist.sort(key=lambda x: (x[1] is None, x[1]))
+        hist_html = "".join(
+            "<tr><td><span class='pill p-n'>%s</span></td><td>%s</td><td>%s</td></tr>"
+            % (k, x.strftime("%Y-%m") if x else '<span class="nul">日期未公开</span>',
+               esc(t))
+            for k, x, t in hist) or '<tr><td colspan="3" class="muted">无公开履历</td></tr>'
+
+        # ---- 画像向量：直接调与人详情页**同一个**函数，避免两处口径 ----
+        dv = person_dimensions(c, pid)
+        n_have = len([x for x in dv if x["value"]])
+        vrows, cur = [], None
+        for x in dv:
+            if x["group"] != cur:
+                cur = x["group"]
+                vrows.append('<tr><td colspan="3" style="background:#f6f8fa;'
+                             'font-weight:600">%s</td></tr>' % esc(cur))
+            vrows.append('<tr><td>%s</td><td>%s</td><td class="muted">%s</td></tr>' % (
+                esc(x["title"]),
+                ("<b>%s</b>" % esc(trunc(x["value"], 40))) if x["value"]
+                else '<span class="nul">公开资料未覆盖</span>',
+                esc(x["note"] or "")))
+
+        # ---- 匹配：读落库的 match_result（结论必须可追溯，不在页面上现算） ----
+        mm = q(c, """SELECT m.rank, m.score_total, m.explanation, m.target_id,
+                            j.title_raw, j.city, j.occupation_id, o.label_zh AS occ_label
+                       FROM match_result m
+                       JOIN job_posting j ON j.job_id = m.target_id
+                       LEFT JOIN occupation o ON o.occupation_id = j.occupation_id
+                      WHERE m.person_id=%s ORDER BY m.rank LIMIT 5""", (pid,))
+        n_all = q1(c, "SELECT count(*) FROM match_result WHERE person_id=%s", (pid,))
+        mm_html = "".join(
+            '<tr><td class="n">%s</td><td>%s</td><td>%s</td><td>%s</td>'
+            '<td class="muted">%s</td></tr>'
+            % (x["rank"], esc(x["title_raw"]), esc(x["occ_label"] or "-"),
+               '<b>%.3f</b>' % float(x["score_total"]) if x["score_total"] is not None
+               else "NULL", esc(trunc(x["explanation"], 60)))
+            for x in mm)
+
+        t = tg.get(pid) or {}
+        verdict = ""
+        if t:
+            verdict = ('<div class="note %s"><b>真实去向对照：</b>%s<br>'
+                       '<b>对照节点：</b>%s　（该节点在 690 份 JD 里有 %d 份）<br>'
+                       '<b>映射口径：</b>%s'
+                       + ('<br><b>⚠ 名次不可作为有效性证据</b>：该去向在语料里没岗位，'
+                          '属于覆盖缺口。缺的节点：%s' if t.get("occupation_ids") else '')
+                       + '</div>') % (
+                "info", esc(t.get("actual_path") or "-"),
+                esc("、".join(t.get("labels") or [])), 0, esc(t.get("mapping_reason") or "-"),
+                esc("、".join(t.get("nodes_without_jd") or [])))
+        blocks.append("""
+<div class="card"><h2>%s <span class="muted">· %s · %s · 证据 %d 条（最高 %s）</span></h2>
+<p class="muted">%s</p>
+<div class="tablewin"><table><thead><tr><th>类型</th><th>起始</th><th>履历</th></tr></thead>
+<tbody>%s</tbody></table></div>
+%s
+</div>
+
+<div class="card"><h2>画像向量 <span class="muted">· 50 个维度中公开资料能取到值的有 %d 个</span></h2>
+<div class="tablewin"><table><thead><tr><th>维度</th><th>取值</th><th>取数说明</th></tr></thead>
+<tbody>%s</tbody></table></div>
+%s%s</div>
+
+<div class="card"><h2>匹配结果 <span class="muted">· 落库 %s 条，取前 5</span></h2>
+<div class="tscroll"><table><thead><tr><th>#</th><th>岗位</th><th>职业节点</th>
+<th>总分</th><th>可解释性</th></tr></thead><tbody>%s</tbody></table></div>
+<p class="muted">总分是<b>只对两侧都有值的维度</b>做的加权归一（空值不计入分母，
+不当作 0 分）。因此"总分低"可能是"没观测到"，而不是"不合格"——每一行的
+<code>explanation</code> 里写着可评维度数与覆盖比例。</p></div>
+""" % (esc(cs["label"] or pid), esc(cs["subject_code"]), esc(pid), cs["n_ev"],
+       esc(cs["cel"] or "-"),
+       "数据来源：公开报道与机构官网，逐条附链接（evidence 表）；"
+       "证据级别封顶第三方记录，未做本人核验。" if cs["n_ev"] else "无来源记录。",
+       hist_html, verdict,
+       n_have, "".join(vrows),
+       ('<div class="note err"><b>公开资料未覆盖：</b>%s</div>' % esc(cs["gaps"]))
+       if cs["gaps"] else "",
+       ('<div class="note err"><b>词表装不下的原始值：</b>%s</div>' % esc(cs["unmapped"]))
+       if cs["unmapped"] else "",
+       n_all, mm_html))
+
+    # ---- 三项体检：读缓存（现算要 20+ 秒，页面渲染扛不住；缓存由脚本生成并标注时间）----
+    cache = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__)))), "analysis", "dimension_check.json")
+    check_html = ""
+    if os.path.isfile(cache):
+        with open(cache, encoding="utf-8") as fh:
+            chk = json.load(fh)
+        ts = time.strftime("%Y-%m-%d %H:%M", time.localtime(os.path.getmtime(cache)))
+        s = chk.get("sufficiency") or {}
+        o = chk.get("orthogonality") or {}
+        e = (chk.get("effectiveness") or {}).get("distribution") or {}
+        check_html = """
+<div class="card"><h2>维度体检 <span class="muted">· 由 code/analytics/dimension_check.py 生成
+（%s）</span></h2>
+<div class="cards">
+%s
+</div>
+<div class="grid2">
+  <div><h3>正交性</h3>
+    <p class="muted">阈值：Cramér's V ≥ %.2f / Spearman ≥ %.2f / Jaccard ≥ %.2f 判为疑似重复计权。</p>
+    <p>恒定维度（≥90%% 的人同值）：<b>%d</b> 个；疑似重复计权的维度对：<b>%d</b> 对。</p>
+    <p class="muted">%s</p>
+  </div>
+  <div><h3>有效性</h3>
+    <p>抽样 %s 人 × %s 岗位：得分标准差 <b>%.3f</b>，不同取值 %s 个 / %s 条。</p>
+    <p class="muted">标准差越小说明越分不开人；并列越多，排名越接近字典序。</p>
+  </div>
+</div>
+<p class="muted">原始结论（含每对冗余维度、每个零方差维度的清单）见
+<code>analysis/dimension_check.json</code>。</p></div>
+""" % (ts,
+       "".join(metric(v, t2) for v, t2 in [
+           (len(s.get("two_sided") or []), "两侧都有值的维度"),
+           ("%.1f%%" % (s.get("weight_two_sided_pct") or 0), "两侧可评权重占比"),
+           ("%.1f%%" % (s.get("weight_score_two_sided_pct") or 0), "打分维度可评占比"),
+           ("%d/%d" % (len(s.get("gates_evaluable") or []), s.get("gates_total") or 0),
+            "门禁可评/总数"),
+           (len(o.get("constant_dimensions") or []), "恒定维度"),
+           (len(o.get("redundant_pairs") or []), "疑似重复计权对")]),
+       o["thresholds"]["cramers_v"], o["thresholds"]["spearman"], o["thresholds"]["jaccard"],
+       len(o.get("constant_dimensions") or []), len(o.get("redundant_pairs") or []),
+       esc("；".join("%s × %s（%s=%.3f）" % (p["a"], p["b"], p["stat"], p["value"])
+                     for p in (o.get("redundant_pairs") or [])[:4]) or "未发现。"),
+       e.get("n_person"), e.get("n_job"),
+       (e.get("overall") or {}).get("std") or 0,
+       (e.get("overall") or {}).get("distinct"), (e.get("overall") or {}).get("n_scores"))
+    else:
+        check_html = """
+<div class="card"><h2>维度体检 <span class="muted">· 尚未生成</span></h2>
+<p>这一块要跑 120 人 × 690 岗位的统计，现算要 20 秒以上，会把页面渲染拖垮，
+所以由脚本生成缓存后在这里展示。生成命令：</p>
+<pre>python code/analytics/dimension_check.py --all --json analysis/dimension_check.json</pre>
+<p class="muted">体检要回答三个可证伪的问题：维度之间是否正交（有没有同一份数据被
+两个维度各计一次权重）、两侧是否够用（能不能真的匹配）、分数是否分得开人。</p></div>"""
+
+    body = """
+<div class="sub">拿<b>三位真实、公开、可核查</b>的医学教育背景人物当标尺，验证这套建模
+到底够不够用。<b>这一页的结论优先于合成数据</b>：合成样本只能证明结构装得下，
+真实公开数据才会暴露字段够不够。</div>
+
+<div class="note err"><b>先说清楚这页的边界，免得把结论读大了：</b>
+① 样本量 <b>3</b>，任何比例（1/3、2/3）都没有统计意义，只能当个案看；
+② 全部事实来自公开报道与机构官网，是<b>第三方记录</b>，证据级别封顶 E2/E3，<b>未做本人核验</b>；
+③ 三人的<b>资格证书、户籍、测评得分</b>在公开资料里系统性缺失，因此这几类维度的
+"覆盖率低"反映的是<b>公开数据的边界</b>，不是字段设计缺陷；
+④ 690 份 JD 只覆盖 151 个职业节点中的 <b>23 个</b>，"真实去向排第几名"只在语料覆盖范围内可评。
+</div>
+
+%s
+%s
+""" % ("".join(blocks), check_html)
+    return page("真实案例验证", body, subtitle="公开案例 · 画像向量 · 匹配对照 · 维度体检")
+
+
 def view_extend(c, qs) -> bytes:
     h = q(c, "SELECT * FROM v_evolution_health")[0]
     usage = {
@@ -3057,6 +3722,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, view_tree(c, qs))
                 if path == "/match":
                     return self._send(200, view_match(c, qs))
+                if path == "/real":
+                    return self._send(200, view_real(c, qs))
                 if path == "/extend":
                     return self._send(200, view_extend(c, qs))
                 if path == "/quality":

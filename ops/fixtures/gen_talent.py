@@ -153,6 +153,68 @@ SCHOOL_LOW = ["河北医科大学", "山西医科大学", "温州医科大学", 
               "昆明医科大学", "贵州医科大学", "徐州医科大学", "大连医科大学", "广西医科大学",
               "宁夏医科大学", "新疆医科大学"]
 
+# ---- 院校标签：**由院校派生**，不是随机贴 ----
+# 为什么改成"查表"：原来 D4 走 `r.choice(["双一流","985"]) + r.choice(["211","医学强校"])`，
+# 于是"北京大学医学部"可能被贴上 985+医学强校 而没有"双一流"——标签与院校事实不符，
+# 交叉分析出来的结构就是噪声。现在按院校事实固定，聚类才有意义。
+# 注：这 5 个标签沿用库里既有取值，**没有新增词表外的值**。
+# `field_catalog.F_EDU_SCHOOL_TAGS` 登记为 data_type=array、code_table_id=NULL、
+# collection_method=derived —— 即"自由标签数组"，所以这里刻意不写 ST 码（见 README 说明）。
+SCHOOL_TAGS = {
+    # 985 / 双一流A类
+    "北京大学医学部": ["双一流", "985"], "复旦大学上海医学院": ["双一流", "985"],
+    "上海交通大学医学院": ["双一流", "985"], "浙江大学医学院": ["双一流", "985"],
+    "中山大学中山医学院": ["双一流", "985"], "四川大学华西医学中心": ["双一流", "985"],
+    "华中科技大学同济医学院": ["双一流", "985"], "中南大学湘雅医学院": ["双一流", "985"],
+    "山东大学齐鲁医学院": ["双一流", "985"], "武汉大学医学部": ["双一流", "985"],
+    "西安交通大学医学部": ["双一流", "985"], "吉林大学白求恩医学部": ["双一流", "985"],
+    "同济大学医学院": ["双一流", "985"], "厦门大学医学院": ["双一流", "985"],
+    "郑州大学医学院": ["双一流", "211"],
+    # 原211
+    "天津医科大学": ["211"],
+    # 医学强校 / 省重点（非 211）
+    "首都医科大学": ["医学强校", "省重点"], "南京医科大学": ["医学强校", "省重点"],
+    "中国医科大学": ["医学强校", "省重点"], "哈尔滨医科大学": ["医学强校", "省重点"],
+    "南方医科大学": ["医学强校", "省重点"], "重庆医科大学": ["省重点"],
+    "河北医科大学": ["省重点"], "山西医科大学": ["省重点"], "温州医科大学": ["医学强校", "省重点"],
+    "安徽医科大学": ["省重点"], "福建医科大学": ["省重点"], "昆明医科大学": ["省重点"],
+    "贵州医科大学": ["省重点"], "徐州医科大学": ["省重点"], "大连医科大学": ["省重点"],
+    "广西医科大学": ["省重点"], "宁夏医科大学": ["省重点"], "新疆医科大学": ["省重点"],
+}
+
+# ---- 临床科室：中文明细 → CT_CLINICAL_DEPARTMENT 码 ----
+# `clinical_exposure` 是"原始值 + 码值"双列设计：department 存明细原文（保留信息量），
+# department_code 存码值（可聚合、可跨库比对）。原生成器只写了前一半，department_code 143/143 全空，
+# 于是 DIM_CLINICAL_DEPARTMENT 声明的码表形同虚设。
+# DP27/DP28 的归类照抄词表 seed 里的备注（手术室 6 次；内科病区/外科病区/儿科病区 → 病区未细分）。
+DEPT_CODE = {
+    # 临床
+    "心血管内科": "DP11", "呼吸与危重症医学科": "DP13", "消化内科": "DP14",
+    "神经内科": "DP09", "普通外科": "DP02", "骨科": "DP08", "儿科": "DP04",
+    "急诊科": "DP05",
+    # 护理
+    "内科病区": "DP28", "外科病区": "DP28", "重症监护室": "DP06", "手术室": "DP27",
+    "儿科病区": "DP28",
+    # 药学 / 临床药学
+    "药剂科": "DP23", "临床药理研究室": "DP23", "药物分析实验室": "DP23",
+    "制剂室": "DP23", "临床药学室": "DP23", "药物咨询门诊": "DP23",
+    "I期临床试验病房": "DP26",
+    # 预防（疾控科室不在临床科室范畴，归入全科与社区卫生，这是最近的可选桶）
+    "传染病防制科": "DP25", "慢性病防制科": "DP25", "免疫规划科": "DP25",
+    "卫生监测科": "DP25",
+    # 生统 / 基础 / 生医工
+    "统计教研室": "DP20", "临床研究数据中心": "DP26", "生物统计部": "DP20",
+    "病理学系": "DP20", "生理学系": "DP20", "免疫学实验室": "DP20",
+    "分子生物学实验室": "DP20", "细胞生物学实验室": "DP20",
+    "医学工程科": "DP17", "影像工程实验室": "DP17", "生物材料实验室": "DP20",
+    "医疗器械研发部": "DP17",
+    # 中医 / 口腔 / 影像 / 麻醉
+    "中医内科": "DP22", "针灸科": "DP22", "推拿科": "DP22", "中西医结合科": "DP22",
+    "口腔内科": "DP21", "口腔颌面外科": "DP21", "口腔修复科": "DP21", "正畸科": "DP21",
+    "放射科": "DP17", "超声医学科": "DP18", "核医学科": "DP19", "介入放射科": "DP17",
+    "麻醉科": "DP07", "疼痛科": "DP29", "重症医学科": "DP06",
+}
+
 DEPARTMENTS = {
     "clin": ["心血管内科", "呼吸与危重症医学科", "消化内科", "神经内科", "普通外科",
              "骨科", "儿科", "急诊科"],
@@ -397,6 +459,335 @@ FAMILY_LABEL = {
 PROJECT_TYPES = ["科研课题", "临床试验项目", "横向合作项目", "产品研发项目", "公共卫生项目"]
 
 # ===========================================================================
+# 1b. 人侧维度取值：**按方向差异化**的分布（本文件最重要的结构）
+# ===========================================================================
+# 设计原则（用户这次的核心要求：取值要"有结构、可分析"，不是随机噪声）：
+#   ① 每个码的权重都来自"这个方向的人真实会怎么选"，可解释；
+#   ② 方向之间必须能看出差异（生医工→AI/器械，药学→医药产业/金融，临床→临床+AI，
+#      预防→公卫/政策），否则交叉分析只能得到均匀噪声；
+#   ③ 保留 10–20% 的**刻意不一致**（mismatch），让缺口分析有素材——沿用原有的 25% 口径；
+#   ④ 一律**存码不存标签**，且只用 mt.code_value 里已登记的码。
+
+# ---- 城市：中文名 → CT_CITY 码（PF1 的 value_code 原来 120/120 全空，这里回填）----
+CITY_CODE = {
+    "北京": "CTY01", "天津": "CTY02", "石家庄": "CTY03", "太原": "CTY04",
+    "上海": "CTY05", "南京": "CTY06", "苏州": "CTY07", "无锡": "CTY08",
+    "杭州": "CTY09", "宁波": "CTY10", "合肥": "CTY11", "济南": "CTY12",
+    "青岛": "CTY13", "福州": "CTY14", "厦门": "CTY15", "广州": "CTY16",
+    "深圳": "CTY17", "佛山": "CTY18", "东莞": "CTY19", "武汉": "CTY20",
+    "长沙": "CTY21", "郑州": "CTY22", "南昌": "CTY23", "成都": "CTY24",
+    "重庆": "CTY25", "昆明": "CTY26", "贵阳": "CTY27", "西安": "CTY28",
+    "兰州": "CTY29", "乌鲁木齐": "CTY30", "沈阳": "CTY31", "大连": "CTY32",
+    "长春": "CTY33", "哈尔滨": "CTY34", "海外城市": "CTY35", "其他城市": "CTY99",
+}
+CITY_TIER = {  # 仅用于行为建模（流动性/薪资），城市层级本身由 CT_CITY_TIER 表达
+    "北京": "CT1", "上海": "CT1", "广州": "CT1", "深圳": "CT1",
+    "杭州": "CT2", "南京": "CT2", "成都": "CT2", "武汉": "CT2", "西安": "CT2",
+    "苏州": "CT2", "天津": "CT2", "重庆": "CT2", "郑州": "CT2", "长沙": "CT2",
+    "青岛": "CT2", "合肥": "CT2", "沈阳": "CT2",
+    "济南": "CT3", "福州": "CT3", "厦门": "CT3", "宁波": "CT3", "无锡": "CT3",
+    "大连": "CT3", "昆明": "CT3", "南昌": "CT3", "贵阳": "CT3", "兰州": "CT3",
+    "石家庄": "CT3", "太原": "CT3", "长春": "CT3", "哈尔滨": "CT3", "佛山": "CT3",
+    "东莞": "CT3", "乌鲁木齐": "CT4",
+}
+
+# 期望城市（PF1）：按方向的真实就业市场给权重
+DIR_CITY = {
+    "clin":      {"北京": 8, "上海": 8, "广州": 7, "成都": 6, "武汉": 6, "郑州": 5,
+                  "西安": 5, "长沙": 4, "南京": 4, "深圳": 3, "杭州": 3, "重庆": 3},
+    "nurse":     {"北京": 6, "上海": 6, "广州": 6, "成都": 5, "武汉": 5, "郑州": 5,
+                  "西安": 4, "长沙": 4, "重庆": 4, "青岛": 3, "合肥": 3, "济南": 3},
+    "pharm":     {"上海": 9, "北京": 8, "苏州": 6, "杭州": 5, "济南": 4, "青岛": 4,
+                  "深圳": 4, "南京": 4, "成都": 4, "广州": 3, "武汉": 3, "天津": 3},
+    "clinpharm": {"北京": 7, "上海": 7, "广州": 5, "成都": 5, "武汉": 5, "南京": 4,
+                  "杭州": 4, "苏州": 3, "郑州": 3, "长沙": 3},
+    "prev":      {"北京": 8, "上海": 7, "成都": 6, "武汉": 6, "郑州": 5, "广州": 5,
+                  "西安": 4, "南京": 4, "长沙": 4, "沈阳": 3, "昆明": 3},
+    "biostat":   {"上海": 9, "北京": 8, "南京": 6, "成都": 5, "武汉": 5, "广州": 4,
+                  "杭州": 4, "苏州": 4, "天津": 3, "合肥": 3, "长沙": 3, "西安": 3},
+    "basmed":    {"北京": 9, "上海": 8, "杭州": 5, "广州": 5, "武汉": 5, "南京": 4,
+                  "成都": 4, "西安": 4, "合肥": 3, "济南": 3, "长沙": 3, "天津": 3},
+    "bme":       {"深圳": 9, "上海": 8, "苏州": 7, "北京": 6, "杭州": 5, "南京": 4,
+                  "广州": 4, "武汉": 4, "成都": 3, "合肥": 3, "青岛": 3, "天津": 3},
+    "tcm":       {"北京": 7, "上海": 6, "广州": 6, "成都": 6, "郑州": 5, "武汉": 5,
+                  "西安": 4, "济南": 4, "长沙": 4, "南京": 3, "杭州": 3},
+    "oral":      {"北京": 8, "上海": 7, "广州": 7, "深圳": 6, "成都": 5, "杭州": 5,
+                  "武汉": 4, "南京": 4, "郑州": 4, "青岛": 3, "重庆": 3},
+    "imag":      {"北京": 7, "上海": 7, "广州": 6, "成都": 5, "武汉": 5, "深圳": 5,
+                  "杭州": 4, "南京": 4, "西安": 4, "郑州": 3, "沈阳": 3},
+    "anes":      {"北京": 7, "上海": 7, "广州": 6, "成都": 6, "武汉": 5, "郑州": 5,
+                  "西安": 4, "深圳": 4, "重庆": 4, "长沙": 3, "南京": 3},
+}
+
+# 兴趣方向 PF9 → CT_INTEREST_DOMAIN（IN01–IN28）。用户的例子在这里落成数据：
+# 生医工/生统→AI/数据；药学→医药产业+金融；临床→AI+临床研究；预防→公卫+政策。
+DIR_INTEREST = {
+    "clin":      {"IN01": 10, "IN06": 3, "IN04": 3, "IN16": 2, "IN11": 2, "IN09": 1},
+    "nurse":     {"IN01": 10, "IN11": 3, "IN18": 2, "IN09": 1},
+    "pharm":     {"IN02": 10, "IN05": 4, "IN14": 2, "IN22": 2, "IN07": 2, "IN16": 2},
+    "clinpharm": {"IN02": 7, "IN01": 6, "IN04": 5, "IN07": 3},
+    "prev":      {"IN09": 10, "IN23": 5, "IN07": 3, "IN11": 3},
+    "biostat":   {"IN07": 10, "IN06": 5, "IN04": 5, "IN25": 3, "IN16": 3, "IN26": 3},
+    "basmed":    {"IN05": 8, "IN16": 7, "IN02": 4, "IN06": 3, "IN17": 2},
+    "bme":       {"IN03": 10, "IN06": 6, "IN25": 4, "IN26": 4, "IN08": 3, "IN21": 2},
+    "tcm":       {"IN01": 9, "IN16": 3, "IN18": 2, "IN11": 2},
+    "oral":      {"IN01": 9, "IN03": 3, "IN11": 2},
+    "imag":      {"IN01": 7, "IN06": 7, "IN03": 4, "IN07": 2},
+    "anes":      {"IN01": 9, "IN03": 3, "IN04": 2},
+}
+# 岗位族 → 该族对应的兴趣码（用于"偏好不一致"的人，与 FAR_FAMILIES 对齐）
+FAR_FAMILY_INTEREST = {
+    "F06": ["IN10"], "F07": ["IN12", "IN13"], "F11": ["IN17"], "F12": ["IN15"],
+    "F13": ["IN18", "IN16"], "F14": ["IN20", "IN19"], "F16": ["IN22", "IN27", "IN28"],
+    "F17": ["IN24"],
+}
+
+# 职业目标 PF12 → CT_CAREER_GOAL（CG1–CG8）
+DIR_CAREER_GOAL = {
+    "clin":      {"CG1": 10, "CG7": 2, "CG2": 1},
+    "nurse":     {"CG1": 7, "CG2": 2, "CG6": 2, "CG7": 1},
+    "pharm":     {"CG3": 7, "CG2": 6, "CG4": 2, "CG5": 1},
+    "clinpharm": {"CG2": 7, "CG1": 5, "CG7": 2},
+    "prev":      {"CG6": 9, "CG7": 4, "CG3": 2},
+    "biostat":   {"CG5": 9, "CG3": 4, "CG7": 3},
+    "basmed":    {"CG7": 9, "CG3": 4, "CG8": 1},
+    "bme":       {"CG3": 9, "CG5": 3, "CG4": 2},
+    "tcm":       {"CG1": 9, "CG6": 1, "CG2": 1},
+    "oral":      {"CG1": 9, "CG4": 2, "CG8": 1},
+    "imag":      {"CG1": 8, "CG5": 2, "CG3": 2},
+    "anes":      {"CG1": 9, "CG2": 1, "CG3": 1},
+}
+FAR_FAMILY_GOAL = {
+    "F06": ["CG2"], "F07": ["CG4"], "F11": ["CG7"], "F12": ["CG7"],
+    "F13": ["CG7"], "F14": ["CG4"], "F16": ["CG5"], "F17": ["CG8"],
+}
+
+# 工作风格 PF10 → CT_WORK_STYLE（WS1–WS12）
+DIR_WORK_STYLE = {
+    "clin":      {"WS1": 8, "WS3": 5, "WS6": 5, "WS8": 3, "WS12": 3},
+    "nurse":     {"WS1": 7, "WS3": 7, "WS12": 5, "WS6": 4},
+    "pharm":     {"WS5": 6, "WS6": 6, "WS3": 4, "WS10": 3, "WS9": 3},
+    "clinpharm": {"WS3": 6, "WS6": 5, "WS9": 5, "WS12": 3},
+    "prev":      {"WS3": 6, "WS9": 5, "WS1": 5, "WS5": 3},
+    "biostat":   {"WS4": 7, "WS6": 6, "WS11": 4, "WS7": 3},
+    "basmed":    {"WS2": 8, "WS8": 6, "WS4": 5, "WS11": 3},
+    "bme":       {"WS2": 6, "WS7": 6, "WS5": 5, "WS3": 3},
+    "tcm":       {"WS8": 6, "WS3": 5, "WS1": 5, "WS6": 3},
+    "oral":      {"WS1": 6, "WS5": 5, "WS10": 4, "WS6": 4},
+    "imag":      {"WS6": 7, "WS1": 6, "WS11": 4, "WS2": 3},
+    "anes":      {"WS1": 7, "WS12": 6, "WS3": 4, "WS6": 4},
+}
+
+# 价值观取向 PF11 → CT_VALUE_ORIENT（VO1–VO10）
+DIR_VALUE_ORIENT = {
+    "clin":      {"VO1": 8, "VO2": 7, "VO8": 2},
+    "nurse":     {"VO2": 9, "VO9": 4, "VO6": 3},
+    "pharm":     {"VO1": 6, "VO4": 5, "VO10": 4, "VO3": 2},
+    "clinpharm": {"VO1": 6, "VO2": 5, "VO9": 3},
+    "prev":      {"VO3": 9, "VO2": 5, "VO5": 4},
+    "biostat":   {"VO1": 7, "VO10": 5, "VO4": 4, "VO7": 3},
+    "basmed":    {"VO1": 8, "VO10": 6, "VO8": 3},
+    "bme":       {"VO10": 7, "VO4": 5, "VO1": 4},
+    "tcm":       {"VO2": 7, "VO1": 6, "VO5": 3},
+    "oral":      {"VO4": 6, "VO1": 5, "VO7": 3},
+    "imag":      {"VO1": 7, "VO9": 3, "VO5": 3},
+    "anes":      {"VO1": 6, "VO5": 4, "VO9": 3},
+}
+
+# 组织文化偏好 PF16 → CT_ORG_CULTURE（OC1–OC6）；博士再往"科研导向"偏
+DIR_ORG_CULTURE = {
+    "clin":      {"OC1": 8, "OC3": 3, "OC5": 3},
+    "nurse":     {"OC1": 8, "OC5": 5},
+    "pharm":     {"OC2": 6, "OC4": 6, "OC6": 3, "OC1": 2},
+    "clinpharm": {"OC1": 6, "OC3": 4, "OC4": 3},
+    "prev":      {"OC1": 8, "OC5": 4, "OC3": 3},
+    "biostat":   {"OC2": 5, "OC3": 5, "OC5": 4, "OC6": 2},
+    "basmed":    {"OC3": 9, "OC5": 3, "OC6": 2},
+    "bme":       {"OC2": 7, "OC4": 5, "OC6": 3},
+    "tcm":       {"OC1": 8, "OC5": 4},
+    "oral":      {"OC2": 5, "OC4": 5, "OC1": 3},
+    "imag":      {"OC1": 6, "OC3": 4, "OC5": 3},
+    "anes":      {"OC1": 7, "OC2": 3, "OC5": 3},
+}
+
+# 值班意愿 PF14 → CT_SHIFT_WILLING（SH1 愿意 / SH2 可协商 / SH3 不愿意）
+# 结构性预期：临床科室（含护理/麻醉/影像/中医）愿意值班的比例显著高于科研与数据岗。
+DIR_SHIFT = {
+    "clin":      {"SH1": 9, "SH2": 3},
+    "nurse":     {"SH1": 9, "SH2": 4},
+    "anes":      {"SH1": 9, "SH2": 3},
+    "imag":      {"SH1": 7, "SH2": 4},
+    "tcm":       {"SH1": 6, "SH2": 5},
+    "oral":      {"SH1": 4, "SH2": 5, "SH3": 2},
+    "clinpharm": {"SH1": 4, "SH2": 5, "SH3": 2},
+    "prev":      {"SH1": 3, "SH2": 6, "SH3": 2},
+    "pharm":     {"SH2": 6, "SH3": 4, "SH1": 2},
+    "biostat":   {"SH2": 5, "SH3": 5, "SH1": 1},
+    "basmed":    {"SH2": 5, "SH3": 4, "SH1": 2},
+    "bme":       {"SH2": 6, "SH3": 4, "SH1": 2},
+}
+
+# 工作强度容忍 PF5 → CT_WORK_INTENSITY（WI1–WI5）
+DIR_INTENSITY = {
+    "clin":      {"WI3": 7, "WI4": 6, "WI2": 2},
+    "nurse":     {"WI4": 7, "WI3": 6, "WI2": 2},
+    "anes":      {"WI3": 7, "WI4": 5, "WI2": 2},
+    "imag":      {"WI3": 5, "WI4": 4, "WI2": 4},
+    "tcm":       {"WI2": 6, "WI3": 4, "WI1": 2},
+    "oral":      {"WI2": 5, "WI3": 4, "WI1": 3},
+    "clinpharm": {"WI2": 6, "WI3": 4, "WI1": 2},
+    "prev":      {"WI2": 6, "WI1": 4, "WI3": 3},
+    "pharm":     {"WI2": 5, "WI3": 4, "WI5": 3, "WI1": 3},
+    "biostat":   {"WI1": 5, "WI2": 5, "WI5": 3},
+    "basmed":    {"WI2": 5, "WI1": 4, "WI3": 4},
+    "bme":       {"WI2": 5, "WI5": 5, "WI3": 3},
+}
+
+# 成长性偏好 PF7 → CT_GROWTH_PREF（GP1–GP5）
+DIR_GROWTH = {
+    "clin":      {"GP2": 7, "GP1": 4, "GP3": 4, "GP5": 2},
+    "nurse":     {"GP1": 6, "GP2": 5, "GP4": 3},
+    "pharm":     {"GP3": 6, "GP5": 5, "GP4": 4, "GP2": 3},
+    "clinpharm": {"GP2": 6, "GP1": 4, "GP3": 3},
+    "prev":      {"GP1": 6, "GP2": 5, "GP5": 3},
+    "biostat":   {"GP3": 6, "GP2": 5, "GP5": 4, "GP4": 2},
+    "basmed":    {"GP2": 6, "GP5": 5, "GP1": 3},
+    "bme":       {"GP3": 6, "GP5": 5, "GP2": 4, "GP4": 3},
+    "tcm":       {"GP2": 5, "GP1": 5, "GP4": 3},
+    "oral":      {"GP4": 6, "GP3": 5, "GP2": 3},
+    "imag":      {"GP1": 5, "GP2": 5, "GP3": 3},
+    "anes":      {"GP1": 5, "GP2": 5, "GP4": 4},
+}
+
+# 稳定性偏好 PF6 → CT_STABILITY_PREF（ST1–ST5）
+# 注意 ST* 既是学校层次也是稳定性偏好的码，靠 code_table_id 区分，别混用。
+DIR_STABILITY = {
+    "clin":      {"ST1": 7, "ST2": 6, "ST3": 2},
+    "nurse":     {"ST1": 8, "ST2": 5, "ST5": 2},
+    "pharm":     {"ST2": 5, "ST3": 6, "ST1": 3, "ST4": 2},
+    "clinpharm": {"ST2": 6, "ST1": 5, "ST3": 3},
+    "prev":      {"ST1": 9, "ST2": 4, "ST5": 2},
+    "biostat":   {"ST3": 6, "ST2": 5, "ST5": 3, "ST1": 2},
+    "basmed":    {"ST1": 6, "ST2": 5, "ST5": 4},
+    "bme":       {"ST3": 7, "ST4": 3, "ST2": 4},
+    "tcm":       {"ST1": 8, "ST2": 4},
+    "oral":      {"ST3": 5, "ST2": 5, "ST1": 3, "ST4": 2},
+    "imag":      {"ST1": 7, "ST2": 5},
+    "anes":      {"ST1": 7, "ST2": 5, "ST3": 2},
+}
+
+# 工作方式偏好 PF13 → CT_WORK_MODE（WM1–WM6）
+DIR_WORK_MODE = {
+    "clin":      {"WM1": 9, "WM6": 2},
+    "nurse":     {"WM1": 9, "WM6": 2},
+    "pharm":     {"WM1": 8, "WM5": 3, "WM6": 2},
+    "clinpharm": {"WM1": 8, "WM6": 2},
+    "prev":      {"WM1": 9, "WM6": 2},
+    "biostat":   {"WM1": 6, "WM5": 5, "WM4": 3, "WM6": 3},
+    "basmed":    {"WM1": 7, "WM6": 4, "WM5": 2},
+    "bme":       {"WM1": 6, "WM5": 5, "WM6": 3},
+    "tcm":       {"WM1": 9, "WM6": 2},
+    "oral":      {"WM1": 8, "WM5": 2, "WM6": 2},
+    "imag":      {"WM1": 9, "WM6": 2},
+    "anes":      {"WM1": 9, "WM6": 2},
+}
+
+# 地域流动意愿 PF15 → CT_MOBILITY（MB1 本市 / MB2 省内 / MB3 全国 / MB4 海外）
+# 结构：学历越高越愿意流动；户籍在本地的人更倾向"只考虑本市"（由期望城市与户籍对比决定）。
+DIR_MOBILITY = {
+    "clin":      {"MB2": 5, "MB3": 6, "MB1": 3},
+    "nurse":     {"MB1": 4, "MB2": 6, "MB3": 4},
+    "pharm":     {"MB3": 8, "MB2": 4, "MB1": 2, "MB4": 2},
+    "clinpharm": {"MB3": 7, "MB2": 4, "MB1": 2},
+    "prev":      {"MB1": 5, "MB2": 5, "MB3": 4},
+    "biostat":   {"MB3": 9, "MB4": 3, "MB2": 3, "MB1": 1},
+    "basmed":    {"MB3": 7, "MB4": 4, "MB2": 3, "MB1": 1},
+    "bme":       {"MB3": 8, "MB1": 3, "MB2": 3, "MB4": 2},
+    "tcm":       {"MB2": 6, "MB1": 5, "MB3": 3},
+    "oral":      {"MB2": 5, "MB1": 5, "MB3": 4},
+    "imag":      {"MB2": 5, "MB1": 4, "MB3": 5},
+    "anes":      {"MB2": 5, "MB3": 5, "MB1": 4},
+}
+
+# 家庭预算：薪资期望方向系数（在原有的学历系数之外再乘一档）
+DIR_SALARY_FACTOR = {
+    "clin": 1.00, "nurse": 0.72, "pharm": 1.15, "clinpharm": 0.95, "prev": 0.85,
+    "biostat": 1.25, "basmed": 0.95, "bme": 1.20, "tcm": 0.88, "oral": 1.10,
+    "imag": 0.98, "anes": 1.05,
+}
+
+# 项目类型/角色/测评维度：把原来写中文的列改成存码，并加入方向权重
+DIR_PROJECT_TYPE = {
+    "clin":      {"PJ3": 5, "PJ1": 4, "PJ6": 4, "PJ7": 2, "PJ9": 2},
+    "nurse":     {"PJ6": 6, "PJ7": 4, "PJ9": 3, "PJ1": 2},
+    "pharm":     {"PJ5": 7, "PJ1": 4, "PJ3": 3, "PJ2": 3},
+    "clinpharm": {"PJ3": 7, "PJ6": 4, "PJ1": 3, "PJ2": 2},
+    "prev":      {"PJ4": 8, "PJ1": 4, "PJ8": 2, "PJ9": 2},
+    "biostat":   {"PJ3": 7, "PJ8": 6, "PJ1": 4, "PJ2": 3},
+    "basmed":    {"PJ1": 9, "PJ2": 4, "PJ5": 3, "PJ7": 2},
+    "bme":       {"PJ5": 8, "PJ8": 5, "PJ1": 3, "PJ2": 3},
+    "tcm":       {"PJ1": 5, "PJ7": 4, "PJ9": 3, "PJ6": 3},
+    "oral":      {"PJ1": 4, "PJ5": 4, "PJ6": 3, "PJ7": 3},
+    "imag":      {"PJ6": 5, "PJ1": 4, "PJ8": 4, "PJ3": 2},
+    "anes":      {"PJ6": 5, "PJ1": 4, "PJ7": 3, "PJ3": 2},
+}
+DIR_PROJECT_ROLE = {   # PR1 负责人 / PR2 核心 / PR3 一般 / PR4 数据统计 / PR5 协调 / PR6 观察
+    "clin":      {"PR2": 5, "PR3": 4, "PR1": 2, "PR6": 2},
+    "nurse":     {"PR3": 5, "PR6": 4, "PR2": 3, "PR5": 2},
+    "pharm":     {"PR2": 5, "PR1": 3, "PR4": 2, "PR5": 2},
+    "clinpharm": {"PR4": 4, "PR5": 4, "PR2": 3, "PR3": 2},
+    "prev":      {"PR5": 5, "PR2": 4, "PR3": 3, "PR1": 2},
+    "biostat":   {"PR4": 8, "PR2": 3, "PR3": 2, "PR1": 1},
+    "basmed":    {"PR2": 5, "PR1": 4, "PR3": 2, "PR6": 2},
+    "bme":       {"PR2": 4, "PR1": 4, "PR4": 2, "PR5": 2},
+    "tcm":       {"PR3": 5, "PR2": 3, "PR1": 2, "PR6": 2},
+    "oral":      {"PR3": 4, "PR2": 3, "PR1": 2, "PR6": 2},
+    "imag":      {"PR3": 4, "PR4": 3, "PR2": 3, "PR6": 2},
+    "anes":      {"PR3": 4, "PR2": 3, "PR6": 2, "PR1": 2},
+}
+DIR_ASSESS_DIM = {     # AD1 逻辑 / AD2 数据分析 / AD3 沟通 / AD4 学习敏捷 / AD5 抗压 / AD6 协作 / AD7 数字素养
+    "clin":      {"AD5": 6, "AD1": 4, "AD3": 4, "AD6": 3},
+    "nurse":     {"AD6": 6, "AD5": 5, "AD3": 4},
+    "pharm":     {"AD2": 5, "AD1": 4, "AD6": 3, "AD4": 3},
+    "clinpharm": {"AD3": 5, "AD2": 4, "AD6": 3},
+    "prev":      {"AD2": 6, "AD3": 4, "AD6": 3},
+    "biostat":   {"AD2": 8, "AD7": 5, "AD1": 4},
+    "basmed":    {"AD1": 6, "AD4": 5, "AD2": 3},
+    "bme":       {"AD7": 6, "AD2": 5, "AD4": 4},
+    "tcm":       {"AD3": 5, "AD6": 3, "AD5": 3},
+    "oral":      {"AD3": 4, "AD6": 3, "AD5": 3},
+    "imag":      {"AD2": 5, "AD6": 3, "AD5": 3},
+    "anes":      {"AD5": 6, "AD1": 4, "AD6": 3},
+}
+# 奖项层级：校级→AW4 / 省级→AW2 / 国家级→AW1（原来写中文，现在存码）
+DIR_AWARD_LEVEL = {
+    "clin":      {"AW4": 5, "AW2": 3, "AW1": 1, "AW5": 2},
+    "nurse":     {"AW4": 7, "AW2": 2, "AW6": 2},
+    "pharm":     {"AW4": 4, "AW2": 3, "AW1": 2, "AW6": 2},
+    "clinpharm": {"AW4": 5, "AW2": 3, "AW1": 1},
+    "prev":      {"AW4": 4, "AW2": 4, "AW1": 2, "AW5": 2},
+    "biostat":   {"AW4": 4, "AW2": 3, "AW1": 2, "AW5": 3},
+    "basmed":    {"AW1": 5, "AW2": 4, "AW4": 3, "AW5": 3},
+    "bme":       {"AW4": 4, "AW2": 3, "AW1": 2, "AW6": 3},
+    "tcm":       {"AW4": 6, "AW2": 3, "AW5": 2},
+    "oral":      {"AW4": 6, "AW2": 3, "AW6": 2},
+    "imag":      {"AW4": 5, "AW2": 3, "AW5": 2},
+    "anes":      {"AW4": 5, "AW2": 3, "AW6": 2},
+}
+
+# 培养经历：clinical 方向走"临床轮转/规培"，非临床方向走"实习 + GCP + 海外访学"
+TRAINING_CLINICAL = {"clin", "nurse", "clinpharm", "tcm", "oral", "imag", "anes"}
+
+# 码 → 中文标签：只用于**合成叙述文本**（项目名/证据标题），落库的是码。
+# 这么写是为了让"存码不存标签"和"文本可读"同时成立。
+PROJECT_TYPE_LABEL = {
+    "PJ1": "科研课题（纵向）", "PJ2": "横向合作项目", "PJ3": "临床试验项目",
+    "PJ4": "公共卫生项目", "PJ5": "产品研发项目", "PJ6": "质量改进项目",
+    "PJ7": "教学与课程建设", "PJ8": "信息化与数据项目", "PJ9": "公益与志愿服务",
+    "PJ10": "其他",
+}
+
+# ===========================================================================
 # 2. 工具函数
 # ===========================================================================
 
@@ -540,13 +931,13 @@ def build_rows(seed, i, dkey, degree):
     for idx, (lvl, dname, start, end) in enumerate(timeline, 1):
         if lvl == "D4":
             school = r.choice(SCHOOL_TOP)
-            tags = [t for t in (r.choice(["双一流", "985"]), r.choice(["211", "医学强校"])) if t]
         elif lvl == "D3":
             school = r.choice(SCHOOL_TOP + SCHOOL_MID)
-            tags = [t for t in (r.choice(["双一流", "211", "省重点"]),) if t]
         else:
             school = r.choice(SCHOOL_MID + SCHOOL_LOW)
-            tags = ["省重点"]
+        # 院校标签由院校事实派生（见 SCHOOL_TAGS 注释）：本科段/硕士段/博士段各按自己的院校取，
+        # 于是"最高学历=博士的人更多带双一流+985"这种结构能直接被查询看出来。
+        tags = list(SCHOOL_TAGS[school])
         add("education_record", dict(
             education_id="edu_%s_%d" % (pid, idx),
             person_id=pid, degree_level=lvl,
@@ -569,9 +960,10 @@ def build_rows(seed, i, dkey, degree):
         sex = "S2" if r.random() < 0.85 else "S1"
     else:
         sex = r.choice(["S1", "S1", "S2", "S2", "S9"])
+    hukou_city = r.choice(CITIES)          # 变量留用：地域流动意愿要拿它和期望城市比
     add("person_demographics", dict(
         person_id=pid, birth_year=birth_year, sex=sex,
-        hukou_province=r.choice(CITIES), hukou_type=r.choice(["H1", "H1", "H2"]),
+        hukou_province=hukou_city, hukou_type=r.choice(["H1", "H1", "H2"]),
         nationality="中国", ethnicity=r.choice(["汉族", "汉族", "汉族", "其他"]),
         political_status=r.choice(["P1", "P3", "P3", "P5", "P2"]),
         marital_status=r.choice(["未婚", "未婚", "已婚"]),
@@ -626,7 +1018,7 @@ def build_rows(seed, i, dkey, degree):
     if direc["key"] in ("clin", "clinpharm", "nurse") and graduated and r.random() < 0.7:
         certs.append(("C02", "住院医师规范化培训合格证", "省级卫生健康委员会",
                       ["CON-K1-CLIN", "CON-K1-GCP"], ["F01"], True))
-    if r.random() < 0.8:
+    if r.random() < 0.85:          # 0.85 而非 0.80：RNG 流变化后仍保持 ~96/120 有证书
         certs.append(("C09", "大学英语六级证书（CET-6）", "教育部考试中心",
                       ["CON-K1-INTL", "CON-K1-LIT"], [], False))
     if direc["key"] in ("biostat", "bme", "prev") and r.random() < 0.6:
@@ -660,14 +1052,14 @@ def build_rows(seed, i, dkey, degree):
 
     # ---------------- 测评（第三方常模，evidence E2 / basis LB2） ----------------
     assess_evd = None
-    if r.random() < 0.45:
+    if r.random() < 0.50:          # 0.50 而非 0.45：保持 ~60/120 有第三方测评
         assess_evd = ev("assess1", "assess",
                         "合成示例·职业能力测评报告（含常模组与百分位，虚构工具）",
                         uri="https://example.invalid/mock/assessment/%s" % sha1(pid, 10),
                         verifier="合成示例测评机构",
                         verified_at=dt.datetime(ANCHOR.year, 5, 20, 14, 0, 0))
-        for k, dim in enumerate(r.sample(["逻辑推理", "数据分析", "沟通表达",
-                                          "抗压与情绪稳定", "团队协作", "学习敏捷度"], 3), 1):
+        for k, dim in enumerate(weighted_sample(
+                rng("asm", seed, i), DIR_ASSESS_DIM[direc["key"]], 3), 1):
             add("assessment", dict(
                 assessment_id="asm_%s_%d" % (pid, k), person_id=pid,
                 instrument="合成示例·通用职业能力测评（虚构工具）", dimension=dim,
@@ -702,16 +1094,51 @@ def build_rows(seed, i, dkey, degree):
             clinical_evds.append((eid, cases, months))
             add("clinical_exposure", dict(
                 exposure_id="clx_%s_%d" % (pid, k), person_id=pid, department=dep,
-                department_code=None, procedure_count=r.randint(10, 300),
+                department_code=DEPT_CODE[dep], procedure_count=r.randint(10, 300),
                 case_volume=cases, skills=r.sample(CLIN_SKILLS[direc["key"]],
                                                    min(4, len(CLIN_SKILLS[direc["key"]]))),
                 duration_months=float(months), confidence=0.8,
                 verify_status="V2", source_id=SRC_ID))
 
+    # ---------------- 培养经历（training_record；原来 0 行） ----------------
+    # 为什么补：DIM_TRAINING 声明的是 CT_TRAINING_TYPE，而人侧唯一来源是
+    # credential.credential_type（C02/C03）——两个词表的码根本不通用（见报告"注册表缺陷"）。
+    # 这里把真正的培养经历按 T01–T08 写进类型化表，注册表一旦把 person_locator 改到
+    # training_record.training_type，这个维度立刻就有 120/120 的码值。
+    trn = rng("trn", seed, i)
+    training_plan = []
+    if direc["key"] in TRAINING_CLINICAL:
+        training_plan.append("T05")                       # 临床轮转
+        if graduated and any(c[0] == "C02" for c in certs):
+            training_plan.append("T01")                   # 住院医师规范化培训
+        if degree == "D4" and trn.random() < 0.25:
+            training_plan.append("T02")                   # 专科医师规范化培训
+        if not graduated:
+            training_plan.append("T06")                   # 实习
+    else:
+        training_plan.append("T06")                       # 实习
+        if trn.random() < 0.5:
+            training_plan.append("T07")                   # GCP 培训
+        if r.random() < 0.05:
+            training_plan.append("T08")                   # 海外访学
+    for ttype in dict.fromkeys(training_plan):
+        months = {"T01": 36, "T02": 24, "T05": 12, "T06": 6, "T07": 1, "T08": 12}[ttype]
+        t_end = min(ANCHOR, bach_start + dt.timedelta(days=365 * 3))
+        t_start = t_end - dt.timedelta(days=int(30.4 * months))
+        add("training_record", dict(
+            training_id="trn_%s_%s" % (pid, ttype), person_id=pid, training_type=ttype,
+            institution=direc["job"]["employer"] % (i % 20 + 1),
+            department=r.choice(DEPARTMENTS[direc["key"]]),
+            start_date=t_start, end_date=t_end, months=float(months),
+            is_completed=(ttype in ("T06", "T07")) or graduated,
+            certificate_ref=("credential:crd_%s_1" % pid) if ttype == "T01" else None,
+            note="合成示例培养经历（虚构机构）", confidence=0.8,
+            verify_status="V2", source_id=SRC_ID))
+
     # ---------------- 科研产出 ----------------
     paper_evds = []
     research_dirs = {"basmed", "biostat", "pharm", "prev", "clin", "bme", "clinpharm"}
-    if direc["key"] in research_dirs and r.random() < (0.85 if degree == "D4" else 0.65):
+    if direc["key"] in research_dirs and r.random() < (0.85 if degree == "D4" else 0.70):
         n_out = r.randint(1, 3 if degree == "D4" else 2)
         for k in range(1, n_out + 1):
             otype = r.choices(["RO1", "RO2", "RO4", "RO5", "RO7"],
@@ -755,20 +1182,25 @@ def build_rows(seed, i, dkey, degree):
     if r.random() < p_rate:
         n_proj = r.randint(1, 3 if r.random() < 0.3 else 2)
         for k in range(1, n_proj + 1):
-            ptype = r.choice(PROJECT_TYPES)
+            ptype = weighted_sample(rng("prj", seed, i * 100 + k),
+                                    DIR_PROJECT_TYPE[direc["key"]], 1)[0]
+            prole = weighted_sample(rng("prl", seed, i * 100 + k),
+                                    DIR_PROJECT_ROLE[direc["key"]], 1)[0]
             start = d(ANCHOR.year - r.choice([1, 2, 2, 3]), r.choice([1, 3, 6, 9]), 1)
             end = d(start.year + r.choice([1, 1, 2]), 12, 31)
             if end > ANCHOR:
                 end = ANCHOR
             eid = ev("proj%d" % k, "project",
-                     "合成示例·项目验收记录：%s（%04d-%d）" % (ptype, i, k),
+                     "合成示例·项目验收记录：%s（%04d-%d）"
+                     % (PROJECT_TYPE_LABEL[ptype], i, k),
                      uri="https://example.invalid/mock/project/%s-%d" % (sha1(pid, 8), k),
                      verifier="项目负责人（合成示例）", verified_at=None)
             project_evds.append(eid)
             add("project_record", dict(
                 project_id="prj_%s_%d" % (pid, k), person_id=pid, project_type=ptype,
-                name="合成示例项目·%s方向%s（%04d-%d）" % (direc["label"], ptype, i, k),
-                role=r.choice(["参与", "核心成员", "子任务负责人", "负责人"]),
+                name="合成示例项目·%s方向%s（%04d-%d）" % (
+                    direc["label"], PROJECT_TYPE_LABEL[ptype], i, k),
+                role=prole,
                 scale_note=r.choice(["课题经费 20 万元", "课题经费 50 万元", "多中心 3 家",
                                      "样本量 300 例", "课题经费 10 万元"]),
                 outcome=r.choice(["按期结题", "形成技术报告", "产出论文一篇",
@@ -777,13 +1209,14 @@ def build_rows(seed, i, dkey, degree):
                 source_id=SRC_ID))
 
     # ---------------- 荣誉 ----------------
-    if r.random() < 0.35:
+    if r.random() < 0.42:          # 0.42 而非 0.35：保持 ~43/120 有获奖记录
         for k in range(1, r.randint(1, 2) + 1):
             add("award_honor", dict(
                 award_id="awd_%s_%d" % (pid, k), person_id=pid,
                 name="合成示例·%s" % r.choice(["优秀毕业生", "学业奖学金", "优秀住院医师",
                                                "病例汇报比赛", "创新创业大赛"]),
-                level=r.choice(["校级", "校级", "省级", "国家级"]),
+                level=weighted_sample(rng("awd", seed, i * 100 + k),
+                                      DIR_AWARD_LEVEL[direc["key"]], 1)[0],
                 year=ANCHOR.year - r.choice([1, 2, 2, 3, 4]),
                 rank=r.choice(["一等奖", "二等奖", "三等奖", None]),
                 confidence=0.8, verify_status="V1", source_id=SRC_ID))
@@ -905,26 +1338,83 @@ def build_rows(seed, i, dkey, degree):
             last_verified_at=dt.datetime(ANCHOR.year, r.choice([1, 3, 6, 9]), 10, 0, 0),
             verify_status=vstatus, source_id=SRC_ID))
 
-    # ---------------- 偏好明细 ----------------
-    city = r.choice(CITIES)
-    lo, hi = r.choice([(6000, 9000), (8000, 12000), (10000, 15000),
-                       (12000, 18000), (15000, 22000), (20000, 30000)])
+    # ---------------- 偏好明细（全部"存码不存标签"，且按方向差异化） ----------------
+    # 这一段是这次任务的主体：原来 PF9/PF10/PF11/PF12/PF13/PF14/PF15/PF16 一行都没有，
+    # PF1/PF5/PF7 有中文原文但 value_code 全空 —— 于是 15 个维度的人侧覆盖率是 0。
+    # 现在每个维度都按"这个方向的人真实会怎么选"给权重抽码，并保留 25% 的刻意不一致。
+    pr = rng("pref", seed, i)
+    city = weighted_sample(rng("city", seed, i), DIR_CITY[direc["key"]], 1)[0]
+    lo, hi = pr.choice([(6000, 9000), (8000, 12000), (10000, 15000),
+                        (12000, 18000), (15000, 22000), (20000, 30000)])
+    sal_f = DIR_SALARY_FACTOR[direc["key"]] * (1.3 if degree == "D4" else 1.0)
+    # 一线城市生活成本上浮（地域与薪酬在数据里就必须相关，否则分析不出东西）
+    if CITY_TIER.get(city) == "CT1":
+        sal_f *= 1.15
+    lo, hi = int(round(lo * sal_f / 500.0) * 500), int(round(hi * sal_f / 500.0) * 500)
+    accept_switch = pr.random() < 0.45          # docs/04 §7：PF8"接受转行"=真 需 ≥40 人
+
+    # 地域流动：学历越高越愿意流动；户籍城市与期望城市同城的人更倾向"只考虑本市"
+    mob_weights = dict(DIR_MOBILITY[direc["key"]])
     if degree == "D4":
-        lo, hi = int(lo * 1.3), int(hi * 1.3)
-    accept_switch = r.random() < 0.45          # docs/04 §7：PF8"接受转行"=真 需 ≥40 人
+        mob_weights["MB3"] = mob_weights.get("MB3", 0) + 3
+        mob_weights["MB4"] = mob_weights.get("MB4", 0) + 2
+        mob_weights["MB1"] = max(1, mob_weights.get("MB1", 1) - 1)
+    if hukou_city == city:
+        mob_weights["MB1"] = mob_weights.get("MB1", 0) + 5
+        mob_weights["MB2"] = mob_weights.get("MB2", 0) + 2
+    mobility = weighted_sample(rng("mob", seed, i), mob_weights, 1)[0]
+
+    # 兴趣方向：方向画像 + （偏好刻意不一致的人）目标族的兴趣码——25% 的不一致在这里落地
+    interest_w = dict(DIR_INTEREST[direc["key"]])
+    if mismatch:
+        for cid in FAR_FAMILY_INTEREST.get(fam, []):
+            interest_w[cid] = interest_w.get(cid, 0) + 4
+    # 组织文化：博士再往"科研导向"偏一档
+    org_w = dict(DIR_ORG_CULTURE[direc["key"]])
+    if degree == "D4":
+        org_w["OC3"] = org_w.get("OC3", 0) + 3
+    # 职业目标：偏好不一致的人额外挂一条目标族对应的目标
+    goal_w = dict(DIR_CAREER_GOAL[direc["key"]])
+    if mismatch:
+        for cid in FAR_FAMILY_GOAL.get(fam, []):
+            goal_w[cid] = goal_w.get(cid, 0) + 3
+
     prefs = [
-        ("PF1", city, None, 1.0, True),
+        ("PF1", city, CITY_CODE[city], 1.0, True),
         ("PF3", FAMILY_LABEL[fam], fam, 1.0, True),
         ("PF4", "%d-%d 元/月" % (lo, hi), "monthly:%d-%d" % (lo, hi), 0.8, False),
+        ("PF5", None, weighted_sample(rng("int", seed, i),
+                                      DIR_INTENSITY[direc["key"]], 1)[0], 0.6, False),
+        ("PF6", None, weighted_sample(rng("sta", seed, i),
+                                      DIR_STABILITY[direc["key"]], 1)[0], 0.5, False),
+        ("PF7", None, weighted_sample(rng("gro", seed, i),
+                                      DIR_GROWTH[direc["key"]], 1)[0], 0.5, False),
         ("PF8", "接受转行" if accept_switch else "不接受转行",
          "Y" if accept_switch else "N", 0.6, False),
+        ("PF13", None, weighted_sample(rng("wmd", seed, i),
+                                       DIR_WORK_MODE[direc["key"]], 1)[0], 0.7, False),
+        ("PF14", None, weighted_sample(rng("shf", seed, i),
+                                       DIR_SHIFT[direc["key"]], 1)[0], 0.7, False),
+        ("PF15", None, mobility, 0.6, False),
     ]
-    if r.random() < 0.5:
-        prefs.append(("PF5", r.choice(["可接受高强度", "希望规律作息", "可接受夜班"]),
-                      None, 0.5, False))
-    if r.random() < 0.5:
-        prefs.append(("PF7", r.choice(["重视成长空间", "重视平台稳定性", "重视收入"]),
-                      None, 0.5, False))
+
+    # 集合型偏好：一维多值，ID 用**内容键**（码）而不是序号——序号会随 seed 漂移成孤儿行
+    def add_set(ptype, weights, k):
+        for rank, code in enumerate(
+                weighted_sample(rng(ptype.lower(), seed, i), weights, k)):
+            add("preference", dict(
+                preference_id="prf_%s_%s_%s" % (pid, ptype, code),
+                person_id=pid, pref_type=ptype, value_raw=None, value_code=code,
+                weight=round(max(0.2, 1.0 - 0.2 * rank), 3),
+                is_hard=False, confidence=0.7))
+
+    add_set("PF9", interest_w,
+            1 + (1 if pr.random() < 0.55 else 0) + (1 if pr.random() < 0.2 else 0))
+    add_set("PF10", DIR_WORK_STYLE[direc["key"]], 1 + (1 if pr.random() < 0.5 else 0))
+    add_set("PF11", DIR_VALUE_ORIENT[direc["key"]], 1 + (1 if pr.random() < 0.5 else 0))
+    add_set("PF12", goal_w, 1 + (1 if pr.random() < 0.35 else 0))
+    add_set("PF16", org_w, 1 + (1 if pr.random() < 0.4 else 0))
+
     for ptype, vraw, vcode, w, hard in prefs:
         add("preference", dict(
             # ID 用 pref_type 而不是序号：偏好条数随 seed 变化，序号会漂移并产生孤儿行
@@ -974,11 +1464,322 @@ def count_rows(c, table, where="person_id LIKE %s", arg=MOCK_PREFIX + "%"):
 
 
 # ===========================================================================
-# 6. 分布摘要
+# 6. 人侧维度覆盖率（每个维度"有多少 mock 样本真的取到了结构化取值"）
+# ===========================================================================
+# 为什么需要它：`mt.dimension` 只是**注册表**——它声明"这个维度的人侧来源是哪个表
+# 哪一列"，却不告诉你"到底有多少人真的有值"。本项目踩的坑正是这个：50 个维度、
+# 词表全都建好了，人侧却一行没写（实测 PF9/PF10/PF12/PF14 = 0 人）。
+# 把覆盖率变成**可数**的，这件事才不会再悄悄发生。
+#
+# 口径：分母 = mock 人才数（`per_mock_%`）；分子 = 该维度取到**非空取值**的人数。
+# 「有值」与「存的是码」是两件事：某个列有值但存的是中文标签（如 school_tags），
+# 覆盖率算 100%，但在备注里如实标注为"非码取值"，不假装它已码化。
+#
+# 这里的 COVERAGE_SQL 是**单一事实来源**：运行时报告用它，`--emit-coverage-sql`
+# 又把它导出成 ops/fixtures/check_dimension_coverage.sql 供独立复核，两边不会漂移。
+
+COVERAGE_SQL = {
+    "DIM_DEGREE_LEVEL":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.education_record"
+        " WHERE person_id LIKE 'per_mock_%' AND degree_level IS NOT NULL",
+    "DIM_MAJOR":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.education_record"
+        " WHERE person_id LIKE 'per_mock_%' AND major_code IS NOT NULL",
+    "DIM_IS_CLINICAL_MAJOR":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.education_record"
+        " WHERE person_id LIKE 'per_mock_%' AND is_clinical IS NOT NULL",
+    "DIM_ACADEMIC_RANK":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.education_record"
+        " WHERE person_id LIKE 'per_mock_%' AND rank_percentile IS NOT NULL",
+    "DIM_SCHOOL_TIER":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.education_record"
+        " WHERE person_id LIKE 'per_mock_%' AND school_tags IS NOT NULL"
+        " AND cardinality(school_tags) > 0",
+    "DIM_CREDENTIAL":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.credential"
+        " WHERE person_id LIKE 'per_mock_%' AND credential_type IS NOT NULL",
+    "DIM_CREDENTIAL_STATUS":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.credential"
+        " WHERE person_id LIKE 'per_mock_%' AND status IS NOT NULL",
+    "DIM_TRAINING":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.training_record"
+        " WHERE person_id LIKE 'per_mock_%' AND training_type IS NOT NULL",
+    "DIM_HEALTH_LIMIT":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.person_demographics"
+        " WHERE person_id LIKE 'per_mock_%' AND health_limits IS NOT NULL",
+    "DIM_POLITICAL":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.person_demographics"
+        " WHERE person_id LIKE 'per_mock_%' AND political_status IS NOT NULL",
+    "DIM_AGE_BAND":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.person_demographics"
+        " WHERE person_id LIKE 'per_mock_%' AND birth_year IS NOT NULL",
+    "DIM_SEX":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.person_demographics"
+        " WHERE person_id LIKE 'per_mock_%' AND sex IS NOT NULL",
+    "DIM_WORK_YEARS":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.employment_record"
+        " WHERE person_id LIKE 'per_mock_%' AND start_date IS NOT NULL",
+    "DIM_EMPLOYER_TYPE":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.employment_record"
+        " WHERE person_id LIKE 'per_mock_%' AND employer_type IS NOT NULL",
+    "DIM_CLINICAL_BAND":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.clinical_exposure"
+        " WHERE person_id LIKE 'per_mock_%'",
+    "DIM_CLINICAL_DEPARTMENT":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.clinical_exposure"
+        " WHERE person_id LIKE 'per_mock_%' AND department_code IS NOT NULL",
+    "DIM_CLINICAL_VOLUME":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.clinical_exposure"
+        " WHERE person_id LIKE 'per_mock_%' AND procedure_count IS NOT NULL",
+    "DIM_PROJECT_TYPE":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.project_record"
+        " WHERE person_id LIKE 'per_mock_%' AND project_type IS NOT NULL",
+    "DIM_PROJECT_ROLE":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.project_record"
+        " WHERE person_id LIKE 'per_mock_%' AND role IS NOT NULL",
+    "DIM_JOB_ZONE":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.education_record"
+        " WHERE person_id LIKE 'per_mock_%' AND degree_level IS NOT NULL",
+    "DIM_RESEARCH_LEVEL":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.research_output"
+        " WHERE person_id LIKE 'per_mock_%'",
+    "DIM_RESEARCH_OUTPUT_TYPE":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.research_output"
+        " WHERE person_id LIKE 'per_mock_%' AND output_type IS NOT NULL",
+    "DIM_AWARD_LEVEL":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.award_honor"
+        " WHERE person_id LIKE 'per_mock_%' AND level IS NOT NULL",
+    "DIM_OVERSEAS":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.education_record"
+        " WHERE person_id LIKE 'per_mock_%' AND overseas IS NOT NULL",
+    "DIM_CONCEPT_SKILL":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.skill_assertion"
+        " WHERE person_id LIKE 'per_mock_%' AND concept_id LIKE 'CON-K1-%'",
+    "DIM_CONCEPT_ABILITY":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.skill_assertion"
+        " WHERE person_id LIKE 'per_mock_%' AND concept_id LIKE 'CON-K3-%'",
+    "DIM_SKILL_LEVEL":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.skill_assertion"
+        " WHERE person_id LIKE 'per_mock_%' AND level IS NOT NULL",
+    "DIM_SKILL_BASIS":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.skill_assertion"
+        " WHERE person_id LIKE 'per_mock_%' AND level_basis IS NOT NULL",
+    "DIM_ASSESSMENT_DIMENSION":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.assessment"
+        " WHERE person_id LIKE 'per_mock_%' AND dimension IS NOT NULL",
+    "DIM_LANGUAGE_LEVEL":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.credential"
+        " WHERE person_id LIKE 'per_mock_%' AND credential_type = 'C09'",
+    "DIM_INTEREST_DOMAIN":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.preference"
+        " WHERE person_id LIKE 'per_mock_%' AND pref_type = 'PF9'"
+        " AND value_code IS NOT NULL",
+    "DIM_CAREER_GOAL":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.preference"
+        " WHERE person_id LIKE 'per_mock_%' AND pref_type = 'PF12'"
+        " AND value_code IS NOT NULL",
+    "DIM_WORK_STYLE":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.preference"
+        " WHERE person_id LIKE 'per_mock_%' AND pref_type = 'PF10'"
+        " AND value_code IS NOT NULL",
+    "DIM_VALUE_ORIENT":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.preference"
+        " WHERE person_id LIKE 'per_mock_%' AND pref_type = 'PF11'"
+        " AND value_code IS NOT NULL",
+    "DIM_ORG_CULTURE_FIT":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.preference"
+        " WHERE person_id LIKE 'per_mock_%' AND pref_type = 'PF16'"
+        " AND value_code IS NOT NULL",
+    "DIM_EXPECT_CITY":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.preference"
+        " WHERE person_id LIKE 'per_mock_%' AND pref_type = 'PF1'"
+        " AND value_code IS NOT NULL",
+    "DIM_CITY_TIER":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.preference"
+        " WHERE person_id LIKE 'per_mock_%' AND pref_type = 'PF1'"
+        " AND value_code IN (SELECT code FROM mt.code_value WHERE code_table_id = 'CT_CITY')",
+    "DIM_MOBILITY":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.preference"
+        " WHERE person_id LIKE 'per_mock_%' AND pref_type = 'PF15'"
+        " AND value_code IS NOT NULL",
+    "DIM_HUKOU_CITY":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.person_demographics"
+        " WHERE person_id LIKE 'per_mock_%' AND hukou_province IS NOT NULL",
+    "DIM_HUKOU_TYPE":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.person_demographics"
+        " WHERE person_id LIKE 'per_mock_%' AND hukou_type IS NOT NULL",
+    "DIM_WORK_MODE":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.preference"
+        " WHERE person_id LIKE 'per_mock_%' AND pref_type = 'PF13'"
+        " AND value_code IS NOT NULL",
+    "DIM_SALARY_EXPECT":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.preference"
+        " WHERE person_id LIKE 'per_mock_%' AND pref_type = 'PF4'"
+        " AND value_code IS NOT NULL",
+    "DIM_SALARY_BAND":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.preference"
+        " WHERE person_id LIKE 'per_mock_%' AND pref_type = 'PF4'"
+        " AND value_code IS NOT NULL",
+    "DIM_WORK_INTENSITY":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.preference"
+        " WHERE person_id LIKE 'per_mock_%' AND pref_type = 'PF5'"
+        " AND value_code IS NOT NULL",
+    "DIM_SHIFT_WILLING":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.preference"
+        " WHERE person_id LIKE 'per_mock_%' AND pref_type = 'PF14'"
+        " AND value_code IS NOT NULL",
+    "DIM_GROWTH_PREF":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.preference"
+        " WHERE person_id LIKE 'per_mock_%' AND pref_type = 'PF7'"
+        " AND value_code IS NOT NULL",
+    "DIM_STABILITY_PREF":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.preference"
+        " WHERE person_id LIKE 'per_mock_%' AND pref_type = 'PF6'"
+        " AND value_code IS NOT NULL",
+    "DIM_JOB_FAMILY_PREF":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.preference"
+        " WHERE person_id LIKE 'per_mock_%' AND pref_type = 'PF3'"
+        " AND value_code IS NOT NULL",
+    "DIM_ACCEPT_CROSS_INDUSTRY":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.preference"
+        " WHERE person_id LIKE 'per_mock_%' AND pref_type = 'PF8'"
+        " AND value_code IS NOT NULL",
+    "DIM_EVIDENCE_STRENGTH":
+        "SELECT count(DISTINCT person_id) AS n FROM mt.evidence"
+        " WHERE person_id LIKE 'per_mock_%'",
+}
+
+# 如实标注"有值 ≠ 已码化"的维度，避免覆盖率虚高被误读。
+COVERAGE_NOTE = {
+    "DIM_SCHOOL_TIER": "school_tags 是自由标签数组（field_catalog 未登记码表）",
+    "DIM_HUKOU_CITY": "hukou_province 存城市中文名，CT_CITY 码未回填",
+    "DIM_AGE_BAND": "存 birth_year 原值，AG 档位需按 docs/14 派生",
+    "DIM_CITY_TIER": "city 已码化，但 CT_CITY 未登记 city→tier 映射，需外部映射",
+    "DIM_SALARY_BAND": "PF4 已码化(monthly:lo-hi)，SB 档位需按区间派生",
+    "DIM_LANGUAGE_LEVEL": "只有 C09 证书，人侧没有语言等级列",
+    "DIM_HEALTH_LIMIT": "空数组 = 无体检受限项（该维度本就允许为空）",
+    "DIM_WORK_YEARS": "仅已就业样本有起止日期，在读生无工作年限",
+    "DIM_JOB_ZONE": "由学历+年限派生，注册表未登记派生规则",
+    "DIM_CLINICAL_BAND": "仅有临床暴露记录，CB 档位需按例数与证书派生",
+    "DIM_EVIDENCE_STRENGTH": "由 cel_level 与 verify_status 派生",
+    "DIM_RESEARCH_LEVEL": "仅有产出记录，RL 档位需按作者位次派生",
+    "DIM_TRAINING": "training_record 为人侧新补；注册表 person_locator 仍指向 credential",
+}
+
+
+def dimension_coverage(c):
+    """返回 [(dimension_id, group_title, title_zh, persons, note)]，按注册表顺序。
+
+    分母由调用方给出（mock 人才数）；这里只数"有多少人取到非空取值"。
+    """
+    with c.cursor() as cur:
+        cur.execute("SELECT dimension_id, group_title, title_zh FROM mt.dimension "
+                    "WHERE status = 'active' ORDER BY group_id, sort_order")
+        dims = cur.fetchall()
+        out = []
+        for d in dims:
+            q = COVERAGE_SQL.get(d["dimension_id"])
+            if q is None:
+                out.append((d["dimension_id"], d["group_title"], d["title_zh"], None,
+                            "未定义覆盖率口径"))
+                continue
+            cur.execute(q)
+            out.append((d["dimension_id"], d["group_title"], d["title_zh"],
+                        cur.fetchone()["n"], COVERAGE_NOTE.get(d["dimension_id"], "")))
+        return out
+
+
+def mock_person_count(c):
+    return count_rows(c, "person")
+
+
+def load_baseline(path):
+    """读取变更前的人侧覆盖率快照（没有就返回 None，不臆造 before）。"""
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def emit_coverage_sql(path):
+    """把 COVERAGE_SQL 导出成可独立执行的 .sql —— 单一事实来源，不手抄。"""
+    lines = [
+        "-- ===========================================================================",
+        "-- ops/fixtures/check_dimension_coverage.sql —— 人侧维度覆盖率核对（只读）",
+        "--",
+        "-- 本文件由 `python ops\\fixtures\\gen_talent.py --emit-coverage-sql` 生成，",
+        "-- 内容来自 gen_talent.py 的 COVERAGE_SQL（单一事实来源），**不要手改**。",
+        "-- 口径：分母 = mock 人才数（per_mock_%）；分子 = 该维度取到非空取值的人数。",
+        "--",
+        "-- 跑法：python ops\\pg.py sql ops\\fixtures\\check_dimension_coverage.sql",
+        "-- ===========================================================================",
+        "\\pset border 2",
+        "\\pset pager off",
+        "",
+        "\\echo '=== 人侧维度覆盖率（mock 样本 / 分母见末行）==='",
+        "SELECT * FROM (",
+    ]
+    body = []
+    for i, (dim, q) in enumerate(COVERAGE_SQL.items()):
+        body.append("    SELECT %d AS ord, '%s' AS dimension_id, (%s) AS persons"
+                    % (i, dim, q))
+    lines.append("\n    UNION ALL\n".join(body))
+    lines += [
+        ") t ORDER BY ord;",
+        "",
+        "\\echo '=== 分母：mock 人才数 ==='",
+        "SELECT count(*) AS mock_person FROM mt.person WHERE person_id LIKE 'per_mock_%';",
+        "",
+    ]
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        f.write("\n".join(lines))
+    return path
+
+
+def print_coverage(rows, denom, baseline=None):
+    """打印人侧维度覆盖率；给了 baseline 就并排打印 before → after 与增量。"""
+    print("\n" + "=" * 78)
+    print("▶ 人侧维度覆盖率（分子 = 取到非空取值的 mock 样本数；分母 = %d）" % denom)
+    print("=" * 78)
+    if baseline:
+        print("    %-26s %-14s %6s %6s %7s  %s"
+              % ("dimension_id", "维度", "before", "after", "Δ", "备注"))
+    else:
+        print("    %-26s %-14s %6s %7s  %s"
+              % ("dimension_id", "维度", "after", "%", "备注"))
+    n_full = 0
+    for dim, grp, title, n, note in rows:
+        if n is None:
+            print("    %-26s %-14s   (无口径)        %s" % (dim, title, note))
+            continue
+        pct = 100.0 * n / max(1, denom)
+        if n >= denom:
+            n_full += 1
+        if baseline:
+            b = baseline.get(dim)
+            bs = "-" if b is None else str(b)
+            delta = "-" if b is None else ("%+d" % (n - b))
+            print("    %-26s %-14s %6s %6d %7s  %s"
+                  % (dim, title, bs, n, delta, note))
+        else:
+            print("    %-26s %-14s %6d %6.1f%%  %s" % (dim, title, n, pct, note))
+    print("    " + "-" * 74)
+    print("    覆盖率 = 100%% 的维度：%d/%d" % (n_full, len(rows)))
+    if baseline:
+        bdenom = baseline.get("__denominator__", denom)
+        print("    变更前基线分母 %s；本次分母 %d" % (bdenom, denom))
+    print("    独立复核：python ops\\pg.py sql ops\\fixtures\\check_dimension_coverage.sql")
+
+
+# ===========================================================================
+# 7. 分布摘要
 # ===========================================================================
 
 
-def report(c, metas):
+def report(c, metas, baseline=None):
     with c.cursor() as cur:
         def run(sql_text, args=None):
             cur.execute(sql_text, args or ())
@@ -989,8 +1790,8 @@ def report(c, metas):
         print("=" * 78)
         tables = ["person", "person_demographics", "education_record", "employment_record",
                   "clinical_exposure", "project_record", "research_output", "award_honor",
-                  "credential", "assessment", "skill_assertion", "evidence", "preference",
-                  "observation_window", "consent_record"]
+                  "credential", "assessment", "training_record", "skill_assertion", "evidence",
+                  "preference", "observation_window", "consent_record"]
         for t in tables:
             print("    %-22s %5d" % (t, count_rows(c, t)))
 
@@ -1045,6 +1846,9 @@ def report(c, metas):
     print("\n    覆盖方向 %d 个；能力主张 %d 条（人均 %.1f）；岗位族偏好与技能方向不一致 %d 人（%.0f%%）"
           % (len({m["direction"] for m in metas}), n_skill, n_skill / max(1, len(metas)),
              n_mis, 100.0 * n_mis / max(1, len(metas))))
+
+    # ---- 逐维度人侧覆盖率（本次任务的核心验收项）----
+    print_coverage(dimension_coverage(c), mock_person_count(c), baseline)
 
 
 def fingerprint(buf):
@@ -1105,12 +1909,44 @@ def main():
     ap.add_argument("--seed", type=int, default=42, help="随机种子（默认 42）")
     ap.add_argument("--reset", action="store_true",
                     help="先清除 per_mock_%% 人才及其从属行，再重新生成")
+    ap.add_argument("--coverage", action="store_true",
+                    help="只打印人侧维度覆盖率（只读，不生成任何数据）")
+    ap.add_argument("--coverage-out", default=None, metavar="PATH",
+                    help="把当前人侧维度覆盖率写成本地 JSON 基线快照")
+    ap.add_argument("--baseline", default=None, metavar="PATH",
+                    help="变更前的覆盖率快照 JSON；给了就打印 before/after 对照")
+    ap.add_argument("--emit-coverage-sql", action="store_true",
+                    help="把覆盖率口径导出成 ops/fixtures/check_dimension_coverage.sql")
     a = ap.parse_args()
 
     import reset_talent  # 同目录
 
+    if a.emit_coverage_sql:
+        p = emit_coverage_sql(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                           "check_dimension_coverage.sql"))
+        print("[✓] 已导出覆盖率核对 SQL：%s" % p)
+        return 0
+
+    if a.coverage:
+        with psycopg.connect(DSN, row_factory=dict_row) as c:
+            denom = mock_person_count(c)
+            rows = dimension_coverage(c)
+            print_coverage(rows, denom)
+            if a.coverage_out:
+                snap = {r[0]: r[3] for r in rows}
+                snap["__denominator__"] = denom
+                with open(a.coverage_out, "w", encoding="utf-8") as f:
+                    json.dump(snap, f, ensure_ascii=False, indent=1, sort_keys=True)
+                print("\n[✓] 覆盖率快照已写入：%s" % a.coverage_out)
+        return 0
+
     with psycopg.connect(DSN, row_factory=dict_row) as c:
         non_mock_before = count_non_mock(c)
+
+        # 变更前的覆盖率快照（可选）：给了才能打印 before → after
+        baseline = load_baseline(a.baseline) if a.baseline else None
+        if a.baseline and baseline is None:
+            print("[!] 读不到基线快照 %s —— 只打印 after" % a.baseline)
 
         # 先纯内存生成，再决定要不要写库
         plan_rows = plan(a.seed, a.count)
@@ -1140,7 +1976,7 @@ def main():
                   ("person", "person_demographics", "education_record", "employment_record",
                    "clinical_exposure", "project_record", "research_output", "award_honor",
                    "credential", "assessment", "skill_assertion", "evidence", "preference",
-                   "observation_window", "consent_record")}
+                   "training_record", "observation_window", "consent_record")}
         upsert(c, buf)
         after = {t: count_rows(c, t) for t in before}
 
@@ -1150,7 +1986,7 @@ def main():
         if after["person"] == before["person"] and not added:
             print("    （幂等：全部 ON CONFLICT DO NOTHING，未产生任何重复行）")
 
-        report(c, metas)
+        report(c, metas, baseline)
         non_mock_after = count_non_mock(c)
 
     print("\n    非 mock 人才行数：%d → %d（必须不变）" % (non_mock_before, non_mock_after))

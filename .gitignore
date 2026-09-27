@@ -53,6 +53,13 @@ Desktop.ini
 # ---- 临时/一次性脚本（探查、计时、打补丁）----
 # 踩过的坑：subagent 写的临时计时脚本 _perf_probe.py 曾被 `git add -A` 收进提交并推上公开仓库。
 # 约定：一次性脚本一律用这些前缀，且不进仓库；要留下的工具请用正常命名。
+# 只写目录是防不住的：subagent 在别的目录下又写了一批 _probe_*.sql / _verify_*.sql。
+# 改为按 basename 全仓匹配（无斜杠的 pattern 在任意深度生效）。
+_perf_*
+_probe*
+_verify*
+_scratch*
+*.tmp_or_drop
 ops/tests/_perf_*
 ops/tests/_probe*
 ops/tests/_scratch*

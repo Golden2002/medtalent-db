@@ -1,0 +1,16 @@
+{
+  "base": "http://127.0.0.1:8082",
+  "person": "per_mock_0113",
+  "shots": [
+    {
+      "name": "talent-detail",
+      "path": "/talent/{pid}",
+      "url": "http://127.0.0.1:8082/talent/per_mock_0113",
+      "file": "docs/screenshots/talent-detail.png",
+      "viewport": "1680x1500",
+      "bytes": 167842,
+      "ok": true,
+      "note": "人才详情：画像向量卡片（50 维）+ 分维度取值与登记状态"
+    }
+  ]
+}

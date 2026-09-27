@@ -1,0 +1,628 @@
+{
+  "generated_at": "2026-09-27",
+  "method": "逐人以百度百科词条为线索、用机构官网与正规媒体（中新社/人民网/新华网/中国青年报/北京晚报/新民晚报/21世纪经济报道/京华时报）公开报道交叉核对，且对 sources 中每个 URL 用 python urllib 经代理实际抓取并记录真实 HTTP 状态码；日期采用 YYYY / YYYY-MM / YYYY-MM-DD 三档精度，缺档表示公开资料只精确到该档，未做任何推测填充；凡公开资料未覆盖的键写 null 或省略并在该 case 的 unavailable/uncertainties 中说明。",
+  "cases": [
+    {
+      "case_key": "fengtang",
+      "public_name": "冯唐（张海鹏）",
+      "birth_year": 1971,
+      "sex": "M",
+      "base_city": "北京",
+      "hukou": null,
+      "person_summary": "本名张海鹏，1971 年生于北京，1990—1998 年就读北京协和医科大学并获临床医学博士学位（博士阶段研究卵巢癌），2000 年获美国埃默里大学 Goizueta 商学院 MBA，此后历任麦肯锡全球董事合伙人、华润（集团）战略管理部总经理、华润医疗集团创始 CEO，2015 年 9 月起任中信资本私募股权投资部门高级董事总经理主管医疗投资，同时以笔名“冯唐”出版大量小说与散文。",
+      "education": [
+        {
+          "school_name": "北京协和医科大学（现北京协和医学院）",
+          "degree_level": "D4",
+          "degree_level_raw": "博士",
+          "degree_name": "临床医学博士",
+          "major_raw": "临床医学（妇科肿瘤方向）",
+          "is_clinical": true,
+          "start_date": "1990",
+          "end_date": "1998",
+          "is_graduated": true,
+          "overseas": false,
+          "source": [
+            "https://newsxmwb.xinmin.cn/2016/07/19/30247913.html",
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90",
+            "https://www.chinanews.com.cn/cj/2015/09-01/7501559.shtml"
+          ],
+          "confidence": 0.9
+        },
+        {
+          "school_name": "美国埃默里大学 Goizueta 商学院（Emory University, Goizueta Business School）",
+          "degree_level": "D3",
+          "degree_level_raw": "工商管理硕士（MBA）",
+          "degree_name": "工商管理硕士（MBA）",
+          "major_raw": "工商管理",
+          "is_clinical": false,
+          "start_date": null,
+          "end_date": "2000",
+          "is_graduated": true,
+          "overseas": true,
+          "source": [
+            "https://www.chinanews.com.cn/cj/2015/09-01/7501559.shtml",
+            "https://paper.people.com.cn/zgcsb/html/2015-09/07/content_1613415.htm",
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"
+          ],
+          "confidence": 0.9
+        }
+      ],
+      "credentials": [],
+      "employment": [
+        {
+          "employer_name": "麦肯锡公司（香港分公司）",
+          "employer_type": "E10",
+          "title_raw": "全球董事合伙人",
+          "start_date": "2005-09",
+          "end_date": "2009-06",
+          "is_current": false,
+          "duties": [
+            "任麦肯锡公司香港分公司全球董事合伙人，从事企业战略与管理咨询"
+          ],
+          "source": [
+            "https://paper.people.com.cn/zgcsb/html/2015-09/07/content_1613415.htm",
+            "https://www.chinanews.com.cn/cj/2015/09-01/7501559.shtml",
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "employer_name": "华润（集团）有限公司",
+          "employer_type": "E19",
+          "title_raw": "战略管理部总经理",
+          "start_date": "2009-07",
+          "end_date": "2011-10",
+          "is_current": false,
+          "duties": [
+            "任华润（集团）有限公司战略管理部总经理",
+            "2011 年 10 月/2011 年底由该职调任华润医疗集团有限公司首席执行官"
+          ],
+          "source": [
+            "https://paper.people.com.cn/zgcsb/html/2015-09/07/content_1613415.htm",
+            "https://www.chinanews.com.cn/cj/2015/09-01/7501559.shtml",
+            "http://health.sina.com.cn/news/2014-07-03/0917141564.shtml"
+          ],
+          "confidence": 0.8
+        },
+        {
+          "employer_name": "华润医疗集团有限公司",
+          "employer_type": "E19",
+          "title_raw": "创始 CEO、首席执行官（CEO）",
+          "start_date": "2011-10",
+          "end_date": "2014-07",
+          "is_current": false,
+          "duties": [
+            "参与创办华润医疗集团有限公司并任创始 CEO",
+            "主持华润集团医疗服务投资平台，曾与中日友好医院、天津市政府、广东高州医院、武钢总医院、太原八院等洽谈合作，收购武钢总医院 51% 股权"
+          ],
+          "source": [
+            "https://paper.people.com.cn/zgcsb/html/2015-09/07/content_1613415.htm",
+            "https://www.chinanews.com.cn/cj/2015/09-01/7501559.shtml",
+            "http://health.sina.com.cn/news/2014-07-03/0917141564.shtml"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "employer_name": "中信资本控股有限公司（CITIC Capital）",
+          "employer_type": "E11",
+          "title_raw": "私募股权投资（PE）部门高级董事总经理，主管医疗领域投资",
+          "start_date": "2015-09-01",
+          "end_date": null,
+          "is_current": null,
+          "duties": [
+            "任中信资本私募股权投资部门高级董事总经理，主管 CCP 战略重点之一的医疗领域投资"
+          ],
+          "source": [
+            "https://www.chinanews.com.cn/cj/2015/09-01/7501559.shtml",
+            "https://www.chinanews.com.cn/m/stock/2015/09-02/7502026.shtml",
+            "https://paper.people.com.cn/zgcsb/html/2015-09/07/content_1613415.htm",
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"
+          ],
+          "confidence": 0.9
+        }
+      ],
+      "clinical_exposure": [
+        {
+          "department_code": "DP03",
+          "department_raw": "妇产科（妇科方向，博士阶段研究卵巢癌）",
+          "duration_months": null,
+          "source": [
+            "https://newsxmwb.xinmin.cn/2016/07/19/30247913.html",
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"
+          ],
+          "confidence": 0.6
+        }
+      ],
+      "research_outputs": [
+        {
+          "output_type": "著作",
+          "title": "万物生长",
+          "venue": null,
+          "year": 2000,
+          "source": ["https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"],
+          "confidence": 0.8
+        },
+        {
+          "output_type": "著作",
+          "title": "北京，北京",
+          "venue": "重庆出版社",
+          "year": 2007,
+          "source": ["https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"],
+          "confidence": 0.8
+        },
+        {
+          "output_type": "著作",
+          "title": "三十六大",
+          "venue": "浙江文艺出版社",
+          "year": 2012,
+          "source": ["https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"],
+          "confidence": 0.8
+        },
+        {
+          "output_type": "著作",
+          "title": "女神一号",
+          "venue": "九州出版社",
+          "year": 2015,
+          "source": ["https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"],
+          "confidence": 0.8
+        },
+        {
+          "output_type": "译作",
+          "title": "飞鸟集（泰戈尔）",
+          "venue": "浙江文艺出版社",
+          "year": 2015,
+          "source": ["https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"],
+          "confidence": 0.8
+        },
+        {
+          "output_type": "著作",
+          "title": "成事：冯唐品读曾国藩嘉言钞",
+          "venue": "天津人民出版社",
+          "year": 2019,
+          "source": ["https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"],
+          "confidence": 0.8
+        }
+      ],
+      "public_preferences": [
+        {
+          "pref_type": "PF12",
+          "value_raw": "协和八年学医之后决定不再做医生，转向写作与商业（本人署名文章《大医》：“学完八年医术之后…我决定不再做医生”）",
+          "source": ["https://newsxmwb.xinmin.cn/2016/07/19/30247913.html"],
+          "confidence": 0.9
+        },
+        {
+          "pref_type": "PF12",
+          "value_raw": "以写作为终身事业（“文字打败时间，文章般若，千年不朽，这是我一辈子要做的事情”）",
+          "source": ["https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"],
+          "confidence": 0.6
+        }
+      ],
+      "sources": [
+        {
+          "url": "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90",
+          "publisher": "百度百科",
+          "title": "冯唐（中国现代诗人、作家、医生）",
+          "date": null,
+          "http_status": 200,
+          "kind": "百科"
+        },
+        {
+          "url": "https://www.chinanews.com.cn/cj/2015/09-01/7501559.shtml",
+          "publisher": "中国新闻网（中新社）",
+          "title": "作家冯唐出任中信资本PE部高级董事总经理",
+          "date": "2015-09-01",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://www.chinanews.com.cn/m/stock/2015/09-02/7502026.shtml",
+          "publisher": "中国新闻网",
+          "title": "冯唐任中信资本PE部董事总经理 主管医疗领域投资",
+          "date": "2015-09-02",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://paper.people.com.cn/zgcsb/html/2015-09/07/content_1613415.htm",
+          "publisher": "人民网《中国城市报》",
+          "title": "从文学回归医疗 冯唐加盟中信资本",
+          "date": "2015-09-07",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "http://health.sina.com.cn/news/2014-07-03/0917141564.shtml",
+          "publisher": "新浪健康（转载《21世纪经济报道》）",
+          "title": "华润医疗CEO张海鹏正式离职 曾为宋林左右手",
+          "date": "2014-07-03",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://newsxmwb.xinmin.cn/2016/07/19/30247913.html",
+          "publisher": "新民晚报·新民网（夜光杯）",
+          "title": "冯唐：大医（本人署名文章）",
+          "date": "2016-07-19",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://vc.pedaily.cn/people/71651.html",
+          "publisher": "投资界（清科）",
+          "title": "冯唐｜中信资本高级董事总经理",
+          "date": null,
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "http://www.chinawriter.com.cn/n1/2016/0816/c405057-28638359.html",
+          "publisher": "中国作家网",
+          "title": "冯唐：诗意不是ps过的照片 是扎实的生活细节",
+          "date": "2016-08-16",
+          "http_status": 200,
+          "kind": "媒体"
+        }
+      ],
+      "unavailable": [
+        "公开资料未覆盖：家庭状况（婚姻、子女）、具体薪酬、人才测评得分、户籍/身份证等隐私信息（不采集）",
+        "公开资料未覆盖：执业医师资格证等职业资格证书信息（资格证不属于公开信息，故 credentials 为空数组）",
+        "公开资料未覆盖：1998 年协和博士毕业后是否实际从事临床诊疗工作、在何医疗机构、任职多久",
+        "公开资料未覆盖：作家身份对应的雇佣单位——2012 年 6 月加入中国作家协会系会员身份而非雇佣关系，故未列入 employment",
+        "公开资料未覆盖：麦肯锡之前的 1998—2000 年（协和毕业至 Emory 入学之间）经历"
+      ],
+      "uncertainties": [
+        "麦肯锡任职起止存在两种公开说法：人民网《中国城市报》（2015-09-07）为 2005 年 9 月—2009 年 6 月（香港分公司全球董事合伙人）；百度百科为 2000 年—2008 年（董事合伙人）。本文件采用前者，冲突在此标注。",
+        "“华润集团战略管理部总经理”与“华润医疗 CEO”是两个不同职务、出处不同：中新社（2015-09-01）称其“曾任华润医疗集团创始 CEO 和华润（集团）有限公司战略管理部总经理”；人民网《中国城市报》（2015-09-07）称 2009 年 7 月加入华润、2011 年 10 月任华润医疗集团 CEO、2014 年 7 月离职；《21世纪经济报道》（2014-07-03）称“2011 年底从华润集团战略管理部总经理的位置调任华润医疗 CEO”。本文件据此前者拆分为两段任职，起始月 2011-10（一说“2011 年底”）存在一个月级差异。",
+        "协和博士入学 1990 年、毕业 1998 年见其本人署名文章《大医》（新民晚报，2016-07-19）；毕业年份 1998 年另见中新社与百度百科，入学年份无其他来源佐证。",
+        "博士研究方向：本人表述为“学医的最后三年，我在基因和组织学层面研究卵巢癌”，另有荒木经惟“他当过妇科大夫”的评语（百度百科），本文件转写为“妇科肿瘤方向”；无官方学位论文题名或导师公开。",
+        "中信资本任职是否已终止、是否仍在任，未见任何公开说明，故 hire 记录的 is_current 置 null，end_date 置 null。",
+        "出生年份 1971 年、蒙古族、出生地北京均来自百度百科，无官方档案佐证。"
+      ]
+    },
+    {
+      "case_key": "li_tiantian",
+      "public_name": "李天天",
+      "birth_year": null,
+      "sex": "M",
+      "base_city": "杭州",
+      "hukou": null,
+      "person_summary": "丁香园创始人、董事长，哈尔滨医科大学肿瘤免疫学硕士，2000 年 7 月在哈尔滨以个人网站形式创办“丁香园医学文献检索网”，2006 年放弃攻读中的博士学位南下杭州全职创业，将丁香园做成中国最大的医生专业社区与数字医疗健康企业。",
+      "education": [
+        {
+          "school_name": "哈尔滨医科大学",
+          "degree_level": "D3",
+          "degree_level_raw": "硕士",
+          "degree_name": "医学硕士",
+          "major_raw": "肿瘤免疫学",
+          "is_clinical": false,
+          "start_date": null,
+          "end_date": null,
+          "is_graduated": true,
+          "overseas": false,
+          "source": [
+            "https://wapbaike.baidu.com/item/%E6%9D%8E%E5%A4%A9%E5%A4%A9/824321",
+            "http://china.haiwainet.cn/n/2014/1214/c345646-21536605.html",
+            "https://www.c114.net.cn/industry/20511.html"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "school_name": "中国协和医科大学（现北京协和医学院）",
+          "degree_level": "D4",
+          "degree_level_raw": "博士研究生（未获学位）",
+          "degree_name": "博士研究生（中途放弃，未获博士学位）",
+          "major_raw": null,
+          "is_clinical": false,
+          "start_date": null,
+          "end_date": "2006",
+          "is_graduated": false,
+          "overseas": false,
+          "source": [
+            "https://www.c114.net.cn/industry/20511.html",
+            "https://wapbaike.baidu.com/item/%E6%9D%8E%E5%A4%A9%E5%A4%A9/824321"
+          ],
+          "confidence": 0.6
+        }
+      ],
+      "credentials": [],
+      "employment": [
+        {
+          "employer_name": "丁香园（观澜网络（杭州）有限公司）",
+          "employer_type": "E14",
+          "title_raw": "创始人、董事长",
+          "start_date": "2000-07",
+          "end_date": null,
+          "is_current": true,
+          "duties": [
+            "2000 年 7 月以个人网站形式创办“丁香园医学文献检索网”，后发展为医生专业社区",
+            "任丁香园董事长，主导公司“D+C 双核驱动”战略与互联网医院、医疗 AI 布局",
+            "公司 2005 年 11 月迁址杭州并正式注册商业公司"
+          ],
+          "source": [
+            "https://www.dxy.cn/pages/about.html",
+            "https://wapbaike.baidu.com/item/%E6%9D%8E%E5%A4%A9%E5%A4%A9/824321",
+            "http://china.haiwainet.cn/n/2014/1214/c345646-21536605.html",
+            "https://www.c114.net.cn/industry/20511.html"
+          ],
+          "confidence": 0.9
+        }
+      ],
+      "clinical_exposure": [
+        {
+          "department_code": null,
+          "department_raw": null,
+          "duration_months": null,
+          "source": ["http://china.haiwainet.cn/n/2014/1214/c345646-21536605.html"],
+          "confidence": 0.5
+        }
+      ],
+      "research_outputs": [],
+      "public_preferences": [
+        {
+          "pref_type": "PF12",
+          "value_raw": "“我做丁香园不是做生意，我是在做我自己”；服务以医生需求为准——“如果我们的服务不是医生们想要的，即使赚钱，我也不要”",
+          "source": ["http://china.haiwainet.cn/n/2014/1214/c345646-21536605.html"],
+          "confidence": 0.7
+        }
+      ],
+      "sources": [
+        {
+          "url": "https://wapbaike.baidu.com/item/%E6%9D%8E%E5%A4%A9%E5%A4%A9/824321",
+          "publisher": "百度百科",
+          "title": "李天天（丁香园创始人）",
+          "date": null,
+          "http_status": 200,
+          "kind": "百科"
+        },
+        {
+          "url": "https://www.dxy.cn/pages/about.html",
+          "publisher": "丁香园官网",
+          "title": "关于我们（公司简介 / 发展历程 / 创始人）",
+          "date": null,
+          "http_status": 200,
+          "kind": "官网"
+        },
+        {
+          "url": "http://china.haiwainet.cn/n/2014/1214/c345646-21536605.html",
+          "publisher": "海外网（转载新华网）",
+          "title": "丁香园创始人李天天：我不是在做生意，我是在做我自己",
+          "date": "2014-12-14",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://www.c114.net.cn/industry/20511.html",
+          "publisher": "光通信Pro（转载 36氪）",
+          "title": "放弃博士学位，50岁东北医生，干出一个IPO",
+          "date": "2025-09-11",
+          "http_status": 200,
+          "kind": "媒体"
+        }
+      ],
+      "unavailable": [
+        "公开资料未覆盖：出生年份——36氪 2025-09-11 报道称其“现年 50 岁”、出生于哈尔滨的医学世家，据此仅能推断约 1975 年生，无权威公开出生年份，故 birth_year 为 null",
+        "公开资料未覆盖：家庭状况、具体薪酬、人才测评得分、户籍",
+        "公开资料未覆盖：执业医师资格证、住院医师规范化培训合格证等职业资格信息（credentials 为空数组）",
+        "公开资料未覆盖：哈尔滨医科大学硕士与协和博士阶段的入学/毕业具体日期、导师、学位论文题名",
+        "公开资料未覆盖：李天天的学术论文与著作清单（research_outputs 为空数组）",
+        "公开资料未覆盖：早期在哈尔滨创办英语培训公司、以及曾任住院医生的具体医院与科室"
+      ],
+      "uncertainties": [
+        "博士阶段就读院校存在冲突：36氪（2025-09-11，经光通信Pro 转载）称 2006 年“当时还在中国协和医科大学（现称北京协和医学院）学习深造的李天天毅然放弃了攻读博士学位，南下杭州”；新华网（2014-12-14，经海外网转载）称其“白天做博士论文”时人在哈尔滨。本文件按 36氪 记院校为协和，confidence 0.6，冲突在此标注。",
+        "2006 年“放弃博士学位全职创业”为百度百科表述；无学位授予单位或本人的公开说明，“end_date=2006”理解为离开博士项目的时间。",
+        "硕士在读期间公开为 2000 年（新华网、36氪均称 2000 年他是哈尔滨医科大学硕士生），但起止日期无公开记录，故 start_date/end_date 均为 null；新华网另称他“读了八年医学院，当过住院医生”，未说明这八年是否含硕士阶段，本文件未据此填任何日期或学位。",
+        "丁香园创办时间：官网发展历程称“2000 年 7 月 丁香园医学论坛在黑龙江哈尔滨成立”，36氪称 2000 年 7 月 23 日上线“丁香园医学文献检索网”；本文件 employment.start_date 采用 2000-07。",
+        "36氪将丁香园联合创始人记为李天天、周树忠、张进，丁香园官网“创始人”栏目列为李天天、张进、周树忠；姓名一致但排序不同，无实质冲突。"
+      ]
+    },
+    {
+      "case_key": "yu_ying",
+      "public_name": "于莺",
+      "birth_year": 1974,
+      "sex": "F",
+      "base_city": "北京",
+      "hukou": null,
+      "person_summary": "微博“急诊科女超人于莺”，1974 年生于上海，中国协和医科大学八年制本硕博连读毕业（2001 年）后入职北京协和医院，先在内科、2003 年“非典”后主动申请调入急诊科，2013 年 6 月辞职（“不和科研考核大夫的评判体系玩了”）；2014 年 5 月以合伙人身份加盟美中宜和医疗集团，任美中宜和综合门诊中心 CEO，2017 年 9 月离任。",
+      "education": [
+        {
+          "school_name": "中国协和医科大学（现北京协和医学院）",
+          "degree_level": "D6",
+          "degree_level_raw": "八年制本硕博连读",
+          "degree_name": "临床医学八年制（本硕博连读，获医学博士）",
+          "major_raw": null,
+          "is_clinical": true,
+          "start_date": null,
+          "end_date": "2001",
+          "is_graduated": true,
+          "overseas": false,
+          "source": [
+            "https://wapbaike.baidu.com/item/%E4%BA%8E%E8%8E%BA/1911677",
+            "https://news.sina.com.cn/c/2016-01-25/doc-ifxnuwfc9452833.shtml",
+            "https://m.163.com/news/article/AQI23SA100014AED.html"
+          ],
+          "confidence": 0.85
+        }
+      ],
+      "credentials": [],
+      "employment": [
+        {
+          "employer_name": "北京协和医院",
+          "employer_type": "E01",
+          "title_raw": "内科住院医师（2001—2003）；急诊科主治医师（2003—2013）",
+          "start_date": "2001",
+          "end_date": "2013-06",
+          "is_current": false,
+          "duties": [
+            "2001 年毕业后分配至北京协和医院内科",
+            "2003 年“非典”期间首批主动进入非典病房，其后主动申请由内科调至急诊科",
+            "任急诊科主治医师；2011 年 10 月 7 日开通微博“急诊科女超人于莺”，粉丝超 200 万",
+            "2013-06-03 向科室领导递交辞职书，2013-06-08 晚微博公开辞职，称“不和科研考核大夫的评判体系玩了”"
+          ],
+          "source": [
+            "https://m.163.com/news/article/AQI23SA100014AED.html",
+            "https://wapbaike.baidu.com/item/%E4%BA%8E%E8%8E%BA/1911677",
+            "https://www.chinanews.com.cn/sh/2013/06-11/4920006.shtml",
+            "https://news.sina.com.cn/c/2016-01-25/doc-ifxnuwfc9452833.shtml"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "employer_name": "美中宜和医疗集团",
+          "employer_type": "E03",
+          "title_raw": "合伙人；美中宜和综合门诊中心 CEO",
+          "start_date": "2014-05",
+          "end_date": "2017-09-01",
+          "is_current": false,
+          "duties": [
+            "以合伙人身份加盟美中宜和医疗集团，筹建并运营集团第一家综合门诊中心（约 2000 平方米，位于北京亚运村）",
+            "任美中宜和综合门诊中心 CEO，管理约 62 人团队，负责选址、审批、定价与运营",
+            "兼美中宜和医院急诊会诊医师",
+            "2017 年 9 月正式离任 CEO，转向自建社区连锁全科诊所"
+          ],
+          "source": [
+            "https://www.sohu.com/a/168904179_296660",
+            "https://news.sina.com.cn/c/2016-01-25/doc-ifxnuwfc9452833.shtml",
+            "https://m.163.com/news/article/AQI23SA100014AED.html",
+            "http://finance.cnr.cn/gs/201407/t20140705_515791660_3.shtml",
+            "https://news.sina.com.cn/s/2015-05-04/011931788862.shtml"
+          ],
+          "confidence": 0.85
+        }
+      ],
+      "clinical_exposure": [
+        {
+          "department_code": "DP01",
+          "department_raw": "内科",
+          "duration_months": 24,
+          "source": ["https://m.163.com/news/article/AQI23SA100014AED.html"],
+          "confidence": 0.75
+        },
+        {
+          "department_code": "DP05",
+          "department_raw": "急诊科",
+          "duration_months": 120,
+          "source": [
+            "https://m.163.com/news/article/AQI23SA100014AED.html",
+            "https://news.sina.com.cn/c/2016-01-25/doc-ifxnuwfc9452833.shtml",
+            "https://wapbaike.baidu.com/item/%E4%BA%8E%E8%8E%BA/1911677"
+          ],
+          "confidence": 0.85
+        }
+      ],
+      "research_outputs": [
+        {
+          "output_type": "著作",
+          "title": "急诊科女超人",
+          "venue": "现代出版社",
+          "year": 2012,
+          "source": ["https://wapbaike.baidu.com/item/%E4%BA%8E%E8%8E%BA/1911677"],
+          "confidence": 0.8
+        }
+      ],
+      "public_preferences": [
+        {
+          "pref_type": "PF12",
+          "value_raw": "“干完这个月就辞职了…追求自由执业之梦想”；“我不会放弃做医生的理想，所以还是去做医生，只不过不在公立医院了”；辞职原因“不和科研考核大夫的评判体系玩了”",
+          "source": [
+            "https://www.chinanews.com.cn/sh/2013/06-11/4920006.shtml",
+            "https://wapbaike.baidu.com/item/%E4%BA%8E%E8%8E%BA/1911677"
+          ],
+          "confidence": 0.9
+        },
+        {
+          "pref_type": "PF12",
+          "value_raw": "想做“有温度的诊所”，并计划做面向普通人群、扎根社区的小型连锁全科诊所（“儿科+妇科+全科”模式）",
+          "source": [
+            "https://news.sina.com.cn/s/2015-05-04/011931788862.shtml",
+            "https://www.sohu.com/a/168904179_296660"
+          ],
+          "confidence": 0.85
+        }
+      ],
+      "sources": [
+        {
+          "url": "https://wapbaike.baidu.com/item/%E4%BA%8E%E8%8E%BA/1911677",
+          "publisher": "百度百科",
+          "title": "于莺（北京协和医院急诊室医师）",
+          "date": null,
+          "http_status": 200,
+          "kind": "百科"
+        },
+        {
+          "url": "https://news.sina.com.cn/c/2016-01-25/doc-ifxnuwfc9452833.shtml",
+          "publisher": "新浪新闻（转载《中国青年报》）",
+          "title": "于莺：离开体制我还是“女超人”",
+          "date": "2016-01-25",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://www.chinanews.com.cn/sh/2013/06-11/4920006.shtml",
+          "publisher": "中国新闻网（转载《北京晚报》）",
+          "title": "协和急诊女超人辞职 称离开公立医院仍然做医生",
+          "date": "2013-06-11",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://www.sohu.com/a/168904179_296660",
+          "publisher": "搜狐（健康点 healthpoint 授权丁香园发布）",
+          "title": "于莺：今天我正式从美中宜和辞职了",
+          "date": "2017-09-01",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://m.163.com/news/article/AQI23SA100014AED.html",
+          "publisher": "网易（转载《北京晚报》）",
+          "title": "急诊科女超人于莺变身CEO",
+          "date": "2015-05-26",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://news.sina.com.cn/s/2015-05-04/011931788862.shtml",
+          "publisher": "新浪新闻（转载《京华时报》）",
+          "title": "微博红人从医院辞职 称铁饭碗成社会办医瓶颈",
+          "date": "2015-05-04",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "http://finance.cnr.cn/gs/201407/t20140705_515791660_3.shtml",
+          "publisher": "央广网（中国广播网）",
+          "title": "于莺华丽转身门诊中心CEO 搭建医生团队挖人成难题",
+          "date": "2014-07-05",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "http://media.people.com.cn/n/2013/0611/c40733-21812134.html",
+          "publisher": "人民网",
+          "title": "“急诊科女超人于莺”:特需医疗应从公立医院剥离",
+          "date": "2013-06-11",
+          "http_status": 200,
+          "kind": "媒体"
+        }
+      ],
+      "unavailable": [
+        "公开资料未覆盖：家庭状况（婚姻、子女）、具体薪酬、人才测评得分、户籍/身份证等隐私信息（不采集）",
+        "公开资料未覆盖：执业医师资格证、住院医师/专科医师规范化培训合格证等职业资格信息（credentials 为空数组）",
+        "公开资料未覆盖：八年制期间的具体专业名称、博士研究方向与导师；无学位论文题名公开",
+        "公开资料未覆盖：2017 年 9 月离开美中宜和之后的任职经历（本次按要求仅记录至美中宜和阶段；公开报道另有其后续加入其他医疗集团的传闻，未纳入）",
+        "公开资料未覆盖：协和急诊科任职的精确起止月份（入职仅精确到年、离职仅精确到月）"
+      ],
+      "uncertainties": [
+        "八年制入学年份无公开记录：百度百科称“2001 年毕业于中国协和医科大学，8 年本硕博连读”，据此可推算 1993 年入学，但无公开明确入学年份，故 education.start_date 置 null、end_date 仅到年 2001。",
+        "科室起点存在冲突：百度百科称“2001 年入职协和医院急诊科”；《北京晚报》（2015-05-26）称“2001 年，于莺毕业到北京协和医院工作时，被分在内科……从非典病房出来后，于莺爱上了急诊科。她主动申请从内科调到急诊科”（2003 年）。本文件按《北京晚报》拆分为内科（2001—2003）与急诊科（2003—2013.6）两段临床暴露，冲突在此标注。",
+        "协和任职年限存在两种公开说法：中国青年报（2016-01-25）称“在大型三甲医院工作 12 年”，于莺本人 2014-03-03 微博亦称“接受正规 8 年制医学教育的博士毕业生，在大型三甲医院工作 12 年的大夫”；《京华时报》（2015-05-04）称“曾在协和医院工作十年”。本文件采用 12 年。",
+        "clinical_exposure 的分段月数（内科 24 个月、急诊科 120 个月）系按 2001 年入职、2003 年调入急诊、2013 年 6 月离职推算，月份精度不保证。",
+        "辞职时间线：2013-06-03 向领导递交辞职书、2013-06-08 晚微博公开辞职（并称当天“上午已经拿到了离院通知单”）、微博原话为“干完这个月就辞职了”，故实际最后工作日应在 2013 年 6 月末；无公开精确记录，employment.end_date 采用月精度 2013-06。",
+        "加盟美中宜和时间：健康点（2017-09-01）称“在 2014 年 5 月 4 日后以合伙人的身份正式加盟了美中宜和”，故 start_date 采用月精度 2014-05；“综合门诊中心 CEO”头衔于 2015-04-20/21 起公开使用、门诊中心 2015 年 4 月起试运行/5 月试营业，百度百科亦记“2015 年 4 月 20 日起担任综合门诊中心 CEO”。",
+        "百度百科称于莺 1974 年生、上海人（《北京晚报》亦称“1974 年生人，地道的上海女生”），无官方档案佐证；base_city 记为工作地北京，籍贯/出生地上海仅见于上述来源。",
+        "于莺在美中宜和期间另有“开淘宝店”（母婴产品，5 皇冠）等个人经营活动，公开报道未给出注册主体与起止时间，未列入 employment。"
+      ]
+    }
+  ]
+}

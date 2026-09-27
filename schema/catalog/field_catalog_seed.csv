@@ -111,3 +111,67 @@ F_RP_LEGAL_HOLD,retention_policy,法律冻结,涉诉时冻结不删,boolean,,,,s
 F_IR_SEVERITY,incident_report,事件严重度,低/中/高/严重,code,,,CT_SEVERITY,scalar,manual,,,,"T2",active,1.0.0,gov
 F_IR_SUBJECT_COUNT,incident_report,涉及人数,受影响主体数,integer,人,0-100000000,,scalar,manual,,,,"T2",active,1.0.0,gov
 F_SRC_TAKEDOWN,source_registry,下架时间,收到合规要求后的下架时刻,datetime,,,,scalar,manual,,,,"T0",active,1.0.0,gov
+F_PREF_INTEREST_DOMAIN,preference,兴趣方向,自写补充为主的高频维度；选项见 CT_INTEREST_DOMAIN,array,,,CT_INTEREST_DOMAIN,array,questionnaire,,,,T1,active,1.0.0,data
+F_PREF_WORK_STYLE,preference,工作风格,多选自评,array,,,CT_WORK_STYLE,array,questionnaire,,,,T1,active,1.0.0,data
+F_PREF_VALUE_ORIENT,preference,价值观取向,与 CT_ORG_CULTURE 配对形成文化契合两侧,array,,,CT_VALUE_ORIENT,array,questionnaire,,,,T1,active,1.0.0,data
+F_PREF_CAREER_GOAL,preference,职业目标,,array,,,CT_CAREER_GOAL,array,questionnaire,,,,T1,active,1.0.0,data
+F_PREF_WORK_MODE,preference,工作方式偏好,,array,,,CT_WORK_MODE,array,questionnaire,,,,T1,active,1.0.0,data
+F_PREF_SHIFT_WILLING,preference,值班意愿,,code,,,CT_SHIFT_WILLING,scalar,questionnaire,,,,T1,active,1.0.0,data
+F_PREF_MOBILITY,preference,地域流动意愿,,code,,,CT_MOBILITY,scalar,questionnaire,,,,T1,active,1.0.0,data
+F_PREF_ORG_CULTURE,preference,组织文化偏好,,array,,,CT_ORG_CULTURE,array,questionnaire,,,,T1,active,1.0.0,data
+F_PREF_EXPECT_CITY,preference,期望工作城市,原有 PF1 的码化目标,array,,,CT_CITY,array,questionnaire,,,,T1,active,1.0.0,data
+F_PERSON_HUKOU_CITY,person_demographics,户籍所在地,现有 hukou_province 实际存的是城市名,code,,,CT_CITY,scalar,questionnaire,,,,T2,active,1.0.0,gov
+F_CLIN_DEPARTMENT,clinical_exposure,临床科室,临床暴露的科室归属,code,,,CT_CLINICAL_DEPARTMENT,scalar,resume_parse,,,,T1,active,1.0.0,data
+F_PRJ_PROJECT_TYPE,project_record,项目类型,,code,,,CT_PROJECT_TYPE,scalar,resume_parse,,,,T1,active,1.0.0,data
+F_AWD_AWARD_LEVEL,award_honor,奖项层级,,code,,,CT_AWARD_LEVEL,scalar,resume_parse,,,,T1,active,1.0.0,data
+F_ASM_DIMENSION,assessment,测评维度,,code,,,CT_ASSESSMENT_DIMENSION,scalar,questionnaire,,,,T1,active,1.0.0,data
+F_PSN_EDU_DEGREE_LEVEL,person,学历层次,画像维度 DIM_DEGREE_LEVEL（学历与专业 · 序数·硬门槛）在 person 侧的登记字段；人侧落点 education_record.degree_level。,code,,,CT_DEGREE_LEVEL,scalar,questionnaire,,F_EDU_DEGREE_LEVEL,,T1,active,1.0.0,data
+F_PSN_EDU_MAJOR,person,专业匹配,画像维度 DIM_MAJOR（学历与专业 · 多值集合·硬门槛）在 person 侧的登记字段；人侧落点 education_record.major_code。,array,,,CT_MAJOR,array,questionnaire,,F_EDU_MAJOR_CODE,,T1,active,1.0.0,data
+F_PSN_EDU_IS_CLINICAL_MAJOR,person,是否临床医学类,画像维度 DIM_IS_CLINICAL_MAJOR（学历与专业 · 枚举）在 person 侧的登记字段；人侧落点 education_record.is_clinical。,code,,,CT_YES_NO,scalar,questionnaire,,F_EDU_IS_CLINICAL,,T1,active,1.0.0,data
+F_PSN_EDU_ACADEMIC_RANK,person,学业排名段位,画像维度 DIM_ACADEMIC_RANK（学历与专业 · 序数）在 person 侧的登记字段；人侧落点 education_record.rank_percentile。,code,,,CT_RANK_BAND,scalar,questionnaire,,F_EDU_RANK_PCT,,T1,active,1.0.0,data
+F_PSN_EDU_SCHOOL_TIER,person,院校层次,画像维度 DIM_SCHOOL_TIER（学历与专业 · 序数）在 person 侧的登记字段；人侧落点 education_record.school_tags。,code,,,CT_SCHOOL_TIER,scalar,questionnaire,,F_EDU_SCHOOL_TAGS,,T1,active,1.0.0,data
+F_PSN_CRED_CREDENTIAL,person,资质证书持有,画像维度 DIM_CREDENTIAL（资质与准入 · 多值集合·硬门槛）在 person 侧的登记字段；人侧落点 credential.credential_type。,array,,,CT_CREDENTIAL_TYPE,array,questionnaire,,F_CRED_TYPE,,T1,active,1.0.0,data
+F_PSN_CRED_CREDENTIAL_STATUS,person,证书状态,画像维度 DIM_CREDENTIAL_STATUS（资质与准入 · 序数·硬门槛）在 person 侧的登记字段；人侧落点 credential.status。,code,,,CT_CRED_STATUS,scalar,questionnaire,,F_CRED_STATUS,,T1,active,1.0.0,data
+F_PSN_CRED_TRAINING,person,规培与培养经历,画像维度 DIM_TRAINING（资质与准入 · 多值集合·硬门槛）在 person 侧的登记字段；人侧落点 credential.credential_type。,array,,,CT_TRAINING_TYPE,array,questionnaire,,F_TRAIN_TYPE,,T1,active,1.0.0,data
+F_PSN_CRED_HEALTH_LIMIT,person,体检受限项,画像维度 DIM_HEALTH_LIMIT（资质与准入 · 多值集合·硬门槛）在 person 侧的登记字段；人侧落点 person_demographics.health_limits。,array,,,CT_HEALTH_LIMIT,array,questionnaire,,F_PERSON_HEALTH_LIMITS,,T3,active,1.0.0,data
+F_PSN_CRED_POLITICAL,person,政治面貌,画像维度 DIM_POLITICAL（资质与准入 · 枚举·硬门槛）在 person 侧的登记字段；人侧落点 person_demographics.political_status。,code,,,CT_POLITICAL,scalar,questionnaire,,F_PERSON_POLITICAL,,T2,active,1.0.0,data
+F_PSN_CRED_AGE_BAND,person,年龄段,画像维度 DIM_AGE_BAND（资质与准入 · 序数）在 person 侧的登记字段；人侧落点 person_demographics.birth_year。,code,,,CT_AGE_BAND,scalar,questionnaire,,F_PERSON_BIRTH_YEAR,,T2,active,1.0.0,data
+F_PSN_CRED_SEX,person,性别,画像维度 DIM_SEX（资质与准入 · 枚举）在 person 侧的登记字段；人侧落点 person_demographics.sex。,code,,,CT_SEX,scalar,questionnaire,,F_PERSON_SEX,,T2,active,1.0.0,data
+F_PSN_EXP_WORK_YEARS,person,工作年限,画像维度 DIM_WORK_YEARS（经历与年限 · 序数·硬门槛）在 person 侧的登记字段；人侧落点 derived:employment_record 起止日期。,code,,,CT_EXPERIENCE_BAND,scalar,derived,,,,T1,active,1.0.0,data
+F_PSN_EXP_EMPLOYER_TYPE,person,单位类型,画像维度 DIM_EMPLOYER_TYPE（经历与年限 · 多值集合）在 person 侧的登记字段；人侧落点 employment_record.employer_type。,array,,,CT_EMPLOYER_TYPE,array,questionnaire,,F_EMP_EMPLOYER_TYPE,,T1,active,1.0.0,data
+F_PSN_EXP_CLINICAL_BAND,person,临床暴露层级,画像维度 DIM_CLINICAL_BAND（经历与年限 · 序数）在 person 侧的登记字段；人侧落点 derived:clinical_exposure + credential。,code,,,CT_CLINICAL_BAND,scalar,derived,,,,T1,active,1.0.0,data
+F_PSN_EXP_CLINICAL_DEPARTMENT,person,临床科室经历,画像维度 DIM_CLINICAL_DEPARTMENT（经历与年限 · 多值集合）在 person 侧的登记字段；人侧落点 clinical_exposure.department。,array,,,CT_CLINICAL_DEPARTMENT,array,questionnaire,,F_CLIN_DEPARTMENT,,T1,active,1.0.0,data
+F_PSN_EXP_CLINICAL_VOLUME,person,操作例数区间,画像维度 DIM_CLINICAL_VOLUME（经历与年限 · 序数）在 person 侧的登记字段；人侧落点 clinical_exposure.procedure_count。,code,,,CT_VOLUME_BAND,scalar,questionnaire,,F_CLIN_PROCEDURE_COUNT,,T1,active,1.0.0,data
+F_PSN_EXP_PROJECT_TYPE,person,项目经历类型,画像维度 DIM_PROJECT_TYPE（经历与年限 · 多值集合）在 person 侧的登记字段；人侧落点 project_record.project_type。,array,,,CT_PROJECT_TYPE,array,questionnaire,,F_PRJ_PROJECT_TYPE,,T1,active,1.0.0,data
+F_PSN_EXP_PROJECT_ROLE,person,项目角色,画像维度 DIM_PROJECT_ROLE（经历与年限 · 序数）在 person 侧的登记字段；人侧落点 project_record.role。,code,,,CT_PROJECT_ROLE,scalar,questionnaire,,,,T1,active,1.0.0,data
+F_PSN_EXP_JOB_ZONE,person,岗位准备度,画像维度 DIM_JOB_ZONE（经历与年限 · 序数）在 person 侧的登记字段；人侧落点 derived:学位与年限。,code,,,CT_JOB_ZONE,scalar,derived,,F_JOB_ZONE,,T1,active,1.0.0,data
+F_PSN_RES_RESEARCH_LEVEL,person,科研层级,画像维度 DIM_RESEARCH_LEVEL（科研与产出 · 序数）在 person 侧的登记字段；人侧落点 derived:research_output。,code,,,CT_RESEARCH_LEVEL,scalar,derived,,,,T1,active,1.0.0,data
+F_PSN_RES_RESEARCH_OUTPUT_TYPE,person,科研产出类型,画像维度 DIM_RESEARCH_OUTPUT_TYPE（科研与产出 · 多值集合）在 person 侧的登记字段；人侧落点 research_output.output_type。,array,,,CT_RESEARCH_OUTPUT_TYPE,array,questionnaire,,F_RES_OUTPUT_TYPE,,T1,active,1.0.0,data
+F_PSN_RES_AWARD_LEVEL,person,获奖层级,画像维度 DIM_AWARD_LEVEL（科研与产出 · 序数）在 person 侧的登记字段；人侧落点 award_honor.level。,code,,,CT_AWARD_LEVEL,scalar,questionnaire,,F_AWD_AWARD_LEVEL,,T1,active,1.0.0,data
+F_PSN_RES_OVERSEAS,person,海外经历,画像维度 DIM_OVERSEAS（科研与产出 · 枚举）在 person 侧的登记字段；人侧落点 education_record.overseas。,code,,,CT_YES_NO,scalar,questionnaire,,,,T1,active,1.0.0,data
+F_PSN_SKL_CONCEPT_SKILL,person,技能概念（K1）,画像维度 DIM_CONCEPT_SKILL（能力与知识 · 多值集合）在 person 侧的登记字段；人侧落点 concept:K1。,array,,,,array,questionnaire,,F_SKL_CONCEPT_ID,,T1,active,1.0.0,data
+F_PSN_SKL_CONCEPT_ABILITY,person,通用能力概念（K3）,画像维度 DIM_CONCEPT_ABILITY（能力与知识 · 多值集合）在 person 侧的登记字段；人侧落点 concept:K3。,array,,,,array,questionnaire,,F_SKL_CONCEPT_ID,,T1,active,1.0.0,data
+F_PSN_SKL_SKILL_LEVEL,person,能力等级,画像维度 DIM_SKILL_LEVEL（能力与知识 · 序数）在 person 侧的登记字段；人侧落点 skill_assertion.level。,code,,,CT_ABILITY_LEVEL,scalar,questionnaire,,F_SKL_LEVEL,,T1,active,1.0.0,data
+F_PSN_SKL_SKILL_BASIS,person,等级判定依据,画像维度 DIM_SKILL_BASIS（能力与知识 · 枚举）在 person 侧的登记字段；人侧落点 skill_assertion.level_basis。,code,,,CT_LEVEL_BASIS,scalar,questionnaire,,F_SKL_LEVEL_BASIS,,T1,active,1.0.0,data
+F_PSN_SKL_ASSESSMENT_DIMENSION,person,测评维度得分,画像维度 DIM_ASSESSMENT_DIMENSION（能力与知识 · 多值集合）在 person 侧的登记字段；人侧落点 assessment.dimension。,array,,,CT_ASSESSMENT_DIMENSION,array,questionnaire,,F_ASM_DIMENSION,,T1,active,1.0.0,data
+F_PSN_SKL_LANGUAGE_LEVEL,person,语言能力,画像维度 DIM_LANGUAGE_LEVEL（能力与知识 · 序数）在 person 侧的登记字段；人侧落点 credential:C09。,code,,,CT_LANGUAGE_LEVEL,scalar,questionnaire,,,,T1,active,1.0.0,data
+F_PSN_INT_INTEREST_DOMAIN,person,兴趣方向,画像维度 DIM_INTEREST_DOMAIN（兴趣与价值取向 · 多值集合）在 person 侧的登记字段；人侧落点 preference:PF9。,array,,,CT_INTEREST_DOMAIN,array,questionnaire,,F_PREF_INTEREST_DOMAIN,,T1,active,1.0.0,data
+F_PSN_INT_CAREER_GOAL,person,职业目标,画像维度 DIM_CAREER_GOAL（兴趣与价值取向 · 多值集合）在 person 侧的登记字段；人侧落点 preference:PF12。,array,,,CT_CAREER_GOAL,array,questionnaire,,F_PREF_CAREER_GOAL,,T1,active,1.0.0,data
+F_PSN_INT_WORK_STYLE,person,工作风格,画像维度 DIM_WORK_STYLE（兴趣与价值取向 · 多值集合）在 person 侧的登记字段；人侧落点 preference:PF10。,array,,,CT_WORK_STYLE,array,questionnaire,,F_PREF_WORK_STYLE,,T1,active,1.0.0,data
+F_PSN_INT_VALUE_ORIENT,person,价值观取向,画像维度 DIM_VALUE_ORIENT（兴趣与价值取向 · 多值集合）在 person 侧的登记字段；人侧落点 preference:PF11。,array,,,CT_VALUE_ORIENT,array,questionnaire,,F_PREF_VALUE_ORIENT,,T1,active,1.0.0,data
+F_PSN_INT_ORG_CULTURE_FIT,person,组织文化契合,画像维度 DIM_ORG_CULTURE_FIT（兴趣与价值取向 · 多值集合）在 person 侧的登记字段；人侧落点 preference:PF16。,array,,,CT_ORG_CULTURE,array,questionnaire,,F_PREF_ORG_CULTURE,,T1,active,1.0.0,data
+F_PSN_GEO_EXPECT_CITY,person,期望工作城市,画像维度 DIM_EXPECT_CITY（地域与流动 · 多值集合）在 person 侧的登记字段；人侧落点 preference:PF1。,array,,,CT_CITY,array,questionnaire,,F_PREF_EXPECT_CITY,,T1,active,1.0.0,data
+F_PSN_GEO_CITY_TIER,person,城市层级,画像维度 DIM_CITY_TIER（地域与流动 · 序数）在 person 侧的登记字段；人侧落点 derived:DIM_EXPECT_CITY。,code,,,CT_CITY_TIER,scalar,derived,,,,T1,active,1.0.0,data
+F_PSN_GEO_MOBILITY,person,地域流动意愿,画像维度 DIM_MOBILITY（地域与流动 · 序数）在 person 侧的登记字段；人侧落点 preference:PF15。,code,,,CT_MOBILITY,scalar,questionnaire,,F_PREF_MOBILITY,,T1,active,1.0.0,data
+F_PSN_GEO_HUKOU_CITY,person,户籍所在地,画像维度 DIM_HUKOU_CITY（地域与流动 · 枚举）在 person 侧的登记字段；人侧落点 person_demographics.hukou_province。,code,,,CT_CITY,scalar,questionnaire,,F_PERSON_HUKOU_CITY,,T2,active,1.0.0,data
+F_PSN_GEO_HUKOU_TYPE,person,户籍类型,画像维度 DIM_HUKOU_TYPE（地域与流动 · 枚举）在 person 侧的登记字段；人侧落点 person_demographics.hukou_type。,code,,,CT_HUKOU_TYPE,scalar,questionnaire,,F_PERSON_HUKOU_TYPE,,T2,active,1.0.0,data
+F_PSN_GEO_WORK_MODE,person,工作方式偏好,画像维度 DIM_WORK_MODE（地域与流动 · 多值集合）在 person 侧的登记字段；人侧落点 preference:PF13。,array,,,CT_WORK_MODE,array,questionnaire,,F_PREF_WORK_MODE,,T1,active,1.0.0,data
+F_PSN_PAY_SALARY_EXPECT,person,薪资期望区间,画像维度 DIM_SALARY_EXPECT（薪酬与强度 · 区间）在 person 侧的登记字段；人侧落点 preference:PF4。,string,,,,scalar,questionnaire,,,,T1,active,1.0.0,data
+F_PSN_PAY_SALARY_BAND,person,薪资档位,画像维度 DIM_SALARY_BAND（薪酬与强度 · 序数）在 person 侧的登记字段；人侧落点 derived:DIM_SALARY_EXPECT。,code,,,CT_SALARY_BAND,scalar,derived,,,,T1,active,1.0.0,data
+F_PSN_PAY_WORK_INTENSITY,person,工作强度容忍,画像维度 DIM_WORK_INTENSITY（薪酬与强度 · 序数）在 person 侧的登记字段；人侧落点 preference:PF5。,code,,,CT_WORK_INTENSITY,scalar,questionnaire,,,,T1,active,1.0.0,data
+F_PSN_PAY_SHIFT_WILLING,person,值班意愿,画像维度 DIM_SHIFT_WILLING（薪酬与强度 · 序数）在 person 侧的登记字段；人侧落点 preference:PF14。,code,,,CT_SHIFT_WILLING,scalar,questionnaire,,F_PREF_SHIFT_WILLING,,T1,active,1.0.0,data
+F_PSN_PAY_GROWTH_PREF,person,成长性偏好,画像维度 DIM_GROWTH_PREF（薪酬与强度 · 序数）在 person 侧的登记字段；人侧落点 preference:PF7。,code,,,CT_GROWTH_PREF,scalar,questionnaire,,,,T1,active,1.0.0,data
+F_PSN_PAY_STABILITY_PREF,person,稳定性偏好,画像维度 DIM_STABILITY_PREF（薪酬与强度 · 序数）在 person 侧的登记字段；人侧落点 preference:PF6。,code,,,CT_STABILITY_PREF,scalar,questionnaire,,,,T1,active,1.0.0,data
+F_PSN_FAM_JOB_FAMILY_PREF,person,岗位族偏好,画像维度 DIM_JOB_FAMILY_PREF（岗位族与综合 · 多值集合）在 person 侧的登记字段；人侧落点 preference:PF3。,array,,,CT_JOB_FAMILY,array,questionnaire,,,,T1,active,1.0.0,data
+F_PSN_FAM_ACCEPT_CROSS_INDUSTRY,person,是否接受转行,画像维度 DIM_ACCEPT_CROSS_INDUSTRY（岗位族与综合 · 枚举）在 person 侧的登记字段；人侧落点 preference:PF8。,code,,,CT_YES_NO,scalar,questionnaire,,,,T1,active,1.0.0,data
+F_PSN_FAM_EVIDENCE_STRENGTH,person,画像证据强度,画像维度 DIM_EVIDENCE_STRENGTH（岗位族与综合 · 序数）在 person 侧的登记字段；人侧落点 derived:evidence 与 verify_status。,code,,,CT_EVIDENCE_STRENGTH,scalar,derived,,F_EVD_VERIFIABILITY,,T1,active,1.0.0,data

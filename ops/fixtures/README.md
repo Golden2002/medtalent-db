@@ -14,6 +14,13 @@
 | `gen_talent.py` | **生成 mock 人才档案（约 120 份，人才侧）** |
 | `reset_talent.py` | **只清除 `per_mock_%` 人才及其从属行**（绝不碰非 mock 数据） |
 | `check_talent.sql` | 人才侧验收查询（行数 / 学历 / 专业 / 技能覆盖 / 证据分级 / 越界率） |
+| `check_dimension_coverage.sql` | **50 个维度的人侧覆盖率**（由 `gen_talent.py --emit-coverage-sql` 生成，勿手改） |
+| `_verify_crosstab.sql` | 交叉分布：证明维度取值**有结构而非随机** |
+| `_verify_profile.sql` | 按 `mt.dimension` 注册表打印单个样本的**完整维度画像** |
+| `_verify_idem.sql` | 幂等核对：全表业务列内容哈希 |
+| `_verify_accept.sql` | 行数 / 非 mock 未动 / 码表合规 / 词表核对 |
+| `_verify_fieldmap.sql` | 维度 → 物理落点映射清单（供迁移 014 登记 `field_catalog`） |
+| `coverage_baseline.json` | **变更前**的人侧覆盖率快照（before/after 对照用） |
 | `check_talent_analytics.sql` | 用 `v_skill_supply` / `v_skill_demand` / `v_gap_candidates` 验证"能被分析" |
 | `probe_constraints.py` | 逐条探针验证"哪些写法会被 CHECK / 触发器 / 外键拒绝"（每条 rollback，不留数据） |
 
