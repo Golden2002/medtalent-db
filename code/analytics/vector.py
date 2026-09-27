@@ -474,6 +474,15 @@ def text_to_codes(c, ctable, texts):
             lab = meta["label_zh"]
             if lab and (lab in s or (len(s) >= 2 and s in lab)):
                 hit.append(code)
+                continue
+            # 别名匹配。真实数据的表述是整句中文（"写作与文学、书画艺术…"），
+            # 而码表标签是"文化娱乐与内容创作" —— 靠标签包含永远匹配不上。
+            # 别名登记在 code_value.external_mapping.aliases 里（**字典驱动**，
+            # 不是代码里的关键词表），这样新增说法只需要改字典。
+            for al in ((meta.get("external_mapping") or {}).get("aliases") or []):
+                if al and (al in s or (len(al) >= 2 and s in al)):
+                    hit.append(code)
+                    break
         if hit:
             for h in hit:
                 if h not in codes:
@@ -576,6 +585,28 @@ def person_payloads(c, pid, dims):
                         payload[did] = {"lo": lo, "hi": hi}
                 else:
                     codes = [r["v"] for r in rows if r["v"] not in (None, "")]
+                    # 集合/枚举维度必须拿到**码**才能比。
+                    # 真实案例的偏好是从公开表述里摘的中文原话（"写作与文学、投资…"），
+                    # 没有码。如果原样塞进载荷，cmp_set 会拿中文去和岗位的码求交集 →
+                    # 交集为空 → 返回 0.0 → 被打成"确认不满足（gap）"。
+                    # **把"没做归一化"当成"确认不满足"就是在冤枉候选人**，
+                    # 所以这里先做一次码表标签归一化；归一化不上就记"缺映射"（unknown）。
+                    if cmp_ in ("set_overlap", "enum_eq") and d["code_table_id"]:
+                        cvals2 = code_values(c, d["code_table_id"])
+                        # **已经是码的值不能再去"归一化"**：码 `IN01` 既不是标签也不是别名，
+                        # 拿去匹配必然失败，于是有效取值会被当成"映射不上"丢掉。
+                        # 实测后果：两侧可评维度从 14 掉到 10（我自己引入的回归）。
+                        # 只归一化"还不是码"的那部分，已经合法的原样保留。
+                        good = [x for x in codes if x in cvals2]
+                        rest = [x for x in codes if x not in cvals2]
+                        if rest:
+                            mapped, _un = text_to_codes(c, d["code_table_id"], rest)
+                            good += mapped
+                        if good:
+                            codes = good
+                        else:
+                            reason = R_NEEDS_MAP
+                            codes = []
             elif head == "concept":
                 # concept:K1 / K3 —— 概念 ID 自带类别前缀（CON-K1-*、CON-K3-*），
                 # 这是本库的命名约定，不是巧合；用它过滤比再加一张表更诚实。

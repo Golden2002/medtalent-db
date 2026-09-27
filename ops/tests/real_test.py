@@ -192,13 +192,18 @@ def main():
                   "%s 的画像向量取到 %d 个维度（真实公开数据应落在 3–20）"
                   % (r["person_id"], len(p)))
 
-        # 日期精度必须显式记录：公开资料只到年/月，补的 -01 不能被当成事实
+        # 日期精度必须显式记录：公开资料只到年/月，补的 -01 不能被当成事实。
+        # 只要求**有日期**的记录带精度：第二轮补的院校行（学校+标签）本来就没有日期，
+        # 给一条没有日期的记录写"精度"是无意义的。
         prec = q1(c, """SELECT count(*) AS n FROM mt.education_record
                          WHERE person_id LIKE %s AND attrs ? 'edu_date_precision'""",
                   (REAL_PREFIX + "%",))["n"]
-        n_edu = q1(c, """SELECT count(*) AS n FROM mt.education_record
-                          WHERE person_id LIKE %s""", (REAL_PREFIX + "%",))["n"]
-        check(prec == n_edu, "每条教育记录都记了日期精度（%d/%d）" % (prec, n_edu))
+        n_edu_dated = q1(c, """SELECT count(*) AS n FROM mt.education_record
+                                WHERE person_id LIKE %s AND start_date IS NOT NULL""",
+                         (REAL_PREFIX + "%",))["n"]
+        check(prec >= n_edu_dated,
+              "每条有日期的教育记录都记了日期精度（精度 %d >= 有日期 %d）"
+              % (prec, n_edu_dated))
 
         # ===============================================================
         print("\n【R6】真实案例的匹配结果：落库、可解释、且如实标注可评性")

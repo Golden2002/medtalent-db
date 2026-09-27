@@ -1,0 +1,1525 @@
+{
+  "generated_at": "2026-09-28",
+  "method": "对三人逐一以个人官网／百度百科词条为线索，用正规媒体（中国作家网、文汇报、新华社经济参考报、人民日报社中国经济周刊、新华网浙江频道、澎湃新闻、界面新闻、动脉网、健康界、环球网、创业邦、36氪）与官方登记页（中国作家网《中国作家协会2012年新会员名单》、国家卫健委与北京市医师执业注册查询入口）逐条交叉核对；每个 URL 均用 python urllib 经本机代理 127.0.0.1:7892 实际抓取并记录真实 HTTP 状态码，抓不通的 URL 一律不写入；只补 real_cases.json 未覆盖的增量字段，凡公开资料查不到的键留空数组并记入 still_unknown，不做任何推断填充（尤其 credentials 一律为空，因为执业注册查询需图形验证码、未能取得记录）。",
+  "cases": [
+    {
+      "case_key": "fengtang",
+      "education_extra": [
+        {
+          "school_name": "北京市第八十中学（北京 No.80 High School）",
+          "school_tags": [
+            "省重点"
+          ],
+          "overseas": false,
+          "degree_level": "D2",
+          "major_raw": "普通高中（1984—1990 就读；一说为北京市重点中学，未获官方校史页面佐证，故院校标签按省重点记）",
+          "source": [
+            "https://en.wikipedia.org/wiki/Feng_Tang"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "school_name": "中国协和医科大学（现北京协和医学院）",
+          "school_tags": [
+            "省重点"
+          ],
+          "overseas": false,
+          "degree_level": "D4",
+          "major_raw": "临床医学（妇科肿瘤方向，博士阶段研究卵巢癌）",
+          "source": [
+            "https://www.fengtang.com/",
+            "https://en.wikipedia.org/wiki/Feng_Tang",
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"
+          ],
+          "confidence": 0.9
+        },
+        {
+          "school_name": "美国埃默里大学 Goizueta 商学院（Emory University, Goizueta Business School）",
+          "school_tags": [
+            "海外院校"
+          ],
+          "overseas": true,
+          "degree_level": "D3",
+          "major_raw": "工商管理（MBA）",
+          "source": [
+            "https://www.fengtang.com/",
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90",
+            "https://en.wikipedia.org/wiki/Feng_Tang"
+          ],
+          "confidence": 0.9
+        }
+      ],
+      "employment_extra": [
+        {
+          "employer_name": "成事不二堂（成事学管理学堂，2022 年创建）",
+          "employer_type": "E17",
+          "city": "北京",
+          "source": [
+            "https://www.fengtang.com/",
+            "https://www.163.com/dy/article/I3308SQU05506BEH.html",
+            "http://www.csber.top/"
+          ],
+          "confidence": 0.75
+        }
+      ],
+      "clinical_extra": [
+        {
+          "department_code": "DP03",
+          "department_raw": "妇产科／妇科肿瘤（博士阶段：\"学医的最后三年，我在基因和组织学层面研究卵巢癌\"）",
+          "duration_months": 36,
+          "case_volume_note": "无公开例数；36 个月系按本人自述\"学医的最后三年\"折算的博士研究时段，非执业时长",
+          "source": [
+            "https://www.chinawriter.com.cn/n1/2016/0816/c405057-28638359.html",
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"
+          ],
+          "confidence": 0.5
+        }
+      ],
+      "credentials_extra": [],
+      "outputs_extra": [
+        {
+          "output_type": "著作",
+          "title": "欢喜",
+          "venue": "天津人民出版社",
+          "year": 2007,
+          "source": [
+            "https://www.fengtang.com/",
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"
+          ],
+          "confidence": 0.8
+        },
+        {
+          "output_type": "著作",
+          "title": "十八岁给我一个姑娘",
+          "venue": null,
+          "year": 2005,
+          "source": [
+            "https://en.wikipedia.org/wiki/Feng_Tang",
+            "https://www.fengtang.com/"
+          ],
+          "confidence": 0.7
+        },
+        {
+          "output_type": "著作",
+          "title": "万物生长",
+          "venue": null,
+          "year": 2000,
+          "source": [
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90",
+            "https://en.wikipedia.org/wiki/Feng_Tang"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "output_type": "著作",
+          "title": "北京，北京",
+          "venue": "重庆出版社",
+          "year": 2007,
+          "source": [
+            "https://www.fengtang.com/",
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "output_type": "著作",
+          "title": "不二",
+          "venue": "香港天地图书有限公司",
+          "year": 2011,
+          "source": [
+            "https://en.wikipedia.org/wiki/Feng_Tang",
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"
+          ],
+          "confidence": 0.75
+        },
+        {
+          "output_type": "著作",
+          "title": "女神一号",
+          "venue": "九州出版社",
+          "year": 2015,
+          "source": [
+            "https://www.fengtang.com/",
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "output_type": "著作",
+          "title": "素女经",
+          "venue": "天地图书有限公司",
+          "year": 2014,
+          "source": [
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"
+          ],
+          "confidence": 0.75
+        },
+        {
+          "output_type": "著作",
+          "title": "活着活着就老了",
+          "venue": "浙江文艺出版社",
+          "year": 2013,
+          "source": [
+            "https://www.fengtang.com/",
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"
+          ],
+          "confidence": 0.8
+        },
+        {
+          "output_type": "著作",
+          "title": "三十六大",
+          "venue": "浙江文艺出版社",
+          "year": 2012,
+          "source": [
+            "https://www.fengtang.com/",
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "output_type": "著作",
+          "title": "在宇宙间不易被风吹散",
+          "venue": "北京联合出版公司",
+          "year": 2016,
+          "source": [
+            "https://www.fengtang.com/",
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"
+          ],
+          "confidence": 0.8
+        },
+        {
+          "output_type": "著作",
+          "title": "无所畏",
+          "venue": "北京联合出版有限责任公司",
+          "year": 2018,
+          "source": [
+            "https://www.fengtang.com/",
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"
+          ],
+          "confidence": 0.8
+        },
+        {
+          "output_type": "著作",
+          "title": "春风十里不如你",
+          "venue": "北京联合出版有限责任公司",
+          "year": 2019,
+          "source": [
+            "https://www.fengtang.com/",
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"
+          ],
+          "confidence": 0.8
+        },
+        {
+          "output_type": "著作",
+          "title": "有本事",
+          "venue": "北京联合出版公司（磨铁图书）",
+          "year": 2021,
+          "source": [
+            "https://www.fengtang.com/",
+            "https://book.douban.com/subject/35496147/"
+          ],
+          "confidence": 0.9
+        },
+        {
+          "output_type": "著作",
+          "title": "稳赢",
+          "venue": null,
+          "year": null,
+          "source": [
+            "https://www.fengtang.com/"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "output_type": "著作",
+          "title": "天下卵（2017 年重版更名《安阳》）",
+          "venue": "花城出版社",
+          "year": 2012,
+          "source": [
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90",
+            "https://en.wikipedia.org/wiki/Feng_Tang"
+          ],
+          "confidence": 0.75
+        },
+        {
+          "output_type": "著作",
+          "title": "搜神记",
+          "venue": "中信出版集团股份有限公司",
+          "year": 2017,
+          "source": [
+            "https://www.fengtang.com/",
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"
+          ],
+          "confidence": 0.8
+        },
+        {
+          "output_type": "著作",
+          "title": "冯唐诗百首",
+          "venue": "天津人民出版社",
+          "year": 2013,
+          "source": [
+            "https://www.fengtang.com/",
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"
+          ],
+          "confidence": 0.8
+        },
+        {
+          "output_type": "著作",
+          "title": "不三",
+          "venue": "人民文学出版社",
+          "year": 2018,
+          "source": [
+            "https://www.fengtang.com/",
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"
+          ],
+          "confidence": 0.8
+        },
+        {
+          "output_type": "著作",
+          "title": "作为花我从来没败过",
+          "venue": "北京联合出版公司",
+          "year": 2025,
+          "source": [
+            "https://www.fengtang.com/",
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"
+          ],
+          "confidence": 0.8
+        },
+        {
+          "output_type": "译作",
+          "title": "飞鸟集（泰戈尔，冯唐译）",
+          "venue": "浙江文艺出版社（2015 年 12 月出版方声明下架召回；后在香港由天地图书重新出版）",
+          "year": 2015,
+          "source": [
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90",
+            "https://en.wikipedia.org/wiki/Feng_Tang"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "output_type": "著作",
+          "title": "成事：冯唐品读曾国藩嘉言钞",
+          "venue": "天津人民出版社",
+          "year": 2019,
+          "source": [
+            "https://www.fengtang.com/",
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90",
+            "https://www.163.com/dy/article/I3308SQU05506BEH.html"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "output_type": "著作",
+          "title": "冯唐成事心法",
+          "venue": null,
+          "year": 2020,
+          "source": [
+            "https://www.fengtang.com/",
+            "https://www.163.com/dy/article/I3308SQU05506BEH.html"
+          ],
+          "confidence": 0.7
+        },
+        {
+          "output_type": "著作",
+          "title": "了不起",
+          "venue": null,
+          "year": null,
+          "source": [
+            "https://www.fengtang.com/",
+            "https://www.163.com/dy/article/I3308SQU05506BEH.html"
+          ],
+          "confidence": 0.65
+        },
+        {
+          "output_type": "著作",
+          "title": "金线",
+          "venue": null,
+          "year": 2022,
+          "source": [
+            "https://www.fengtang.com/",
+            "https://www.163.com/dy/article/I3308SQU05506BEH.html"
+          ],
+          "confidence": 0.65
+        },
+        {
+          "output_type": "著作",
+          "title": "胜者心法：资治通鉴成事之道",
+          "venue": "民主与建设出版社",
+          "year": 2023,
+          "source": [
+            "https://www.fengtang.com/",
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"
+          ],
+          "confidence": 0.8
+        },
+        {
+          "output_type": "著作",
+          "title": "有底气",
+          "venue": "北京联合出版有限公司",
+          "year": 2025,
+          "source": [
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "output_type": "专栏",
+          "title": "《智族GQ》专栏（连续十年，2011 年 9 月获《智族GQ》年度专栏作家）",
+          "venue": "《智族GQ》（中国版）",
+          "year": null,
+          "source": [
+            "https://en.wikipedia.org/wiki/Feng_Tang",
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"
+          ],
+          "confidence": 0.85
+        }
+      ],
+      "preferences_extra": [
+        {
+          "pref_type": "PF9",
+          "value_raw": "写作与文学（小说／诗／散文）、书画艺术（书法绘画个展）、战略管理与管理培训、医疗领域投资",
+          "evidence_quote": "冯唐自述其创作在\"诗、酒、茶\"之间，并称\"文学于我是幸福，也是妄念\"",
+          "source": [
+            "https://www.fengtang.com/",
+            "https://en.wikipedia.org/wiki/Feng_Tang"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "pref_type": "PF9",
+          "value_raw": "投资与证券研究（2015—2021 年任中信资本高级董事总经理，主管医疗领域投资）",
+          "evidence_quote": "冯唐的履历横跨四个看似不相干的场域（医学、咨询、投资、文学艺术）",
+          "source": [
+            "https://www.fengtang.com/",
+            "https://en.wikipedia.org/wiki/Feng_Tang"
+          ],
+          "confidence": 0.8
+        },
+        {
+          "pref_type": "PF12",
+          "value_raw": "做\"成事学\"的传道者，打造融会东西方管理智慧的通用商科学堂",
+          "evidence_quote": "谈到创业初衷，冯唐坦言，目前中国在本土化、通用的管理培训领域还有很大的需求，希望能打造一个把东西方管理智慧融会贯通、博采中西之长的通用商科学堂，帮助更多成为优秀的管理人才",
+          "source": [
+            "https://www.163.com/dy/article/I3308SQU05506BEH.html"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "pref_type": "PF12",
+          "value_raw": "以写作为终身事业（\"文字打败时间，文章般若，千年不朽，这是我一辈子要做的事情\"）",
+          "evidence_quote": "文字打败时间，文章般若，千年不朽，这是我一辈子要做的事情",
+          "source": [
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"
+          ],
+          "confidence": 0.8
+        },
+        {
+          "pref_type": "PF10",
+          "value_raw": "长期主义式的高强度投入：以写作为\"正经事\"常年笔耕，自称靠读写与身体管理保持状态",
+          "evidence_quote": "全职写作之前，他长年在工作之余持续写作；\"放下屠龙刀全职写作\"",
+          "source": [
+            "https://book.douban.com/subject/35496147/",
+            "https://en.wikipedia.org/wiki/Feng_Tang"
+          ],
+          "confidence": 0.7
+        },
+        {
+          "pref_type": "PF16",
+          "value_raw": "偏好自由表达、不做\"画地为牢\"的自我设限；希望\"100 年后年轻人翻开自己的作品仍会觉得挺有意思\"",
+          "evidence_quote": "他希望100年后，年轻人翻开自己的作品，仍会觉得\"挺有意思\"，因为\"文学于我是幸福，也是妄念\"",
+          "source": [
+            "https://www.fengtang.com/"
+          ],
+          "confidence": 0.7
+        },
+        {
+          "pref_type": "PF10",
+          "value_raw": "低效社交／单人专注型工作方式：\"一个人，一杯酒，一把椅子，就够了\"；2026 年个展取名\"一人寺\"",
+          "evidence_quote": "冯唐说：一个人，一杯酒，一把椅子，就够了",
+          "source": [
+            "https://www.fengtang.com/"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "pref_type": "PF15",
+          "value_raw": "跨城／跨地域生活与工作：北京（出生地与协和求学期、2022 年后创建成事不二堂的基地）—香港（麦肯锡及中信资本任职期间）—美国加州（2014 年短暂居留）",
+          "evidence_quote": "2014 年 7 月离开华润医疗后在加州小住，租住纳帕谷附近房屋三个月译《飞鸟集》；2000—2008 年在麦肯锡（香港）任职",
+          "source": [
+            "https://en.wikipedia.org/wiki/Feng_Tang",
+            "https://www.fengtang.com/"
+          ],
+          "confidence": 0.7
+        },
+        {
+          "pref_type": "PF1",
+          "value_raw": "现工作城市北京、曾工作城市香港（麦肯锡与中信资本任职期间）与美国加州（2014 年短期居留）",
+          "evidence_quote": "1971 年生于北京；2000—2008 年任职麦肯锡香港分公司；2015—2021 年任中信资本高级董事总经理（香港）；2022 年在北京创建成事不二堂",
+          "source": [
+            "https://www.fengtang.com/",
+            "https://en.wikipedia.org/wiki/Feng_Tang"
+          ],
+          "confidence": 0.8
+        }
+      ],
+      "awards_extra": [
+        {
+          "name": "第三届\"茅台杯\"人民文学奖最佳散文奖（获奖作品《浩浩荡荡的北京》）",
+          "level": "全国",
+          "year": 2005,
+          "source": [
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90",
+            "https://en.wikipedia.org/wiki/Feng_Tang"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "name": "第四届\"青年作家批评家论坛\"年度青年作家",
+          "level": "行业",
+          "year": 2005,
+          "source": [
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"
+          ],
+          "confidence": 0.8
+        },
+        {
+          "name": "《人民文学》\"未来 20 大家\"（Top 20 under 40 future literature masters in China）",
+          "level": "行业",
+          "year": 2011,
+          "source": [
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90",
+            "https://en.wikipedia.org/wiki/Feng_Tang"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "name": "第六届风尚中国年度风尚作家",
+          "level": "行业",
+          "year": 2011,
+          "source": [
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"
+          ],
+          "confidence": 0.7
+        },
+        {
+          "name": "《智族GQ》年度专栏作家",
+          "level": "行业",
+          "year": 2011,
+          "source": [
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90",
+            "https://en.wikipedia.org/wiki/Feng_Tang"
+          ],
+          "confidence": 0.8
+        },
+        {
+          "name": "中国作家协会会员（中国作家网《中国作家协会2012年新会员名单》\"其他27人\"中列名\"张海鹏(冯唐，蒙古族)\"）",
+          "level": "协会",
+          "year": 2012,
+          "source": [
+            "https://www.chinawriter.com.cn/n1/2020/0722/c403979-31793010.html",
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"
+          ],
+          "confidence": 0.95
+        },
+        {
+          "name": "第六届当当影响力作家评选（入选）",
+          "level": "行业",
+          "year": 2020,
+          "source": [
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90"
+          ],
+          "confidence": 0.7
+        }
+      ],
+      "language_extra": [
+        {
+          "value_raw": "英语：埃默里大学 Goizueta 商学院 MBA（全英文授课的海外学位项目），大量英文文献引用与英文访谈",
+          "source": [
+            "https://en.wikipedia.org/wiki/Feng_Tang",
+            "https://www.fengtang.com/"
+          ],
+          "confidence": 0.7
+        },
+        {
+          "value_raw": "检索／翻译层面：曾应浙江文艺出版社之邀重译泰戈尔《飞鸟集》，并对译本争议公开回应",
+          "source": [
+            "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90",
+            "https://en.wikipedia.org/wiki/Feng_Tang"
+          ],
+          "confidence": 0.8
+        }
+      ],
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Feng_Tang",
+          "publisher": "Wikipedia (English)",
+          "title": "Feng Tang",
+          "date": "2026-08-27",
+          "http_status": 200,
+          "kind": "百科"
+        },
+        {
+          "url": "https://zh.wikipedia.org/wiki/%E5%86%AF%E5%94%90_(%E4%BD%9C%E5%AE%B6)",
+          "publisher": "维基百科（中文）",
+          "title": "冯唐 (作家)",
+          "date": null,
+          "http_status": 200,
+          "kind": "百科"
+        },
+        {
+          "url": "https://wapbaike.baidu.com/item/%E5%86%AF%E5%94%90",
+          "publisher": "百度百科",
+          "title": "冯唐（中国现代诗人、作家、医生）",
+          "date": null,
+          "http_status": 200,
+          "kind": "百科"
+        },
+        {
+          "url": "https://www.fengtang.com/",
+          "publisher": "冯唐个人官方网站 fengtang.com",
+          "title": "关于冯唐 About Feng Tang（官方简介、作品与展览动态）",
+          "date": "2026",
+          "http_status": 200,
+          "kind": "官网"
+        },
+        {
+          "url": "https://www.chinawriter.com.cn/n1/2020/0722/c403979-31793010.html",
+          "publisher": "中国作家网",
+          "title": "中国作家协会2012年新会员名单",
+          "date": "2020-07-22",
+          "http_status": 200,
+          "kind": "官网"
+        },
+        {
+          "url": "https://www.chinawriter.com.cn/n1/2016/0816/c405057-28638359.html",
+          "publisher": "中国作家网",
+          "title": "冯唐：诗意不是ps过的照片 是扎实的生活细节",
+          "date": "2016-08-16",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://www.163.com/dy/article/I3308SQU05506BEH.html",
+          "publisher": "文汇报（网易号转载）",
+          "title": "冯唐再创业，这一管理类视频课程在\"成事不二堂\"小程序上线",
+          "date": "2023-04-24",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://36kr.com/p/3181771844244616",
+          "publisher": "36氪",
+          "title": "创业两年，冯唐的\"宇宙第一管理学堂\"成绩颇丰",
+          "date": null,
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "http://www.csber.top/",
+          "publisher": "成事不二堂官网",
+          "title": "成事不二堂（csber.top）",
+          "date": null,
+          "http_status": 200,
+          "kind": "官网"
+        },
+        {
+          "url": "https://book.douban.com/subject/35496147/",
+          "publisher": "豆瓣读书",
+          "title": "有本事（冯唐，北京联合出版公司，2021-6-28）",
+          "date": null,
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://www.sohu.com/a/863175568_121924583",
+          "publisher": "搜狐",
+          "title": "冯唐再创业：用知识挑战传统商学院的边界",
+          "date": null,
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://zgcx.nhc.gov.cn/doctor",
+          "publisher": "国家卫生健康委员会 信息查询",
+          "title": "医师执业注册信息查询入口（实测可访问；表单需姓名+机构+图形验证码，未能取得记录）",
+          "date": null,
+          "http_status": 200,
+          "kind": "官网"
+        },
+        {
+          "url": "https://bjggcx.wjw.beijing.gov.cn/Doctor/Index",
+          "publisher": "北京市卫生健康委员会",
+          "title": "医生执业注册信息查询（数据截止 2026-09-20；表单需姓名+机构+图形验证码，未能取得记录）",
+          "date": null,
+          "http_status": 200,
+          "kind": "官网"
+        }
+      ],
+      "still_unknown": [
+        "执业医师资格证／执业注册记录：无法取得。国家卫健委\"医师执业信息查询\"（https://zgcx.nhc.gov.cn/doctor）与北京市\"医生执业注册信息查询\"（https://bjggcx.wjw.beijing.gov.cn/Doctor/Index）两个官方入口均实测可访问（HTTP 200），但查询表单要求姓名+执业机构+图形验证码，需人工在浏览器交互填写，脚本无法完成；且公开报道与本人自述均未给出其执业注册编号或执业机构。故 credentials_extra 为空数组——\"当过 8 年医学生\"不能推出持证。",
+        "协和博士在读期间的住院医师／临床轮转总月数与任何操作例数：无公开数字；临床暴露仅能确认博士阶段约 3 年妇科肿瘤研究方向。",
+        "1998 年协和博士毕业到 2000 年赴 Emory 之间约两年经历（是否规培、是否行医）：无公开记录。",
+        "出国英语考试（托福／雅思／GRE）成绩、任何计算机或健康管理类证书：无公开记录。",
+        "书画／文学类正式奖项（如美术馆、书协体系奖项）与协会身份（如书法家协会）：除中国作家协会会员外未见其他正式协会身份或奖项公开记录。",
+        "薪酬与股权数字、家庭信息（婚姻、子女）：按隐私红线不采集，亦无公开记录。"
+      ]
+    },
+    {
+      "case_key": "li_tiantian",
+      "education_extra": [
+        {
+          "school_name": "哈尔滨医科大学",
+          "school_tags": [
+            "省重点"
+          ],
+          "overseas": false,
+          "degree_level": "D3",
+          "major_raw": "肿瘤免疫学（硕士，在读期间于 2000 年 7 月创办丁香园）",
+          "source": [
+            "http://china.haiwainet.cn/n/2014/1214/c345646-21536605.html",
+            "https://www.36kr.com/p/1724457779201",
+            "https://wapbaike.baidu.com/item/%E6%9D%8E%E5%A4%A9%E5%A4%A9/824321"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "school_name": "中国协和医科大学（现北京协和医学院）",
+          "school_tags": [
+            "省重点"
+          ],
+          "overseas": false,
+          "degree_level": "D4",
+          "major_raw": "神经内科（本人 2019 年自述\"我是神经内科医生\"；博士阶段未获学位）",
+          "source": [
+            "https://www.36kr.com/p/1724457779201",
+            "https://www.sohu.com/a/933828201_197955"
+          ],
+          "confidence": 0.6
+        }
+      ],
+      "employment_extra": [
+        {
+          "employer_name": "哈尔滨医科大学附属医院（住院医师／临床轮转，具体医院与科室未公开到机构全称）",
+          "employer_type": "E01",
+          "city": "哈尔滨",
+          "source": [
+            "http://china.haiwainet.cn/n/2014/1214/c345646-21536605.html",
+            "https://m.thepaper.cn/baijiahao_8417757"
+          ],
+          "confidence": 0.55
+        },
+        {
+          "employer_name": "英语培训公司（在读期间业余创办，本人称\"已经赢利\"；工商主体与存续时间未公开）",
+          "employer_type": "E17",
+          "city": "哈尔滨",
+          "source": [
+            "http://china.haiwainet.cn/n/2014/1214/c345646-21536605.html"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "employer_name": "丁香园（观澜网络（杭州）有限公司）——线下丁香诊所板块",
+          "employer_type": "E03",
+          "city": "杭州、福州",
+          "source": [
+            "https://www.hundun.cn/articles/d474ed901501cd4f.html",
+            "http://www.zj.xinhuanet.com/2018hszf/litiantian/index.htm"
+          ],
+          "confidence": 0.7
+        }
+      ],
+      "clinical_extra": [
+        {
+          "department_code": "DP02",
+          "department_raw": "外科（本人自述\"我在医院的外科轮转的时候，身上的内衣内裤是没有干过的\"）",
+          "duration_months": null,
+          "case_volume_note": "无公开例数；轮转时长与所在医院未公开",
+          "source": [
+            "https://m.thepaper.cn/baijiahao_8417757"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "department_code": null,
+          "department_raw": "住院医师（\"李天天读了八年医学院，当过住院医生\"）",
+          "duration_months": null,
+          "case_volume_note": "无公开例数与具体医院／科室；八年医学院是否含硕士阶段，公开资料未说明",
+          "source": [
+            "http://china.haiwainet.cn/n/2014/1214/c345646-21536605.html",
+            "https://ihealth.dxy.cn/article/95070"
+          ],
+          "confidence": 0.55
+        }
+      ],
+      "credentials_extra": [],
+      "outputs_extra": [
+        {
+          "output_type": "专栏",
+          "title": "《以\"负责任创新\"探索医疗人工智能发展新路径》（署名文章）",
+          "venue": "中央网信办《中国网信》杂志（新华社《经济参考报》转载）",
+          "year": 2026,
+          "source": [
+            "https://www.jjckb.cn/20260227/3251fec138a849bb974085b776a56bf3/c.html",
+            "https://www.sohu.com/a/990534888_202540"
+          ],
+          "confidence": 0.9
+        },
+        {
+          "output_type": "专栏",
+          "title": "《AI大模型在卫生健康行业的应用探索》（署名文章）",
+          "venue": "《中国网信》2025 年第 5 期（人民日报社《中国经济周刊》官网转载）",
+          "year": 2025,
+          "source": [
+            "https://www.ceweekly.cn/company/2025/0707/476545.html"
+          ],
+          "confidence": 0.9
+        },
+        {
+          "output_type": "演讲",
+          "title": "《做医疗要有足够的耐心和勇气》（互联网医疗与患者端 ICE 框架演讲实录）",
+          "venue": "混沌研习社／混沌学园",
+          "year": 2018,
+          "source": [
+            "https://www.hundun.cn/articles/d474ed901501cd4f.html"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "output_type": "演讲",
+          "title": "《杭州是中国最适合创业的城市》暨《杭州创业指南22条》相关内容（2025 新青年创投大会）",
+          "venue": "创业邦 2025 新青年创投大会",
+          "year": 2025,
+          "source": [
+            "https://www.cyzone.cn/article/805086.html"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "output_type": "专栏",
+          "title": "《丁香园从哈尔滨到杭州的故事》（本人撰文，原文为爆款微信公众号文章）",
+          "venue": "微信公众号（新华网访谈中本人证实为其所写）",
+          "year": 2018,
+          "source": [
+            "http://www.zj.xinhuanet.com/2018hszf/litiantian/index.htm"
+          ],
+          "confidence": 0.7
+        },
+        {
+          "output_type": "演讲",
+          "title": "《丁香园的前世今生和互联网医疗的快与慢》（腾讯大学《CEO来了》访谈）",
+          "venue": "腾讯大学《CEO来了》（笔记侠整理、36氪发布）",
+          "year": 2019,
+          "source": [
+            "https://www.36kr.com/p/1724457779201"
+          ],
+          "confidence": 0.8
+        },
+        {
+          "output_type": "科普",
+          "title": "发起\"医学职路丁香说\"医学生职业成长公益直播（邀请冯唐、张强、段涛、于莺等做客）",
+          "venue": "丁香园·丁香人才",
+          "year": 2022,
+          "source": [
+            "https://y.dxy.cn/hospital/5156/835482.html",
+            "https://www.dxy.cn/bbs/newweb/pc/post/51370243"
+          ],
+          "confidence": 0.8
+        },
+        {
+          "output_type": "科普",
+          "title": "发起\"基层医生赋能计划\"，2026 年计划向青海、甘肃、新疆、黑龙江基层医生与大学生村医捐赠\"临床决策\"会员服务",
+          "venue": "丁香园（本人署名文章中披露）",
+          "year": 2026,
+          "source": [
+            "https://www.jjckb.cn/20260227/3251fec138a849bb974085b776a56bf3/c.html"
+          ],
+          "confidence": 0.85
+        }
+      ],
+      "preferences_extra": [
+        {
+          "pref_type": "PF9",
+          "value_raw": "数字健康与互联网医疗（丁香园创始人、董事长）；临床与医疗健康（医学教育出身，长期做医生社区与循证科普）",
+          "evidence_quote": "我大学、研究生、博士阶段接受的都是医学教育，都是在学医",
+          "source": [
+            "https://m.thepaper.cn/baijiahao_8417757"
+          ],
+          "confidence": 0.9
+        },
+        {
+          "pref_type": "PF12",
+          "value_raw": "学生时代的职业目标是当医生：\"学生时的梦想是去当医生，百分百会去当医生，绝对没有第二选择\"",
+          "evidence_quote": "\"当医生，百分百会去当医生，绝对没有第二选择\"；\"当时的想法就是做一个医生，而且希望自己做一个纯粹的医生\"",
+          "source": [
+            "https://m.thepaper.cn/baijiahao_8417757"
+          ],
+          "confidence": 0.9
+        },
+        {
+          "pref_type": "PF10",
+          "value_raw": "亲力亲为、以用户洞察驱动：\"我们认知的方式是去理解用户、洞察用户需求\"，并长期亲自\"见网友\"了解医生需求",
+          "evidence_quote": "我们认知的方式是去理解用户、洞察用户需求。如果用户需要，用户确实有痛点，而且是很痛，非常痛的点，而且刚好我们还有能力去解决这个问题，那么我们就会去做",
+          "source": [
+            "https://m.thepaper.cn/baijiahao_8417757",
+            "http://china.haiwainet.cn/n/2014/1214/c345646-21536605.html"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "pref_type": "PF16",
+          "value_raw": "偏好自由、开放、平等、\"帮忙不添乱\"的政商／组织环境；直言\"我不去看元年、寒冬、春天、上半场、下半场\"，警惕用比喻限制思考边界",
+          "evidence_quote": "杭州让我重新认识了政府，重新认识了政府公务员；\"比喻这个东西会误导你的判断\"",
+          "source": [
+            "http://www.zj.xinhuanet.com/2018hszf/litiantian/index.htm",
+            "https://m.thepaper.cn/baijiahao_8417757"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "pref_type": "PF11",
+          "value_raw": "长期主义：\"做医疗要有足够的耐心和勇气\"；谢绝\"三年就想 IPO\"的风投，\"希望有耐心地在医疗健康领域做更多有价值的事\"",
+          "evidence_quote": "找我们的风投很多，但是那些三年就想IPO的，我们一律谢绝了，我觉得天底下没有那么便宜的事",
+          "source": [
+            "http://china.haiwainet.cn/n/2014/1214/c345646-21536605.html",
+            "https://www.hundun.cn/articles/d474ed901501cd4f.html"
+          ],
+          "confidence": 0.9
+        },
+        {
+          "pref_type": "PF11",
+          "value_raw": "循证与患者安全优先：以\"循证医学证据\"为创新底线，医疗 AI 定位为辅助决策工具而非临床决策替代者，坚持\"有错必纠\"、风险提示与循证依据前置",
+          "evidence_quote": "医疗行业创新的底线在于确保医疗质量和患者安全，任何技术路径都不应偏离循证医学证据这一核心原则",
+          "source": [
+            "https://www.jjckb.cn/20260227/3251fec138a849bb974085b776a56bf3/c.html"
+          ],
+          "confidence": 0.9
+        },
+        {
+          "pref_type": "PF11",
+          "value_raw": "专业主义与用户需求优先：\"如果我们的服务不是医生们想要的，即使赚钱，我也不要\"；在医生社区内\"禁止用户在线求医问药\"以维持学术场景",
+          "evidence_quote": "如果我们的服务不是医生们想要的，即使赚钱，我也不要",
+          "source": [
+            "http://china.haiwainet.cn/n/2014/1214/c345646-21536605.html",
+            "https://m.thepaper.cn/baijiahao_8417757"
+          ],
+          "confidence": 0.9
+        },
+        {
+          "pref_type": "PF4",
+          "value_raw": "不以财富与头衔为目标：\"我们并不关注说个人有多么辉煌的社会头衔，或者是有多么巨大的社会财富，这些其实是很次要的\"",
+          "evidence_quote": "我们并不关注说个人有多么辉煌的社会头衔，或者是有多么巨大的社会财富，这些其实是很次要的",
+          "source": [
+            "https://m.thepaper.cn/baijiahao_8417757"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "pref_type": "PF7",
+          "value_raw": "把公司做成长期事业并推入资本市场：\"上市这个事情对我来说是一个很重要的选择……但不是我们的终点。等到我们的业务足够成熟和成功\"",
+          "evidence_quote": "上市这个事情对我来说是一个很重要的选择，是丁香园今后发展过程中要去走的这一步，但不是我们的终点",
+          "source": [
+            "https://www.sohu.com/a/933828201_197955"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "pref_type": "PF1",
+          "value_raw": "杭州（现工作城市；2006 年将丁香园从哈尔滨迁至杭州，称\"杭州是我们的一块福地\"、\"杭州是中国最适合创业的城市\"）",
+          "evidence_quote": "杭州是我们的一块福地",
+          "source": [
+            "http://www.zj.xinhuanet.com/2018hszf/litiantian/index.htm",
+            "https://www.cyzone.cn/article/805086.html"
+          ],
+          "confidence": 0.9
+        },
+        {
+          "pref_type": "PF15",
+          "value_raw": "已在杭州扎根，\"希望以杭州为基地，能够走向全国\"；早年从哈尔滨南下（曾工作城市：哈尔滨、北京），未表达过迁出杭州的意愿",
+          "evidence_quote": "未来十年将会是中国医疗健康产业高速发展的黄金时间，丁香园已经做好了准备，希望以杭州为基地，能够走向全国",
+          "source": [
+            "http://www.zj.xinhuanet.com/2018hszf/litiantian/index.htm",
+            "http://china.haiwainet.cn/n/2014/1214/c345646-21536605.html"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "pref_type": "PF16",
+          "value_raw": "组织文化上偏好医生\"自治体系\"与平级讨论：团队\"花了 14 年时间，其实说到底只办了一件事，建一个医生的自治体系\"；100 多个板块、400 多位版主为医生文章打分",
+          "evidence_quote": "他的团队花了14年时间，其实说到底只办了一件事，建一个医生的自治体系",
+          "source": [
+            "http://china.haiwainet.cn/n/2014/1214/c345646-21536605.html"
+          ],
+          "confidence": 0.8
+        },
+        {
+          "pref_type": "PF10",
+          "value_raw": "自律与精力管理：曾 7 个月减重 40 斤并长期保持健身与合理饮食，认为做医疗的人自己要健康、\"自己太胖，给人的形象就不太好\"",
+          "evidence_quote": "我们本来就是做医疗的，如果自己太胖，不那么健康，这给人的形象就不太好",
+          "source": [
+            "https://m.thepaper.cn/baijiahao_8417757"
+          ],
+          "confidence": 0.75
+        },
+        {
+          "pref_type": "PF13",
+          "value_raw": "数据驱动的工作方式：\"每做一次推广，每做一次文章发布，我们全都要到后台拿数据\"；强调用户画像与行为数据（并强调\"具体到个人的数据是绝对不碰的，保护隐私是底线\"）",
+          "evidence_quote": "每做一次推广，每做一次文章发布，我们全都要到后台拿数据，靠这个建立了数据驱动的服务模式",
+          "source": [
+            "https://www.hundun.cn/articles/d474ed901501cd4f.html"
+          ],
+          "confidence": 0.85
+        }
+      ],
+      "awards_extra": [
+        {
+          "name": "丁香园获评\"高新技术企业\"、入选医疗健康独角兽（36氪企业标签，非个人奖项，供机构维度参考）",
+          "level": "行业",
+          "year": null,
+          "source": [
+            "https://www.36kr.com/p/1724457779201"
+          ],
+          "confidence": 0.5
+        }
+      ],
+      "language_extra": [
+        {
+          "value_raw": "英语：在读期间请\"当导游时认识的老外\"客串其创办的当地第一所英语培训班外教；长期检索与利用英文医学文献建站（本文凭与考试成绩无公开记录）",
+          "source": [
+            "http://china.haiwainet.cn/n/2014/1214/c345646-21536605.html",
+            "https://www.hundun.cn/articles/d474ed901501cd4f.html"
+          ],
+          "confidence": 0.6
+        }
+      ],
+      "sources": [
+        {
+          "url": "https://wapbaike.baidu.com/item/%E6%9D%8E%E5%A4%A9%E5%A4%A9/824321",
+          "publisher": "百度百科",
+          "title": "李天天（丁香园创始人）",
+          "date": null,
+          "http_status": 200,
+          "kind": "百科"
+        },
+        {
+          "url": "http://china.haiwainet.cn/n/2014/1214/c345646-21536605.html",
+          "publisher": "新华网（海外网转载）",
+          "title": "丁香园创始人李天天：我不是在做生意，我是在做我自己",
+          "date": "2014-12-14",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://ihealth.dxy.cn/article/95070",
+          "publisher": "丁香园（转载新华网）",
+          "title": "丁香园李天天：我不是在做生意，我是在做我自己",
+          "date": "2014-12-15",
+          "http_status": 200,
+          "kind": "官网"
+        },
+        {
+          "url": "https://m.thepaper.cn/baijiahao_8417757",
+          "publisher": "澎湃新闻·湃客（动脉网）",
+          "title": "对话李天天：这20年来，我们一直生长在自己的曲线中",
+          "date": "2020-07-24",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://www.36kr.com/p/1724457779201",
+          "publisher": "36氪（笔记侠，腾讯大学《CEO来了》）",
+          "title": "对话李天天：丁香园的前世今生和互联网医疗的快与慢",
+          "date": "2019-10-05",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://www.hundun.cn/articles/d474ed901501cd4f.html",
+          "publisher": "混沌学园（本人演讲实录）",
+          "title": "丁香园李天天：做医疗要有足够的耐心和勇气",
+          "date": "2018-12-28",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://www.cyzone.cn/article/805086.html",
+          "publisher": "创业邦（本人演讲实录）",
+          "title": "丁香园李天天：杭州是中国最适合创业的城市",
+          "date": "2025-07-24",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://www.sohu.com/a/933828201_197955",
+          "publisher": "搜狐（电商在线）",
+          "title": "放弃博士学位，50岁东北医生，干出一个IPO",
+          "date": "2025-09-11",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "http://www.zj.xinhuanet.com/2018hszf/litiantian/index.htm",
+          "publisher": "新华网浙江频道·新华访谈",
+          "title": "李天天：杭州让我重新认识了政府和公务员",
+          "date": "2018",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://www.dxy.cn/pages/about.html",
+          "publisher": "丁香园官网",
+          "title": "关于我们（公司简介／发展历程／创始人）",
+          "date": null,
+          "http_status": 200,
+          "kind": "官网"
+        },
+        {
+          "url": "https://www.ceweekly.cn/company/2025/0707/476545.html",
+          "publisher": "人民日报社《中国经济周刊》官网（转载《中国网信》）",
+          "title": "观澜网络董事长李天天：AI大模型在卫生健康行业的应用探索",
+          "date": "2025-07-07",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://www.jjckb.cn/20260227/3251fec138a849bb974085b776a56bf3/c.html",
+          "publisher": "新华社《经济参考报》官网",
+          "title": "丁香园董事长李天天：以\"负责任创新\"探索医疗人工智能发展新路径",
+          "date": "2026-02-27",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://www.sohu.com/a/990534888_202540",
+          "publisher": "搜狐（转载《中国网信》署名文章）",
+          "title": "《中国网信》杂志发表李天天署名文章：以\"负责任创新\"探索医疗人工智能发展新路径",
+          "date": "2026",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://www.dxy.cn/bbs/newweb/pc/post/51370243",
+          "publisher": "丁香园论坛",
+          "title": "感谢李天天老师的精彩演讲!",
+          "date": null,
+          "http_status": 200,
+          "kind": "官网"
+        },
+        {
+          "url": "https://y.dxy.cn/hospital/5156/835482.html",
+          "publisher": "丁香园·医院汇",
+          "title": "李天天对话于莺：「直」来「职」往，急诊科女超人聊职场",
+          "date": "2022-06-29",
+          "http_status": 200,
+          "kind": "官网"
+        },
+        {
+          "url": "https://zgcx.nhc.gov.cn/doctor",
+          "publisher": "国家卫生健康委员会 信息查询",
+          "title": "医师执业注册信息查询入口（实测可访问；表单需姓名+机构+图形验证码，未能取得记录）",
+          "date": null,
+          "http_status": 200,
+          "kind": "官网"
+        },
+        {
+          "url": "https://bjggcx.wjw.beijing.gov.cn/Doctor/Index",
+          "publisher": "北京市卫生健康委员会",
+          "title": "医生执业注册信息查询（数据截止 2026-09-20；表单需姓名+机构+图形验证码，未能取得记录）",
+          "date": null,
+          "http_status": 200,
+          "kind": "官网"
+        }
+      ],
+      "still_unknown": [
+        "执业医师资格证与执业注册记录：无法取得。国家卫健委（https://zgcx.nhc.gov.cn/doctor）与北京市（https://bjggcx.wjw.beijing.gov.cn/Doctor/Index）两个官方查询入口实测 HTTP 200，但表单需姓名+执业机构+图形验证码并由人工在浏览器提交，脚本无法完成检索；公开报道只说\"读过八年医学院、当过住院医生\"，未给出注册编号或执业机构。故 credentials_extra 为空数组。",
+        "出生年份：36氪／搜狐 2025-09-11 称\"现年 50 岁\"、动脉网 2020-07-24 称其 2020 年 45 岁（据此约 1975 年生），两份媒体口径一致可交叉印证约 1975 年，但无官方出生年份来源，故未写入本文件的显式字段。",
+        "临床经历的具体机构与月数：轮转/住院医师所在医院全称、科室构成与总时长均无公开记录；本轮仅能确认\"八年医学院\"与\"外科轮转\"、\"当过住院医生\"三处定性表述。",
+        "任何操作例数、手术或诊疗量数字：无公开记录。",
+        "英语等级考试（四六级／托福／雅思）成绩、计算机或健康管理类证书：无公开记录。",
+        "正式个人奖项或协会身份：本轮检索未找到任何政府、行业或协会授予李天天本人的正式奖项、称号或协会会员身份（36氪企业页仅标注丁香园为\"高新技术企业/独角兽\"，属机构标签）。",
+        "个人薪酬、股权与家庭信息（含其 2005 年早产子女相关细节）：按隐私红线不采集。"
+      ]
+    },
+    {
+      "case_key": "yu_ying",
+      "education_extra": [
+        {
+          "school_name": "中国协和医科大学（现北京协和医学院）",
+          "school_tags": [
+            "省重点"
+          ],
+          "overseas": false,
+          "degree_level": "D6",
+          "major_raw": "临床医学（八年制本硕博连读，1993 年入学、2001 年毕业；博士阶段为消化内科胰腺炎方向）",
+          "source": [
+            "https://www.sohu.com/a/333337159_100190556",
+            "https://m.jiemian.com/article/6832117.html",
+            "https://wapbaike.baidu.com/item/%E4%BA%8E%E8%8E%BA/1911677"
+          ],
+          "confidence": 0.85
+        }
+      ],
+      "employment_extra": [
+        {
+          "employer_name": "北京水岸祐邻诊所（社区全科诊所，本人创办并任 CEO）",
+          "employer_type": "E03",
+          "city": "北京",
+          "source": [
+            "https://www.vbdata.cn/38488",
+            "https://y.dxy.cn/hospital/5156/835482.html"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "employer_name": "企鹅杏仁集团",
+          "employer_type": "E14",
+          "city": "北京",
+          "source": [
+            "https://www.sohu.com/a/333337159_100190556",
+            "https://y.dxy.cn/hospital/5156/835482.html"
+          ],
+          "confidence": 0.8
+        },
+        {
+          "employer_name": "某药企（任首席医学官 CMO；公开报道未点名具体公司）",
+          "employer_type": "E05",
+          "city": null,
+          "source": [
+            "https://m.jiemian.com/article/6832117.html",
+            "https://news.qq.com/rain/a/20211119A0AGWT00"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "employer_name": "全科医生集团（获联想之星投资，2017 年 8 月披露将成立；工商主体名称与存续时间未公开）",
+          "employer_type": "E18",
+          "city": "北京",
+          "source": [
+            "https://health.huanqiu.com/article/9CaKrnK4P2b"
+          ],
+          "confidence": 0.6
+        }
+      ],
+      "clinical_extra": [
+        {
+          "department_code": "DP01",
+          "department_raw": "感染科（2001 年毕业入职协和后轮转的第一站，本人回忆中详述该科病例）",
+          "duration_months": null,
+          "case_volume_note": "无公开例数与时长；仅能确认其为入职后的轮转科室之一",
+          "source": [
+            "https://www.sohu.com/a/333337159_100190556"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "department_code": "DP01",
+          "department_raw": "内科住院医师（\"协和的住院医，是名副其实的'住院'医，早上 8:30 进病房、晚上 11:30 出病房\"）",
+          "duration_months": 24,
+          "case_volume_note": "无公开例数；工作时段为本人自述，24 个月系按 2001 年入职至 2003 年调入急诊推算",
+          "source": [
+            "https://www.sohu.com/a/333337159_100190556",
+            "https://www.cn-healthcare.com/api/third/article/492701"
+          ],
+          "confidence": 0.7
+        }
+      ],
+      "credentials_extra": [],
+      "outputs_extra": [
+        {
+          "output_type": "科普",
+          "title": "急诊科女超人（微博内容汇编的手绘科普书，ISBN 9787514308143，161 页）",
+          "venue": "现代出版社",
+          "year": 2012,
+          "source": [
+            "https://book.douban.com/subject/20385411/",
+            "https://wapbaike.baidu.com/item/%E4%BA%8E%E8%8E%BA/1911677"
+          ],
+          "confidence": 0.9
+        },
+        {
+          "output_type": "演讲",
+          "title": "《X线与急诊临床》（协和急诊高峰论坛\"急诊 ABC 理论\"会场主讲）",
+          "venue": "北京协和医院急诊高峰论坛",
+          "year": 2011,
+          "source": [
+            "https://wapbaike.baidu.com/item/%E4%BA%8E%E8%8E%BA/1911677"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "output_type": "科普",
+          "title": "新浪微博\"急诊科女超人于莺\"（2011-10-07 开通；至 2013 年粉丝超 200 万，2022 年报道为 429 万），长期做医患沟通与急诊科普",
+          "venue": "新浪微博",
+          "year": 2011,
+          "source": [
+            "https://wapbaike.baidu.com/item/%E4%BA%8E%E8%8E%BA/1911677",
+            "https://y.dxy.cn/hospital/5156/835482.html",
+            "https://news.qq.com/rain/a/20211119A0AGWT00"
+          ],
+          "confidence": 0.9
+        },
+        {
+          "output_type": "演讲",
+          "title": "《于莺聊诊所创新：一线城市并非开诊所的首选，医生拿什么吸引病人？》（2018 基层医疗创新实践峰会分享）",
+          "venue": "2018 基层医疗创新实践峰会（动脉网整理）",
+          "year": 2018,
+          "source": [
+            "https://www.vbdata.cn/38488"
+          ],
+          "confidence": 0.9
+        }
+      ],
+      "preferences_extra": [
+        {
+          "pref_type": "PF12",
+          "value_raw": "离开协和后仍坚持做医生：\"我不会放弃做医生的理想，所以还是去做医生，只不过不在公立医院了\"；要做\"有温度\"的诊所并连锁复制",
+          "evidence_quote": "我不会放弃做医生的理想，所以还是去做医生，只不过不在公立医院了；\"开连锁诊所就是我的目标\"",
+          "source": [
+            "https://wapbaike.baidu.com/item/%E4%BA%8E%E8%8E%BA/1911677",
+            "https://www.cn-healthcare.com/api/third/article/492701"
+          ],
+          "confidence": 0.9
+        },
+        {
+          "pref_type": "PF12",
+          "value_raw": "先做医疗集团 CEO、再做社区连锁诊所、再进入互联网医疗做管理，最后成为药企首席医学官（CMO）——\"从医生到医疗管理者\"的复合路径",
+          "evidence_quote": "担任过医疗集团的 CEO，创立过社区连锁诊所，负责过互联网医疗的团队管理，她在医疗圈一路\"升级打怪\"",
+          "source": [
+            "https://y.dxy.cn/hospital/5156/835482.html",
+            "https://m.jiemian.com/article/6832117.html"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "pref_type": "PF1",
+          "value_raw": "北京的医疗市场正在逐渐向民营与外资医疗资本敞开大门（本人公开表述），执业与创业均以北京为主",
+          "evidence_quote": "北京的医疗市场正在逐渐向民营与外资医疗资本敞开大门，这一抉择的核心是缓解看病难",
+          "source": [
+            "https://wapbaike.baidu.com/item/%E4%BA%8E%E8%8E%BA/1911677"
+          ],
+          "confidence": 0.8
+        },
+        {
+          "pref_type": "PF15",
+          "value_raw": "地域判断：一线城市并非开诊所首选，更看好广州、深圳、成都、杭州等二三线城市的政策与医保开放性",
+          "evidence_quote": "北京、上海并不是开诊所的首择之地……这个行业有很多推动措施，但最好的措施不在北京、上海，而在广州、深圳、成都、杭州等经济比较发达的二、三线城市",
+          "source": [
+            "https://www.vbdata.cn/38488"
+          ],
+          "confidence": 0.9
+        },
+        {
+          "pref_type": "PF11",
+          "value_raw": "以患者为中心、医疗是服务产业：认同\"医疗是服务产业，核心是以患者为中心\"；对高等级医院管理细节（严苛的医生准入与细节管理）公开表达推崇",
+          "evidence_quote": "我们的理念一致，价值观相同，都认同医疗是服务产业，核心是以患者为中心",
+          "source": [
+            "https://www.cn-healthcare.com/api/third/article/492701",
+            "https://www.vbdata.cn/38488"
+          ],
+          "confidence": 0.9
+        },
+        {
+          "pref_type": "PF11",
+          "value_raw": "人文关怀与循证并存：赴台湾接受 3 个月全科医学培训后，\"重新认识到医疗服务人性化的重要性\"，认为\"医疗应该是人文关怀\"；同时强调\"如履薄冰，如履深渊\"",
+          "evidence_quote": "（中国台湾）本来就没有公私医疗之分，整个医疗行业给人最大感受，就是稳。医疗应该是人文关怀",
+          "source": [
+            "https://m.jiemian.com/article/6832117.html",
+            "https://www.sohu.com/a/333337159_100190556"
+          ],
+          "confidence": 0.9
+        },
+        {
+          "pref_type": "PF5",
+          "value_raw": "接受并习惯高强度值班与\"住院医\"式工作节奏（早 8:30 进病房、晚 11:30 出病房，维持一两年）",
+          "evidence_quote": "协和的住院医，是名副其实的\"住院\"医，早上8:30进病房、晚上11:30出病房、半夜回宿舍的日子，维持了一两年",
+          "source": [
+            "https://www.sohu.com/a/333337159_100190556"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "pref_type": "PF6",
+          "value_raw": "看重组织稳定与体系沉淀：称美中宜和\"是我见过的最踏踏实实做医疗的机构\"，认可其管理体系、信息化系统与人才培养机制",
+          "evidence_quote": "美中宜和是我见过的最踏踏实实做医疗的机构",
+          "source": [
+            "https://health.huanqiu.com/article/9CaKrnK4P2b"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "pref_type": "PF7",
+          "value_raw": "追求创新与成长性：\"自己是一个追求创新，喜欢不断挑战的人\"；\"改变的最大阻力，永远是自己\"",
+          "evidence_quote": "自己是一个追求创新，喜欢不断挑战的人",
+          "source": [
+            "https://health.huanqiu.com/article/9CaKrnK4P2b",
+            "https://www.sohu.com/a/333337159_100190556"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "pref_type": "PF10",
+          "value_raw": "亲力亲为、扁平沟通、直言：从选址、设计图纸、装修、找工程队到药品器械采购、财务测算都亲自补课；自评\"情商不高，说话毒舌，智商还行\"、\"勇敢\"",
+          "evidence_quote": "\"情商不高，说话毒舌，智商还行\"，是于莺对自己的评价，而\"勇敢\"，亦是她对自己的肯定",
+          "source": [
+            "https://m.jiemian.com/article/6832117.html",
+            "https://www.sohu.com/a/333337159_100190556"
+          ],
+          "confidence": 0.9
+        },
+        {
+          "pref_type": "PF13",
+          "value_raw": "速度与控制感驱动的工作方式：\"速度和控制感，是最有意思的两件事\"（自述喜欢骑摩托车与猫科动物的共性）",
+          "evidence_quote": "速度和控制感，是最有意思的两件事",
+          "source": [
+            "https://www.sohu.com/a/333337159_100190556"
+          ],
+          "confidence": 0.8
+        },
+        {
+          "pref_type": "PF16",
+          "value_raw": "期望组织把医生当\"辅助与赋能\"而非\"管教\"对象：\"医院对医生的作用一定是辅助作用而不是管教作用\"；反对\"唯论文论\"的科研考核晋升体系",
+          "evidence_quote": "医院对医生的作用一定是辅助作用而不是管教作用。认识他们、帮助他们、辅佐他们，让医生在医院发光发热",
+          "source": [
+            "https://www.sohu.com/a/333337159_100190556",
+            "https://www.cn-healthcare.com/api/third/article/492701"
+          ],
+          "confidence": 0.9
+        },
+        {
+          "pref_type": "PF1",
+          "value_raw": "现工作城市北京（2017 年起经营北京水岸祐邻诊所；2021 年后转入企业 CMO 岗位，城市未公开）；曾工作／生活城市上海（1974 年出生地，自称\"地道的上海姑娘\"）与北京（1993 年入学协和起长期工作与创业）",
+          "evidence_quote": "1974 年，上海虹口的一家妇产科医院里，于莺出生了……实际上是土生土长的上海人；2017 年 9 月，于莺正式离职，创办北京水岸祐邻诊所",
+          "source": [
+            "https://www.sohu.com/a/333337159_100190556",
+            "https://www.vbdata.cn/38488"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "pref_type": "PF9",
+          "value_raw": "临床与医疗健康（急诊／全科／社区医疗）；创业与商业模式（诊所经营、连锁复制）；出版编辑与科普传播（微博科普、出书、演讲）",
+          "evidence_quote": "\"这两年里，她充分的自我成长，从只有一门专业技能向多维度综合提升\";希望打造全科医生的辅助平台、扎根社区",
+          "source": [
+            "https://baike.baidu.com/tashuo/browse/content?id=e557d738a999148063140abc&fromLemmaModule=pcBottom",
+            "https://health.huanqiu.com/article/9CaKrnK4P2b"
+          ],
+          "confidence": 0.85
+        }
+      ],
+      "awards_extra": [],
+      "language_extra": [
+        {
+          "value_raw": "英语：公开证据仅限于\"协和医科大学以英语成绩为四省市招生依据、50% 课程为英文教学\"与其微博公开提及的国外同行互动；无托福／雅思／学位等可核实凭证",
+          "source": [
+            "https://www.sohu.com/a/333337159_100190556"
+          ],
+          "confidence": 0.45
+        }
+      ],
+      "sources": [
+        {
+          "url": "https://wapbaike.baidu.com/item/%E4%BA%8E%E8%8E%BA/1911677",
+          "publisher": "百度百科",
+          "title": "于莺（北京协和医院急诊室医师）",
+          "date": null,
+          "http_status": 200,
+          "kind": "百科"
+        },
+        {
+          "url": "https://www.sohu.com/a/333337159_100190556",
+          "publisher": "搜狐（杏仁医生，企鹅杏仁官方号）",
+          "title": "专访企鹅杏仁首席医疗运营官于莺：改变的最大阻力，永远是自己",
+          "date": "2019-08-13",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://www.vbdata.cn/38488",
+          "publisher": "动脉网（vbdata.cn）",
+          "title": "于莺聊诊所创新：一线城市并非开诊所的首选，医生拿什么吸引病人？【2018年基层医疗创新实践峰会】",
+          "date": "2018-06-24",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://m.jiemian.com/article/6832117.html",
+          "publisher": "界面新闻（财健道）",
+          "title": "协和急诊女超人变药企CMO，辞别公立医院后\"于莺们\"做了什么？",
+          "date": "2021-11-19",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://news.qq.com/rain/a/20211119A0AGWT00",
+          "publisher": "腾讯新闻（钛媒体APP，转载财健道）",
+          "title": "协和急诊女超人变药企CMO，辞别公立医院后\"于莺们\"做了什么？",
+          "date": "2021-11-19",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://health.huanqiu.com/article/9CaKrnK4P2b",
+          "publisher": "环球网·健康（凤凰健康）",
+          "title": "\"急诊女超人\"于莺卸任美中宜和综合门诊CEO一职",
+          "date": "2017-08-21",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://www.cn-healthcare.com/api/third/article/492701",
+          "publisher": "健康界（摘编自《遇见创业者》）",
+          "title": "急诊科女超人于莺：从女超人到CEO 没有什么不可能",
+          "date": "2017-05-26",
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://book.douban.com/subject/20385411/",
+          "publisher": "豆瓣读书",
+          "title": "急诊科女超人（于莺，现代出版社，2012-11）",
+          "date": null,
+          "http_status": 200,
+          "kind": "媒体"
+        },
+        {
+          "url": "https://y.dxy.cn/hospital/5156/835482.html",
+          "publisher": "丁香园·医院汇",
+          "title": "李天天对话于莺：「直」来「职」往，急诊科女超人聊职场",
+          "date": "2022-06-29",
+          "http_status": 200,
+          "kind": "官网"
+        },
+        {
+          "url": "https://baike.baidu.com/tashuo/browse/content?id=e557d738a999148063140abc&fromLemmaModule=pcBottom",
+          "publisher": "百度百科 TA说（摘编自钛媒体深度报道）",
+          "title": "\"急诊科女超人\"于莺的互联网创业独立运动",
+          "date": null,
+          "http_status": 200,
+          "kind": "百科"
+        },
+        {
+          "url": "https://zgcx.nhc.gov.cn/doctor",
+          "publisher": "国家卫生健康委员会 信息查询",
+          "title": "医师执业注册信息查询入口（实测可访问；表单需姓名+机构+图形验证码，未能取得记录）",
+          "date": null,
+          "http_status": 200,
+          "kind": "官网"
+        },
+        {
+          "url": "https://bjggcx.wjw.beijing.gov.cn/Doctor/Index",
+          "publisher": "北京市卫生健康委员会",
+          "title": "医生执业注册信息查询（数据截止 2026-09-20；表单需姓名+机构+图形验证码，未能取得记录）",
+          "date": null,
+          "http_status": 200,
+          "kind": "官网"
+        }
+      ],
+      "still_unknown": [
+        "执业医师资格证与执业注册记录：无法取得。国家卫健委（https://zgcx.nhc.gov.cn/doctor）与北京市（https://bjggcx.wjw.beijing.gov.cn/Doctor/Index）两个官方入口实测 HTTP 200，但查询表单要求姓名+执业机构+图形验证码且需人工交互；公开报道从未给出其执业注册编号或执业机构。故 credentials_extra 为空数组——\"在协和当了 12 年医生\"不能推出持证。",
+        "临床暴露的操作例数与急诊工作量数字：微博中提到的\"号贩子把挂号费炒到 6000 元以上\"\"营业一个月门诊量 12 个患者\"等均为机构经营或他人行为，不构成其个人诊疗例数；个人例数无公开记录。",
+        "2021 年之后任职的药企名称、职位起止时间与当前（2025—2026）任职状态：本轮多次检索未能找到点名报道。",
+        "任何正式个人奖项、荣誉称号或协会身份（如医师协会、医学会、妇联、公益组织正式职务）：本轮检索未找到可核实记录；仅见\"大爱清尘爱心胖天使\"这一本人微博中的自述称谓，无机构页面佐证，故未写入 awards_extra。",
+        "出生地上海之外的籍贯／户口信息、任何外语考试成绩、计算机或健康管理类证书：无公开记录。",
+        "薪酬、股权与家庭信息（父母、女儿等家庭细节在报道中出现，但按隐私红线不采集）。"
+      ]
+    }
+  ]
+}

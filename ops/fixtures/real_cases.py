@@ -43,6 +43,7 @@ sys.path.insert(0, os.path.join(BASE, "code", "analytics"))
 
 import psycopg  # noqa: E402
 from psycopg.rows import dict_row  # noqa: E402
+import vector as V  # noqa: E402  ← 中文→码的归一化只有这一个实现（code/analytics/vector.py）
 
 JSON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "real_cases.json")
 DSN = ("host=127.0.0.1 port=55432 dbname=medtalent user=postgres "
@@ -91,6 +92,16 @@ ATTRS = [
     ("output_type_raw", "research_output", "产出类型原文",
      "归一化前的原始中文（如「著作」「译作」）。保留原文是因为码表可能再次变化，"
      "而「当初写的是什么」是不可再生的信息"),
+    # 下面只再加这一个。第二轮检索时本来还想往 attrs 里塞 round / emp_city /
+    # case_volume_note / level_raw / mapped，**一律不登记**，理由分两类：
+    #   · round（检索轮次）：ID 前缀 evd2_ / edu2_ 已经表达了轮次，再加属性是重复；
+    #   · 其余：它们指向的是**我们没有的字段**（employment_record 没有城市列、
+    #     clinical_exposure 没有例数说明列、award_honor 没有层级原文列…）。
+    #     把"缺字段"塞进 attrs 会让缺口消失 —— 应该如实写进 person 的 gap 清单。
+    #     **属性表不是缺失字段的回收站。**
+    ("pref_evidence_quote", "preference", "偏好原话",
+     "该偏好的公开表述原文。偏好是从公开言论里摘的，原话是它唯一的证据形态，"
+     "不留原话就无法复核这条偏好有没有被摘错"),
 ]
 
 
@@ -162,6 +173,175 @@ def reset_case(c, pid):
         c.execute('DELETE FROM mt.%s WHERE %s = %%s' % (k["t"], k["col"]), (pid,))
     c.execute("DELETE FROM mt.person WHERE person_id=%s", (pid,))
     return len(kids)
+
+
+def merge_extra(c, case, extra, pid):
+    """把第二轮检索到的**增量事实**合并进库。
+
+    为什么要分两轮：第一轮先把三个人写进去、跑出画像向量，看到"只填到 6–10/50 维"，
+    才知道要专门去补哪些维度。第二轮就是按那个缺口去搜的 ——
+    所以 extra 里的每一条，都对应第一轮报告里的一行"公开资料未覆盖"。
+
+    这一步的主要工作是**取值归一化**：偏好类的公开表述是中文原话
+    （"写作与文学、投资…"），而匹配用的是**码**。不归一化就直接写，
+    集合比较会拿中文去和岗位的码求交集 → 交集为空 → 被判成"确认不满足"。
+    **把'没归一化'当成'不合格'是在冤枉候选人**，所以映射不上就只留原文并记进 gaps。
+    """
+    if not extra:
+        return {}, []
+    key = case["case_key"]
+    n = {"education": 0, "employment": 0, "clinical": 0, "output": 0,
+         "preference": 0, "award": 0, "evidence": 0}
+    unmapped = []
+
+    # 增量来源 → evidence。轮次不做成属性：ID 前缀 evd2_ 已经表达了。
+    for i, s in enumerate(extra.get("sources") or [], 1):
+        n["evidence"] += 1
+        c.execute("""
+            INSERT INTO evidence (evidence_id, person_id, evidence_type, source_party,
+                                  title, uri, verifiability, cel_level, access_tier, attrs)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'T1', %s::jsonb)
+        """, ("evd2_%s_%02d" % (key, i), pid, EV_TYPE_BY_KIND.get(s.get("kind"), "EV7"),
+              s.get("publisher"), s.get("title"), s.get("url"),
+              2 if s.get("kind") in ("官网", "学术") else 1,
+              CEL_BY_KIND.get(s.get("kind"), "E0"),
+              json.dumps({"source_kind": s.get("kind"), "source_date": s.get("date"),
+                          "fetch_http_status": (str(s["http_status"])
+                                                if s.get("http_status") else None)},
+                         ensure_ascii=False)))
+
+    for i, e in enumerate(extra.get("education_extra") or [], 1):
+        tags = e.get("school_tags") or []
+        c.execute("""
+            INSERT INTO education_record (education_id, person_id, degree_level, school_name,
+                major_raw, major_code, overseas, is_clinical, confidence, verify_status,
+                source_id, school_tags, attrs)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'V1', %s, %s, '{}'::jsonb)
+        """, ("edu2_%s_%02d" % (key, i), pid, e.get("degree_level"),
+              e.get("school_name"), e.get("major_raw"),
+              map_major_code(c, e.get("major_raw")), e.get("overseas"),
+              # 是否临床类专业：只有专业码能说明，映射不上就留空而不是猜
+              None, e.get("confidence", 0.8), SRC_ID, tags or None))
+        n["education"] += 1
+
+    for i, w in enumerate(extra.get("employment_extra") or [], 1):
+        c.execute("""
+            INSERT INTO employment_record (employment_id, person_id, employer_name,
+                employer_type, title_raw, confidence, verify_status, source_id, attrs)
+            VALUES (%s, %s, %s, %s, %s, %s, 'V1', %s, '{}'::jsonb)
+        """, ("emp2_%s_%02d" % (key, i), pid, w.get("employer_name"),
+              w.get("employer_type"), w.get("title_raw"), w.get("confidence", 0.8),
+              SRC_ID))
+        n["employment"] += 1
+        # 任职城市：公开信息里有，但 employment_record 没有城市列。
+        # **不塞进 attrs 假装存下了** —— 如实记成"缺字段"，下次做字段设计时看得见。
+        if w.get("city"):
+            unmapped.append("任职城市无处落库（employment_record 无城市列）：%s %s"
+                            % (w.get("employer_name"), w.get("city")))
+
+    for i, ce in enumerate(extra.get("clinical_extra") or [], 1):
+        c.execute("""
+            INSERT INTO clinical_exposure (exposure_id, person_id, department,
+                department_code, duration_months, confidence, verify_status, source_id, attrs)
+            VALUES (%s, %s, %s, %s, %s, %s, 'V1', %s, '{}'::jsonb)
+        """, ("clx2_%s_%02d" % (key, i), pid, ce.get("department_raw"),
+              ce.get("department_code"), ce.get("duration_months"),
+              ce.get("confidence", 0.6), SRC_ID))
+        n["clinical"] += 1
+        if ce.get("case_volume_note"):
+            unmapped.append("临床例数说明无处落库（clinical_exposure 无该列）：%s"
+                            % str(ce["case_volume_note"])[:30])
+
+    for i, o in enumerate(extra.get("outputs_extra") or [], 1):
+        otype = map_output_type(c, o.get("output_type"))
+        if not otype:
+            unmapped.append("产出类型未归一化：%s（%s）" % (o.get("output_type"), o.get("title")))
+            continue
+        c.execute("""
+            INSERT INTO research_output (output_id, person_id, output_type, title, venue,
+                year, confidence, verify_status, source_id, attrs)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, 'V1', %s, %s::jsonb)
+        """, ("out2_%s_%02d" % (key, i), pid, otype, o.get("title"), o.get("venue"),
+              o.get("year"), o.get("confidence", 0.8), SRC_ID,
+              json.dumps({"output_type_raw": o.get("output_type")}, ensure_ascii=False)))
+        n["output"] += 1
+
+    # 偏好：按维度注册表找到该 pref_type 的码表，把中文语句映射成码。
+    # 一句话常含多个方向（"写作与文学、投资…"）→ 映射出几个码就写几行；
+    # 组装层是按行收集 codes 的，多行正好对应多值维度。
+    ct_of = {r["pf"]: r["ct"] for r in c.execute("""
+        SELECT split_part(person_locator, ':', 2) AS pf, code_table_id AS ct
+          FROM mt.dimension WHERE person_locator LIKE 'preference:%'""")}
+    for i, p in enumerate(extra.get("preferences_extra") or [], 1):
+        pf = p.get("pref_type")
+        raw = p.get("value_raw") or ""
+        ct = ct_of.get(pf)
+        codes, _un = V.text_to_codes(c, ct, [raw]) if ct else ([], [])
+        quote = json.dumps({"pref_evidence_quote": p.get("evidence_quote")},
+                           ensure_ascii=False)
+        if not codes:
+            c.execute("""
+                INSERT INTO preference (preference_id, person_id, pref_type, value_raw,
+                    confidence, attrs)
+                VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+            """, ("prf2_%s_%02d" % (key, i), pid, pf, raw, p.get("confidence", 0.7), quote))
+            unmapped.append("%s 未归一化到码表：%s" % (pf, raw[:28]))
+            n["preference"] += 1
+            continue
+        for j, code in enumerate(codes, 1):
+            c.execute("""
+                INSERT INTO preference (preference_id, person_id, pref_type, value_raw,
+                    value_code, confidence, attrs)
+                VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)
+            """, ("prf2_%s_%02d_%02d" % (key, i, j), pid, pf, raw, code,
+                  p.get("confidence", 0.7), quote))
+            n["preference"] += 1
+
+    # 奖项：level 也要落码（CT_AWARD_LEVEL），映射不上就留空并记 gaps
+    for i, aw in enumerate(extra.get("awards_extra") or [], 1):
+        lv_codes, _u = V.text_to_codes(c, "CT_AWARD_LEVEL", [str(aw.get("level") or "")])
+        if not lv_codes:
+            unmapped.append("奖项层级未归一化：%s（%s）" % (aw.get("level"), aw.get("name")))
+        c.execute("""
+            INSERT INTO award_honor (award_id, person_id, name, level, year, confidence,
+                verify_status, source_id, attrs)
+            VALUES (%s, %s, %s, %s, %s, %s, 'V1', %s, '{}'::jsonb)
+        """, ("awd2_%s_%02d" % (key, i), pid, aw.get("name"),
+              (lv_codes or [None])[0], aw.get("year"), aw.get("confidence", 0.8), SRC_ID))
+        n["award"] += 1
+
+    # 语言能力：**有公开描述，但我们没有字段放**（人侧落点是 credential:C09，
+    # credential 表却没有等级列）。"数据有、字段没有"必须显式记下来，
+    # 否则下次还会有人以为"没查到"。
+    for lg in extra.get("language_extra") or []:
+        unmapped.append("语言能力无处落库（缺字段）：%s" % str(lg.get("value_raw"))[:36])
+
+    gaps = list(extra.get("still_unknown") or [])
+    if unmapped or gaps:
+        # 复用第一轮已经登记过的两个键（public_case_unmapped / public_case_gaps），
+        # **追加而不是新增**：语义完全相同，再加两个键只会让属性表膨胀一倍
+        # （而且 attr_key 是主键，还得为它们各写一条登记）。
+        cur = c.execute("""SELECT attrs->>'public_case_unmapped' AS u,
+                                  attrs->>'public_case_gaps' AS g
+                             FROM mt.person WHERE person_id = %s""", (pid,)).fetchone()
+        merged_u = "；".join(x for x in [(cur or {}).get("u"), "；".join(unmapped)] if x)
+        merged_g = "；".join(x for x in [(cur or {}).get("g"), "；".join(gaps)] if x)
+        c.execute("""UPDATE mt.person
+                        SET attrs = attrs || jsonb_build_object(
+                              'public_case_unmapped', %s::text, 'public_case_gaps', %s::text)
+                      WHERE person_id = %s""", (merged_u or None, merged_g or None, pid))
+    return n, unmapped
+
+
+def load_extra():
+    """第二轮检索的增量事实。没有这个文件也能跑（第一轮的数据仍然完整）。"""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "real_cases_extra.json")
+    if not os.path.isfile(path):
+        return {}
+    with io.open(path, encoding="utf-8") as fh:
+        data = json.load(fh)
+    return {x["case_key"]: x for x in (data.get("cases") or [])}
 
 
 def evidence_id(pk, i):
@@ -478,18 +658,26 @@ def main():
         """, (json.dumps({"dims": 50, "note": "真实公开案例的匹配运行"}, ensure_ascii=False),))
 
         total = {}
+        extras = load_extra()
+        if extras:
+            print("[i] 第二轮增量事实：%d 个 case（real_cases_extra.json）" % len(extras))
         for case in cases:
             pid, n, prec, unmapped = insert_case(c, case)
+            n2, un2 = merge_extra(c, case, extras.get(case["case_key"]), pid)
             for k, v in n.items():
                 total[k] = total.get(k, 0) + v
-            print("[+] %-12s %s  教育%d 证照%d 工作%d 临床%d 产出%d  来源%d"
-                  % (case["case_key"], pid, n["education"], n["credential"],
-                     n["employment"], n["clinical"], n["output"],
-                     len(case.get("sources") or [])))
-            if prec:
-                print("    日期精度不足日期级的字段：%s" % "、".join(sorted(prec)))
-            for u in unmapped:
-                print("    [!] %s" % u)
+            for k, v in n2.items():
+                total["r2_" + k] = total.get("r2_" + k, 0) + v
+            print("[+] %-12s %s  基础(教育%d 工作%d 产出%d) "
+                  "+ 增量(教育%d 工作%d 临床%d 产出%d 偏好%d 奖项%d 来源%d)"
+                  % (case["case_key"], pid, n["education"], n["employment"], n["output"],
+                     n2.get("education", 0), n2.get("employment", 0),
+                     n2.get("clinical", 0), n2.get("output", 0),
+                     n2.get("preference", 0), n2.get("award", 0), n2.get("evidence", 0)))
+            if unmapped:
+                print("    [!] 未归一化：%s" % "；".join(unmapped[:3]))
+            if un2:
+                print("    [!] 增量未归一化/无落点：%s" % "；".join(un2[:3]))
         c.commit()
 
         n_match = 0
