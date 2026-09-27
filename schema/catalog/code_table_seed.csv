@@ -1,0 +1,303 @@
+code_table_id,code,label_zh,label_en,parent_code,level,sort_order,definition,external_mapping
+CT_JOB_FAMILY,F01,临床医疗,Clinical Care,,1,10,在医院/基层/民营/互联网医院等从事诊疗、护理、医技工作,{}
+CT_JOB_FAMILY,F02,药企医学事务与临床研发,Pharma Medical Affairs & Clinical Development,,1,20,医学事务MSL/MA、临床研发、注册、药物警戒、市场准入等,{}
+CT_JOB_FAMILY,F03,医疗器械与IVD,Medical Devices & IVD,,1,30,器械/体外诊断的临床评价、注册、技术支持、产品,{}
+CT_JOB_FAMILY,F04,CRO与临床研究服务,CRO & Clinical Research Services,,1,40,临床试验全链条外包与现场管理服务,{}
+CT_JOB_FAMILY,F05,生物技术与创新药研发,Biotech & Drug Discovery,,1,50,早期研发、转化医学、商务拓展,{}
+CT_JOB_FAMILY,F06,健康险与医疗支付,Health Insurance & Payment,,1,60,核保理赔、TPA、健康管理、医疗支付,{}
+CT_JOB_FAMILY,F07,咨询与投资,Consulting & Investment,,1,70,医药咨询、券商行研、VC/PE、FA,{}
+CT_JOB_FAMILY,F08,医疗AI与数字健康,Health AI & Digital Health,,1,80,算法、临床专家、产品、真实世界研究,{}
+CT_JOB_FAMILY,F09,政府与公共部门,Government & Public Sector,,1,90,卫健委/医保局/疾控/药监/选调生/事业单位,{}
+CT_JOB_FAMILY,F10,高校与科研,Academia & Research,,1,100,博后、教职、科研助理、平台技术,{}
+CT_JOB_FAMILY,F11,出版与传播,Publishing & Communication,,1,110,医学编辑、论文服务、医学媒体、科普公关,{}
+CT_JOB_FAMILY,F12,法务与知识产权,Legal & IP,,1,120,医疗诉讼、专利代理、合规,{}
+CT_JOB_FAMILY,F13,教育培训,Education & Training,,1,130,医学考研规培留学、K12生物、国际学校,{}
+CT_JOB_FAMILY,F14,销售与商务,Sales & Business,,1,140,医药代表、器械销售、渠道、BD、海外市场,{}
+CT_JOB_FAMILY,F15,交叉与新兴,Emerging & Adjacent,,1,150,医药电商、跨境医疗、健康管理、运动营养心理养老、宠物医疗,{}
+CT_JOB_FAMILY,F16,完全跨行,Cross-Industry,,1,160,互联网产品运营数据分析、金融、快消、战略、供应链、ESG,{}
+CT_JOB_FAMILY,F17,自主创业与自由职业,Entrepreneurship & Freelance,,1,170,自办诊所/工作室/咨询/内容/独立顾问,{}
+CT_DEGREE_LEVEL,D1,专科,Associate,,1,10,专科教育,{}
+CT_DEGREE_LEVEL,D2,本科,Bachelor,,1,20,本科教育,{}
+CT_DEGREE_LEVEL,D3,硕士,Master,,1,30,硕士研究生,{}
+CT_DEGREE_LEVEL,D4,博士,Doctor,,1,40,博士研究生,{}
+CT_DEGREE_LEVEL,D5,博士后,Postdoc,,1,50,博士后研究,{}
+CT_DEGREE_LEVEL,D6,八年制本博连读,MD-PhD Track,,1,60,临床医学八年制,{}
+CT_TRAINING_TYPE,T01,住院医师规范化培训,Standardized Residency,,1,10,规培,{}
+CT_TRAINING_TYPE,T02,专科医师规范化培训,Subspecialty Training,,1,20,专培,{}
+CT_TRAINING_TYPE,T03,进修,Further Training,,1,30,进修学习,{}
+CT_TRAINING_TYPE,T04,住院总,Chief Resident,,1,40,住院总医师,{}
+CT_TRAINING_TYPE,T05,临床轮转,Rotation,,1,50,科室轮转,{}
+CT_TRAINING_TYPE,T06,实习,Internship,,1,60,临床/企业实习,{}
+CT_TRAINING_TYPE,T07,GCP培训,GCP Training,,1,70,药物临床试验质量管理规范培训,{}
+CT_TRAINING_TYPE,T08,海外访学,Overseas Visiting,,1,80,海外访学/交换,{}
+CT_CREDENTIAL_TYPE,C01,执业医师资格证,Physician License,,1,10,,{"required_for":["F01"]}
+CT_CREDENTIAL_TYPE,C02,住院医师规范化培训合格证,Residency Certificate,,1,20,,{"required_for":["F01"]}
+CT_CREDENTIAL_TYPE,C03,专科医师规范化培训合格证,Subspecialty Certificate,,1,30,,{}
+CT_CREDENTIAL_TYPE,C04,执业药师,Licensed Pharmacist,,1,40,,{}
+CT_CREDENTIAL_TYPE,C05,执业护士,Nurse License,,1,50,,{}
+CT_CREDENTIAL_TYPE,C06,GCP证书,GCP Certificate,,1,60,,"{""preferred_for"":[""F02"",""F03"",""F04""]}"
+CT_CREDENTIAL_TYPE,C07,法律职业资格,Legal Profession Qualification,,1,70,,{}
+CT_CREDENTIAL_TYPE,C08,专利代理师,Patent Agent,,1,80,,{}
+CT_CREDENTIAL_TYPE,C09,英语等级证书,English Certificate,,1,90,CET/IELTS/TOEFL/专八,{}
+CT_CREDENTIAL_TYPE,C10,计算机/数据分析证书,Computing Certificate,,1,100,,{}
+CT_CREDENTIAL_TYPE,C11,健康管理师,Health Manager,,1,110,,{}
+CT_CREDENTIAL_TYPE,C12,心理咨询师,Counselor,,1,120,,{}
+CT_EMPLOYER_TYPE,E01,三级医院,Tertiary Hospital,,1,10,,{}
+CT_EMPLOYER_TYPE,E02,二级及基层医疗,Secondary & Primary Care,,1,20,,{}
+CT_EMPLOYER_TYPE,E03,民营医疗机构,Private Healthcare,,1,30,,{}
+CT_EMPLOYER_TYPE,E04,跨国药企,MNC Pharma,,1,40,,{}
+CT_EMPLOYER_TYPE,E05,本土药企,Domestic Pharma,,1,50,,{}
+CT_EMPLOYER_TYPE,E06,医疗器械与IVD企业,MedTech & IVD,,1,60,,{}
+CT_EMPLOYER_TYPE,E07,CRO/SMO,CRO/SMO,,1,70,,{}
+CT_EMPLOYER_TYPE,E08,生物技术公司,Biotech,,1,80,,{}
+CT_EMPLOYER_TYPE,E09,保险公司与TPA,Insurer & TPA,,1,90,,{}
+CT_EMPLOYER_TYPE,E10,咨询公司,Consulting Firm,,1,100,,{}
+CT_EMPLOYER_TYPE,E11,券商与投资机构,Brokerage & Investment,,1,110,,{}
+CT_EMPLOYER_TYPE,E12,政府与事业单位,Government & Public Institution,,1,120,,{}
+CT_EMPLOYER_TYPE,E13,高校与科研院所,University & Institute,,1,130,,{}
+CT_EMPLOYER_TYPE,E14,互联网与数字健康企业,Internet & Digital Health,,1,140,,{}
+CT_EMPLOYER_TYPE,E15,出版与媒体,Publishing & Media,,1,150,,{}
+CT_EMPLOYER_TYPE,E16,律所与知识产权机构,Law Firm & IP,,1,160,,{}
+CT_EMPLOYER_TYPE,E17,教育培训机构,Education & Training,,1,170,,{}
+CT_EMPLOYER_TYPE,E18,自主创业,Self-employed,,1,180,,{}
+CT_EMPLOYER_TYPE,E19,其他,Other,,1,190,,{}
+CT_ABILITY_LEVEL,L0,未具备,None,,1,0,无证据支持,{}
+CT_ABILITY_LEVEL,L1,了解,Awareness,,1,1,有理论学习或见习接触,{}
+CT_ABILITY_LEVEL,L2,能协助,Assisted,,1,2,可在指导下完成,{}
+CT_ABILITY_LEVEL,L3,能独立,Independent,,1,3,可独立完成任务,{}
+CT_ABILITY_LEVEL,L4,能带人,Advanced,,1,4,可指导他人/处理复杂情形,{}
+CT_ABILITY_LEVEL,L5,专家级,Expert,,1,5,可定义标准/解决疑难,{}
+CT_TRANSFERABILITY,X0,不可迁移,Non-transferable,,1,0,仅限原场景,{}
+CT_TRANSFERABILITY,X1,弱迁移,Weak,,1,1,需大量再培训,{}
+CT_TRANSFERABILITY,X2,可迁移,Transferable,,1,2,经短期适应可用,{}
+CT_TRANSFERABILITY,X3,强迁移,Strong,,1,3,跨场景直接有效,{}
+CT_TRANSFERABILITY,X4,通用能力,Universal,,1,4,跨行业普遍适用,{}
+CT_VERIFY_STATUS,V0,原始,raw,,1,0,未加工,{}
+CT_VERIFY_STATUS,V1,已解析,parsed,,1,1,机器抽取未核验,{}
+CT_VERIFY_STATUS,V2,人工核验,human_checked,,1,2,人工确认,{}
+CT_VERIFY_STATUS,V3,第三方验证,third_party_verified,,1,3,可外部查证,{}
+CT_VERIFY_STATUS,V4,存在争议,disputed,,1,4,信息冲突,{}
+CT_EVIDENCE_TYPE,EV1,证书,Certificate,,1,10,,{"default_verifiability":5}
+CT_EVIDENCE_TYPE,EV2,论文,Publication,,1,20,,{"default_verifiability":5}
+CT_EVIDENCE_TYPE,EV3,作品/产出,Portfolio,,1,30,,{"default_verifiability":3}
+CT_EVIDENCE_TYPE,EV4,项目经历,Project,,1,40,,{"default_verifiability":2}
+CT_EVIDENCE_TYPE,EV5,他人评价,Reference,,1,50,,{"default_verifiability":2}
+CT_EVIDENCE_TYPE,EV6,测评,Assessment,,1,60,,{"default_verifiability":3}
+CT_EVIDENCE_TYPE,EV7,自述,Self-report,,1,70,,{"default_verifiability":0}
+CT_EVIDENCE_TYPE,EV8,临床记录,Clinical Record,,1,80,,{"default_verifiability":2}
+CT_REQUIREMENT_KIND,RK1,硬性,Hard,,1,10,不满足则不可投,{}
+CT_REQUIREMENT_KIND,RK2,软性,Soft,,1,20,影响竞争力,{}
+CT_REQUIREMENT_KIND,RK3,加分,Bonus,,1,30,锦上添花,{}
+CT_REQUIREMENT_TYPE,RT1,学历,Education,,1,10,,{}
+CT_REQUIREMENT_TYPE,RT2,专业,Major,,1,20,,{}
+CT_REQUIREMENT_TYPE,RT3,经验,Experience,,1,30,,{}
+CT_REQUIREMENT_TYPE,RT4,证书执照,License,,1,40,,{}
+CT_REQUIREMENT_TYPE,RT5,技能,Skill,,1,50,,{}
+CT_REQUIREMENT_TYPE,RT6,知识,Knowledge,,1,60,,{}
+CT_REQUIREMENT_TYPE,RT7,语言,Language,,1,70,,{}
+CT_REQUIREMENT_TYPE,RT8,其他,Other,,1,80,,{}
+CT_RESEARCH_OUTPUT_TYPE,RO1,原创论著,Original Article,,1,10,,{}
+CT_RESEARCH_OUTPUT_TYPE,RO2,综述,Review,,1,20,,{}
+CT_RESEARCH_OUTPUT_TYPE,RO3,病例报告,Case Report,,1,30,,{}
+CT_RESEARCH_OUTPUT_TYPE,RO4,Meta分析,Meta-analysis,,1,40,,{}
+CT_RESEARCH_OUTPUT_TYPE,RO5,专利,Patent,,1,50,,{}
+CT_RESEARCH_OUTPUT_TYPE,RO6,科研基金,Grant,,1,60,,{}
+CT_RESEARCH_OUTPUT_TYPE,RO7,会议论文/报告,Conference,,1,70,,{}
+CT_RESEARCH_OUTPUT_TYPE,RO8,审稿,Peer Review,,1,80,,{}
+CT_RESEARCH_OUTPUT_TYPE,RO9,软著/标准,Software/Standard,,1,90,,{}
+CT_PREFERENCE_TYPE,PF1,目标城市,Target City,,1,10,,{}
+CT_PREFERENCE_TYPE,PF2,目标行业,Target Industry,,1,20,,{}
+CT_PREFERENCE_TYPE,PF3,目标岗位族,Target Job Family,,1,30,,{}
+CT_PREFERENCE_TYPE,PF4,薪酬期望,Salary Expectation,,1,40,,{}
+CT_PREFERENCE_TYPE,PF5,工作强度容忍,Workload Tolerance,,1,50,,{}
+CT_PREFERENCE_TYPE,PF6,稳定性偏好,Stability Preference,,1,60,,{}
+CT_PREFERENCE_TYPE,PF7,成长性偏好,Growth Preference,,1,70,,{}
+CT_PREFERENCE_TYPE,PF8,是否接受转行,Open to Transition,,1,80,,{}
+CT_ACCESS_TIER,T0,公开,Public,,1,0,可自由浏览下载,{}
+CT_ACCESS_TIER,T1,注册,Registered,,1,1,注册用户可见,{}
+CT_ACCESS_TIER,T2,受控,Controlled,,1,2,需授权且数据不落地,{}
+CT_ACCESS_TIER,T3,敏感,Sensitive,,1,3,单独同意+加密+审计,{}
+CT_ENROLL_CHANNEL,EC1,自主注册,Self Signup,,1,10,,{}
+CT_ENROLL_CHANNEL,EC2,合作渠道,Partner Channel,,1,20,,{}
+CT_ENROLL_CHANNEL,EC3,研究入组,Research Enrollment,,1,30,,{}
+CT_ENROLL_CHANNEL,EC4,批量导入,Bulk Import,,1,40,,{}
+CT_SEX,S1,男,Male,,1,10,,{}
+CT_SEX,S2,女,Female,,1,20,,{}
+CT_SEX,S9,不愿透露,Undisclosed,,1,90,,{}
+CT_HUKOU_TYPE,H1,城镇,Urban,,1,10,影响部分岗位报考与落户政策,{}
+CT_HUKOU_TYPE,H2,农村,Rural,,1,20,,{}
+CT_POLITICAL,P1,中共党员,CPC Member,,1,10,选调生与部分事业单位硬性条件,{}
+CT_POLITICAL,P2,中共预备党员,CPC Probationary,,1,20,,{}
+CT_POLITICAL,P3,共青团员,CYL Member,,1,30,,{}
+CT_POLITICAL,P4,民主党派,Other Democratic Party,,1,40,,{}
+CT_POLITICAL,P5,群众,None,,1,50,,{}
+CT_HEALTH_LIMIT,HL1,色觉异常,Color Vision Deficiency,,1,10,影响临床、影像、药学等岗位,{}
+CT_HEALTH_LIMIT,HL2,色盲,Color Blindness,,1,20,,{}
+CT_HEALTH_LIMIT,HL3,视力受限,Vision Limitation,,1,30,,{}
+CT_HEALTH_LIMIT,HL4,听力受限,Hearing Limitation,,1,40,,{}
+CT_HEALTH_LIMIT,HL5,其他,Other,,1,90,,{}
+CT_MAJOR,M100,临床医学类,Clinical Medicine,,1,100,一级学科门类,{}
+CT_MAJOR,M10001,临床医学,Clinical Medicine,M100,2,101,,{}
+CT_MAJOR,M10002,麻醉学,Anesthesiology,M100,2,102,,{}
+CT_MAJOR,M10003,医学影像学,Medical Imaging,M100,2,103,,{}
+CT_MAJOR,M10004,眼视光医学,Optometry,M100,2,104,,{}
+CT_MAJOR,M10005,精神医学,Psychiatry,M100,2,105,,{}
+CT_MAJOR,M10006,儿科学,Pediatrics,M100,2,106,,{}
+CT_MAJOR,M200,基础医学类,Basic Medical Sciences,,1,200,,{}
+CT_MAJOR,M20001,基础医学,Basic Medicine,M200,2,201,,{}
+CT_MAJOR,M20002,生物医学,Biomedical Science,M200,2,202,,{}
+CT_MAJOR,M300,药学类,Pharmacy,,1,300,,{}
+CT_MAJOR,M30001,药学,Pharmacy,M300,2,301,,{}
+CT_MAJOR,M30002,临床药学,Clinical Pharmacy,M300,2,302,,{}
+CT_MAJOR,M400,公共卫生与预防医学类,Public Health,,1,400,,{}
+CT_MAJOR,M40001,预防医学,Preventive Medicine,M400,2,401,,{}
+CT_MAJOR,M40002,卫生统计与流行病学,Biostatistics & Epidemiology,M400,2,402,,{}
+CT_MAJOR,M500,中医学类,Traditional Chinese Medicine,,1,500,,{}
+CT_MAJOR,M600,护理学类,Nursing,,1,600,,{}
+CT_MAJOR,M700,医学技术类,Medical Technology,,1,700,,{}
+CT_MAJOR,M800,口腔医学类,Dentistry,,1,800,,{}
+CT_MAJOR,M900,相关跨类,Adjacent Fields,,1,900,生物科学/生物工程/心理学等可迁移类专业,{}
+CT_CRED_STATUS,CS1,有效,Valid,,1,10,,{}
+CT_CRED_STATUS,CS2,过期,Expired,,1,20,,{}
+CT_CRED_STATUS,CS3,备考中,In Preparation,,1,30,匹配时属可达成项而非已有项,{}
+CT_CRED_STATUS,CS4,未通过,Failed,,1,40,,{}
+CT_CRED_STATUS,CS5,已注销,Revoked,,1,50,,{}
+CT_AUTHOR_POSITION,AP1,第一作者,First Author,,1,10,,{}
+CT_AUTHOR_POSITION,AP2,共同第一作者,Co-first Author,,1,20,,{}
+CT_AUTHOR_POSITION,AP3,通讯作者,Corresponding Author,,1,30,,{}
+CT_AUTHOR_POSITION,AP4,第二作者,Second Author,,1,40,,{}
+CT_AUTHOR_POSITION,AP5,其他作者,Other,,1,50,,{}
+CT_QUARTILE,Q1,Q1区,Q1,,1,10,,{}
+CT_QUARTILE,Q2,Q2区,Q2,,1,20,,{}
+CT_QUARTILE,Q3,Q3区,Q3,,1,30,,{}
+CT_QUARTILE,Q4,Q4区,Q4,,1,40,,{}
+CT_QUARTILE,QN,未分区,Unranked,,1,90,,{}
+CT_LEVEL_BASIS,LB1,自述,Self Report,,1,10,置信度上限低,{}
+CT_LEVEL_BASIS,LB2,测评,Assessment,,1,20,,{}
+CT_LEVEL_BASIS,LB3,证书,Certificate,,1,30,,{}
+CT_LEVEL_BASIS,LB4,产出,Output,,1,40,论文/作品/交付物,{}
+CT_LEVEL_BASIS,LB5,上级或同行评价,Supervisor/Peer,,1,50,,{}
+CT_LEVEL_BASIS,LB6,临床例数,Clinical Volume,,1,60,仅适用于临床操作类能力,{}
+CT_SALARY_PERIOD,SP1,月,Monthly,,1,10,,{}
+CT_SALARY_PERIOD,SP2,年,Yearly,,1,20,,{}
+CT_SALARY_PERIOD,SP3,日,Daily,,1,30,,{}
+CT_SALARY_PERIOD,SP4,面议,Negotiable,,1,90,须置空数值并打 quality_flag,{}
+CT_CONCEPT_TYPE,K1,技能,Skill,,1,10,可通过训练获得的程序性能力,{"ESCO":"skill"}
+CT_CONCEPT_TYPE,K2,知识,Knowledge,,1,20,领域事实与理论,{"ESCO":"knowledge"}
+CT_CONCEPT_TYPE,K3,能力,Ability,,1,30,较稳定的认知与心理特质,{"O*NET":"abilities"}
+CT_CONCEPT_TYPE,K4,任务,Task,,1,40,岗位活动单元,{"O*NET":"work_activities"}
+CT_CONCEPT_TYPE,K5,技术,Technology,,1,50,工具与软件,{"O*NET":"technology_skills"}
+CT_CONCEPT_TYPE,K6,兴趣,Interest,,1,60,,{"O*NET":"interests"}
+CT_CONCEPT_TYPE,K7,工作风格,Work Style,,1,70,,{"O*NET":"work_styles"}
+CT_CONCEPT_TYPE,K8,工作情境,Work Context,,1,80,,{"O*NET":"work_context"}
+CT_CONCEPT_TYPE,K9,价值观,Value,,1,90,,{}
+CT_REUSABILITY,RU1,通用,Transversal,,1,10,跨所有行业可用,{"ESCO":"transversal"}
+CT_REUSABILITY,RU2,跨行业,Cross-sector,,1,20,,{"ESCO":"cross-sector"}
+CT_REUSABILITY,RU3,职业专属,Occupation-specific,,1,30,,{"ESCO":"occupation-specific"}
+CT_COLLECTION_METHOD,CM1,问卷,Questionnaire,,1,10,,{}
+CT_COLLECTION_METHOD,CM2,访谈,Interview,,1,20,,{}
+CT_COLLECTION_METHOD,CM3,简历解析,Resume Parse,,1,30,,{}
+CT_COLLECTION_METHOD,CM4,招聘信息解析,JD Parse,,1,40,,{}
+CT_COLLECTION_METHOD,CM5,接口,API,,1,50,,{}
+CT_COLLECTION_METHOD,CM6,派生,Derived,,1,60,必须登记算法与输入字段,{}
+CT_COLLECTION_METHOD,CM7,人工录入,Manual Entry,,1,70,,{}
+CT_COLLECTION_METHOD,CM8,系统生成,System,,1,80,,{}
+CT_ACTION,AC1,浏览目录,Browse,,1,10,只看元数据不看值,{}
+CT_ACTION,AC2,在线查看,View Inline,,1,20,在平台内看到具体值,{}
+CT_ACTION,AC3,导出单行,Export Row,,1,30,导出个体级记录,{}
+CT_ACTION,AC4,导出聚合,Export Aggregate,,1,40,仅导出汇总统计,{}
+CT_ACTION,AC5,批量下载,Bulk Download,,1,50,整表下载,{}
+CT_POLICY_TIER,T0,Tier0公开,Public,,1,0,,{}
+CT_POLICY_TIER,T1,Tier1,,,1,1,,{}
+CT_POLICY_TIER,T2,Tier2,,,1,2,,{}
+CT_POLICY_TIER,T3,Tier3,,,1,3,,{}
+CT_POLICY_TIER,X,禁止,Forbidden,,1,9,该访问方式永不允许,{}
+CT_CONSENT_PURPOSE,CP1,匹配服务,matching,,1,10,用于人岗匹配计算,{}
+CT_CONSENT_PURPOSE,CP2,研究报告,research_report,,1,20,用于聚合研究与报告,{}
+CT_CONSENT_PURPOSE,CP3,产品改进,product_improve,,1,30,,{}
+CT_CONSENT_PURPOSE,CP4,公开出版,publishing,,1,40,含案例与署名,{}
+CT_CONSENT_PURPOSE,CP5,第三方共享,third_party_share,,1,50,须单独同意,{}
+CT_RETENTION_ACTION,RA1,删除,Delete,,1,10,,{}
+CT_RETENTION_ACTION,RA2,匿名化,Anonymize,,1,20,,{}
+CT_RETENTION_ACTION,RA3,归档,Archive,,1,30,,{}
+CT_SEVERITY,SV1,低,Low,,1,1,,{}
+CT_SEVERITY,SV2,中,Medium,,1,2,,{}
+CT_SEVERITY,SV3,高,High,,1,3,,{}
+CT_SEVERITY,SV4,严重,Critical,,1,4,须 72 小时内通知监管,{}
+CT_SUBJECT_REQUEST_TYPE,SR1,查阅,Access,,1,10,PIPL 第 45 条,{}
+CT_SUBJECT_REQUEST_TYPE,SR2,更正,Rectify,,1,20,PIPL 第 46 条,{}
+CT_SUBJECT_REQUEST_TYPE,SR3,删除,Delete,,1,30,PIPL 第 47 条,{}
+CT_SUBJECT_REQUEST_TYPE,SR4,撤回同意,Withdraw Consent,,1,40,PIPL 第 15 条,{}
+CT_SUBJECT_REQUEST_TYPE,SR5,解释,Explain,,1,50,PIPL 第 24 条,{}
+CT_SUBJECT_REQUEST_TYPE,SR6,拒绝自动化决策,Object Automated,,1,60,PIPL 第 24 条,{}
+CT_ENTITY_KIND,EK1,类型化表,Table-backed,,1,10,有物理表，有列约束与外键,{}
+CT_ENTITY_KIND,EK2,纯值实体,Value-only,,1,20,无物理表，全部值存 field_value，加字段零 DDL,{}
+CT_WINDOW_TYPE,W1,简历覆盖期,Resume Coverage,,1,10,简历声称覆盖的时间范围,{}
+CT_WINDOW_TYPE,W2,平台活跃期,Platform Active,,1,20,用户在本平台活跃的时间,{}
+CT_WINDOW_TYPE,W3,随访期,Followup,,1,30,,{}
+CT_WINDOW_TYPE,W4,在职期,Employment Span,,1,40,,{}
+CT_STRATA,ST0,主数据,Primary,,1,0,直接采集,{}
+CT_STRATA,ST2,辅助,Auxiliary,,1,2,,{}
+CT_STRATA,ST3,派生,Derived,,1,3,由其他字段计算得到,{}
+CT_STABILITY,SB0,定义完整,Complete,,1,0,定义不会再变,{}
+CT_STABILITY,SB1,可更新,Updateable,,1,1,,{}
+CT_STABILITY,SB2,持续累积,Accruing,,1,2,随数据增长含义不变,{}
+CT_STABILITY,SB3,可变,Variable,,1,3,定义本身可能调整,{}
+CT_SOURCE_TYPE,SRC1,平台接口,Platform API,,1,10,,{}
+CT_SOURCE_TYPE,SRC2,网页采集,Web Scrape,,1,20,,{}
+CT_SOURCE_TYPE,SRC3,官方文件,Official Document,,1,30,,{}
+CT_SOURCE_TYPE,SRC4,合作方数据,Partner Feed,,1,40,,{}
+CT_SOURCE_TYPE,SRC5,问卷,Survey,,1,50,,{}
+CT_SOURCE_TYPE,SRC6,访谈,Interview,,1,60,,{}
+CT_SOURCE_TYPE,SRC7,人工录入,Manual,,1,70,,{}
+CT_SOURCE_TYPE,SRC8,派生,Derived,,1,80,,{}
+CT_PROVENANCE_METHOD,PM1,HTML解析,HTML Parse,,1,10,,{}
+CT_PROVENANCE_METHOD,PM2,模型抽取,LLM Extract,,1,20,必须记录模型版本,{}
+CT_PROVENANCE_METHOD,PM3,人工录入,Manual Entry,,1,30,,{}
+CT_PROVENANCE_METHOD,PM4,接口JSON,API JSON,,1,40,,{}
+CT_PROVENANCE_METHOD,PM5,访谈转写,Interview Transcript,,1,50,,{}
+CT_PROVENANCE_METHOD,PM6,派生计算,Derived,,1,60,,{}
+CT_PROVENANCE_METHOD,PM7,系统生成,System,,1,70,,{}
+CT_DERIVED_CLASS,DC1,算法定义结局,Algorithmic Outcome,,1,10,,{}
+CT_DERIVED_CLASS,DC2,首次发生,First Occurrence,,1,20,,{}
+CT_DERIVED_CLASS,DC3,评分,Score,,1,30,,{}
+CT_DERIVED_CLASS,DC4,指数,Index,,1,40,,{}
+CT_MAPPING_TYPE,MT1,完全等价,Exact,,1,10,,{}
+CT_MAPPING_TYPE,MT2,上位,Broader,,1,20,,{}
+CT_MAPPING_TYPE,MT3,下位,Narrower,,1,30,,{}
+CT_MAPPING_TYPE,MT4,相关,Related,,1,40,,{}
+CT_MAPPING_TYPE,MT5,人工判定,Manual,,1,50,,{}
+CT_VALUE_TYPE,VT11,整数,Integer,,1,11,,{}
+CT_VALUE_TYPE,VT21,单选,Single Choice,,1,21,,{}
+CT_VALUE_TYPE,VT22,多选,Multi Choice,,1,22,,{}
+CT_VALUE_TYPE,VT31,实数,Real,,1,31,,{}
+CT_VALUE_TYPE,VT41,字符串,String,,1,41,,{}
+CT_VALUE_TYPE,VT51,日期,Date,,1,51,,{}
+CT_VALUE_TYPE,VT61,时间,Time,,1,61,,{}
+CT_VALUE_TYPE,VT101,复合,Compound,,1,101,,{}
+CT_VALUE_TYPE,VT201,二进制,Blob,,1,201,,{}
+CT_EVIDENCE_GRADE,A,A级,Grade A,,1,1,官方统计或部委原文；可作主结论,{}
+CT_EVIDENCE_GRADE,B,B级,Grade B,,1,2,平台聚合统计含样本量；可作主结论须标注,{}
+CT_EVIDENCE_GRADE,C,C级,Grade C,,1,3,单条在招信息；禁止外推,{}
+CT_EVIDENCE_GRADE,D,D级,Grade D,,1,4,未证实；禁止进入对外主结论,{}
+CT_RELEASE_STATUS,RS1,草稿,Draft,,1,10,未完成 codebook 不得发布,{}
+CT_RELEASE_STATUS,RS2,复核中,In Review,,1,20,,{}
+CT_RELEASE_STATUS,RS3,已发布,Published,,1,30,,{}
+CT_RELEASE_STATUS,RS4,已退役,Retired,,1,40,,{}
+CT_CEL_LEVEL,E0,自述,Self-report,,1,0,无外部凭证；置信度上限低,{}
+CT_CEL_LEVEL,E1,证书,Certificate,,1,1,可查证资格或培训证明,{}
+CT_CEL_LEVEL,E2,第三方评估,Third-party Assessment,,1,2,测评或上级评价,{}
+CT_CEL_LEVEL,E3,作品,Portfolio,,1,3,可检视的产出物,{}
+CT_CEL_LEVEL,E4,履职记录,Duty Record,,1,4,真实岗位或临床履职记录,{}
+CT_JOB_ZONE,JZ1,入门级,Job Zone 1,,1,1,几乎无需准备,{}
+CT_JOB_ZONE,JZ2,初级,Job Zone 2,,1,2,需少量培训,{}
+CT_JOB_ZONE,JZ3,中级,Job Zone 3,,1,3,需职业培训或本科学历,{}
+CT_JOB_ZONE,JZ4,高级,Job Zone 4,,1,4,需大量准备与本科以上学历,{}
+CT_JOB_ZONE,JZ5,专家级,Job Zone 5,,1,5,需研究生学历或长期积累,{}
+CT_CLAIM_TYPE,CT1,能力主张,Capability Claim,,1,10,我具备某项能力,{}
+CT_CLAIM_TYPE,CT2,成就主张,Achievement Claim,,1,20,我完成过某件事,{}
+CT_CLAIM_TYPE,CT3,潜质主张,Potential Claim,,1,30,我倾向于/适合某方向,{}
+CT_EVIDENCE_SOURCE_TYPE,ES1,本人,Self,,1,10,自述类证据,{}
+CT_EVIDENCE_SOURCE_TYPE,ES2,第三方机构,Third-party Body,,1,20,考试机构/认证机构,{}
+CT_EVIDENCE_SOURCE_TYPE,ES3,雇主或实习单位,Employer,,1,30,,{}
+CT_EVIDENCE_SOURCE_TYPE,ES4,同行或上级,Peer/Supervisor,,1,40,,{}

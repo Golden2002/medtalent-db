@@ -1,0 +1,41 @@
+﻿concept_id,parent_id,concept_type,preferred_label,label_en,keywords,reusability,definition
+CON-K1-LIT,            ,K1,文献检索与证据分级,Literature Review & Evidence Grading,文献检索|解读英文文献|循证|阅读并准确解读,RU2,快速定位文献并评估证据质量
+CON-K1-STAT,           ,K1,统计与数据分析,Statistics & Data Analysis,数据分析|统计分析|统计方法|建模,RU2,用统计方法处理与解释数据
+CON-K1-SQL,            ,K1,数据查询与工具,Data Query & Tooling,SQL|分析工具|熟练使用,RU2,用工具完成数据提取与分析
+CON-K1-FIN,            ,K1,财务分析与建模,Financial Analysis & Modeling,财务分析|建模,RU3,读懂财报并搭建预测模型
+CON-K1-CLIN,           ,K1,临床诊疗知识,Clinical Knowledge,常见病|诊疗|临床|病种,RU3,临床诊断与治疗知识
+CON-K1-GCP,            ,K1,临床试验规范,Good Clinical Practice,GCP|临床试验|试验方案|监查|受试者,RU3,临床试验的法规与操作规范
+CON-K1-REG,            ,K1,法规与注册知识,Regulatory Knowledge,注册|法规|申报|审评|合规,RU3,药品器械注册与监管要求
+CON-K1-HEOR,           ,K1,卫生经济学与准入,Health Economics & Access,卫生经济|准入|HEOR|药物经济,RU3,价值评估与报销准入
+CON-K1-IP,             ,K1,知识产权实务,IP Practice,专利|知识产权|侵权,RU3,专利撰写与检索分析
+CON-K1-MKT,            ,K1,行业与市场知识,Industry & Market Knowledge,行业|市场|竞品|政策,RU2,理解行业格局与政策走向
+CON-K3-ACOM,           ,K3,学术沟通与演讲,Academic Communication,学术沟通|演讲|学术会议|学术交流|授课|课堂表达|镜头表达,RU1,面向专业听众清晰传递信息
+CON-K3-COMM,           ,K3,人际沟通,Interpersonal Communication,沟通能力|沟通协调|沟通与|医患沟通|受试者沟通,RU1,与不同对象有效沟通
+CON-K3-COLLAB,         ,K3,跨部门协作,Cross-functional Collaboration,跨部门|协作|团队|配合,RU1,在多角色环境中推进事情
+CON-K3-SOLVE,          ,K3,问题解决,Problem Solving,问题解决|定位|分析能力|结构化思维|逻辑分析,RU1,把模糊问题拆解为可执行动作
+CON-K3-STRESS,         ,K3,抗压与韧性,Resilience,抗压|高强度|夜班|承受.*压力|频繁出差,RU1,在高压与不确定性下保持产出
+CON-K3-RIGOR,          ,K3,严谨与细致,Rigor & Attention to Detail,细致|严谨|有条理|准确性|质量意识,RU1,对细节与准确性有稳定要求
+CON-K3-LEARN,          ,K3,快速学习,Learning Agility,快速学习|自学|迭代|更新知识,RU1,在陌生领域迅速形成可用能力
+CON-K3-EMPATHY,        ,K3,共情与用户理解,Empathy & User Insight,用户|受试者|患者|共情|需求洞察,RU1,理解他人处境并转化为需求
+CON-K3-OWNER,          ,K3,主人翁意识,Ownership,独立完成|主动|推动|承担,RU1,对结果负责而非对动作负责
+CON-K3-PRIOR,          ,K3,优先级管理,Prioritization,多中心并行|并行|优先级|时间管理,RU1,在资源受限下排序与取舍
+CON-K1-WRITE,          ,K1,专业写作,Professional Writing,撰写|文档撰写|文字功底|写作|报告|文字表达|技术理解,RU1,产出结构清晰的书面材料
+CON-K1-EDIT,           ,K1,编辑与审校,Editing & Proofreading,编辑|审稿|初审|加工|校对,RU3,对稿件做专业加工与质量把关
+CON-K1-ANNOT,          ,K1,医学标注与质控,Medical Annotation & QC,标注|质控|数据质量,RU3,为模型提供高质量医学标注
+CON-K1-CLINREQ,        ,K1,临床需求抽象,Clinical Requirement Abstraction,临床需求|需求抽象|产品沟通|评价指标,RU3,把临床场景转成产品与验证要求
+CON-K1-RWE,            ,K1,真实世界研究,Real-World Evidence,真实世界|RWS|RWE,RU3,基于真实诊疗数据生成证据
+CON-K1-UNDW,           ,K1,核保与风险识别,Underwriting & Risk Assessment,核保|风险识别|条款解读|风险,RU3,评估个体健康与赔付风险
+CON-K1-CLAIM,          ,K1,理赔医学审核,Claims Medical Review,理赔|医学审核|合理性,RU3,判断诊疗与赔付的医学合理性
+CON-K1-EPI,            ,K1,流行病学与公卫,Epidemiology & Public Health,流行病学|流调|传染病|监测|免疫规划|公共卫生|健康教育|慢病管理,RU3,群体层面的疾病与健康干预
+CON-K1-PROD,           ,K1,产品与需求管理,Product Management,产品|需求|路线|指标,RU2,定义做什么并推动落地
+CON-K1-OP,             ,K1,运营与增长,Operations & Growth,运营|增长|内容|选题|账号|科普|持续产出,RU3,通过内容与活动持续获取用户
+CON-K1-TEACH,          ,K1,教学与课程设计,Teaching & Curriculum,授课|讲义|课程|教研|答疑,RU1,把知识拆成可教学的序列
+CON-K1-SALES,          ,K1,客户与学术推广,Customer & Academic Promotion,客户|推广|拜访|销售|区域,RU3,在合规前提下影响处方与采购
+CON-K1-INTL,           ,K1,外语工作能力,Working Proficiency in Foreign Language,英语|英文|外语|雅思|托福,RU1,以外语完成专业工作
+CON-K1-EXP,            ,K1,实验与转化研究,Experimental & Translational Research,实验|靶点|组学|药效|生物标志物|课题|研究基础,RU3,从假设到实验到证据
+CON-K1-DEV,            ,K1,软件与算法,Software & Algorithms,算法|编程|开发|模型训练,RU3,实现与优化技术方案
+CON-K1-DEVICE,         ,K1,器械与IVD专业知识,Device & IVD Knowledge,器械|体外诊断|IVD|设备|耗材,RU3,器械原理与临床使用
+CON-K1-QC,             ,K1,合规与质量体系,Compliance & Quality System,合规|体系|内审|稽查|备案,RU3,设计并运行合规与质量流程
+CON-K3-NEGO,           ,K3,谈判与影响,Negotiation & Influence,谈判|影响|说服|协调资源,RU1,在多方利益中达成一致
+CON-K3-LEAD,           ,K3,团队与项目管理,Team & Project Management,项目管理|团队管理|带教|指导,RU1,组织他人按时交付
+CON-K3-BIZ,            ,K3,商业敏感度,Business Acumen,商业|业务|投资|市场判断,RU1,把专业判断转成商业取舍

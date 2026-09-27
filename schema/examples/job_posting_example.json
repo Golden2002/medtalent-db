@@ -1,0 +1,103 @@
+{
+  "_comment": "示例记录：一条真实风格的招聘信息被结构化的结果。raw_text 必须完整保留，所有解析字段都可回溯到它。",
+  "_schema_version": "1.0.0",
+  "job_posting": {
+    "job_id": "job_01J8ZR2C4E6G8J0L2N4P6R8T0",
+    "source_id": "src_company_careers",
+    "ingest_run_id": "run_2026-03-05_careers_004",
+    "source_url": "https://example-pharma.com/careers/req-10073043",
+    "source_posting_no": "req-10073043",
+    "employer_id": "ems_01J8ZR2C4E6G8J0L2N4P6R8T1",
+    "employer_name_raw": "某跨国制药企业（中国）",
+    "title_raw": "医学科学联络官 MSL - 免疫治疗",
+    "title_normalized": "医学科学联络官（MSL）",
+    "occupation_id": "occ_F02_MSL",
+    "job_family": "F02",
+    "level": "中级",
+    "employment_type": "全职",
+    "is_campus": false,
+    "province": "CN-31",
+    "city": "上海",
+    "salt": null,
+    "salary_min": 300000,
+    "salary_max": 450000,
+    "salary_currency": "CNY",
+    "salary_period": "SP2",
+    "salary_months": null,
+    "education_req": "D3",
+    "major_req": "临床医学/基础医学/药学相关",
+    "experience_req": "1-3年医药行业或临床经验",
+    "license_req": [],
+    "headcount": 1,
+    "published_at": "2026-03-04",
+    "deadline": "2026-04-04",
+    "raw_text_ref": "L0://raw/job_postings/ems_msl_immune/2026-03-05/req-10073043.html",
+    "raw_sha256": "3f2a9c1d5b7e8f0a2c4e6g8j0l2n4p6r8t0v2x4z6b8d0f2",
+    "parse_version": "jd_parser@0.2.0",
+    "confidence": 0.78,
+    "verify_status": "V1",
+    "quality_flags": ["salary_is_estimate", "title_normalized_by_rule"],
+    "valid_from": "2026-03-04",
+    "recorded_at": "2026-03-05T09:10:00+08:00"
+  },
+  "job_tasks": [
+    {"task_order": 1, "task_text": "与领域专家建立并维护学术合作关系，开展科学交流", "concept_id": "con_task_kol_engagement", "importance": 0.9},
+    {"task_order": 2, "task_text": "向临床医生传递最新的临床研究数据与循证信息", "concept_id": "con_abl_evidence_communication", "importance": 0.95},
+    {"task_order": 3, "task_text": "收集并反馈未满足的临床需求，支持内部研发与医学策略", "concept_id": "con_abl_insight_synthesis", "importance": 0.7},
+    {"task_order": 4, "task_text": "支持研究者发起的研究（IIS）与真实世界研究项目", "concept_id": "con_kno_clinical_research", "importance": 0.6}
+  ],
+  "job_requirements": [
+    {
+      "requirement_id": "req_01J8ZR2C4E6G8J0L2N4P6R8T2",
+      "requirement_kind": "RK1",
+      "requirement_type": "RT1",
+      "concept_id": null,
+      "raw_text": "医学相关专业硕士及以上学历",
+      "min_level": null,
+      "essentiality": 1.0,
+      "substitutable_by": []
+    },
+    {
+      "requirement_id": "req_01J8ZR2C4E6G8J0L2N4P6R8T3",
+      "requirement_kind": "RK1",
+      "requirement_type": "RT5",
+      "concept_id": "con_abl_evidence_communication",
+      "raw_text": "具备优秀的学术沟通与演讲能力，能独立完成专家拜访",
+      "min_level": 4,
+      "essentiality": 1.0,
+      "substitutable_by": ["有丰富学术会议报告经历可部分替代"]
+    },
+    {
+      "requirement_id": "req_01J8ZR2C4E6G8J0L2N4P6R8T4",
+      "requirement_kind": "RK1",
+      "requirement_type": "RT5",
+      "concept_id": "con_abl_literature_review",
+      "raw_text": "能快速阅读并准确解读英文文献与临床试验数据",
+      "min_level": 4,
+      "essentiality": 0.95,
+      "substitutable_by": []
+    },
+    {
+      "requirement_id": "req_01J8ZR2C4E6G8J0L2N4P6R8T5",
+      "requirement_kind": "RK2",
+      "requirement_type": "RT3",
+      "concept_id": null,
+      "raw_text": "有临床工作或医药行业经验者优先",
+      "min_level": null,
+      "essentiality": 0.6,
+      "substitutable_by": ["博士期间深度参与临床研究可替代"]
+    },
+    {
+      "requirement_id": "req_01J8ZR2C4E6G8J0L2N4P6R8T6",
+      "requirement_kind": "RK3",
+      "requirement_type": "RT4",
+      "concept_id": null,
+      "raw_text": "持有执业医师资格证者优先",
+      "min_level": null,
+      "essentiality": 0.3,
+      "substitutable_by": []
+    }
+  ],
+  "raw_text": "岗位职责：\n1. 与领域专家建立并维护学术合作关系，开展科学交流；\n2. 向临床医生传递最新的临床研究数据与循证信息；\n3. 收集并反馈未满足的临床需求，支持内部研发与医学策略；\n4. 支持研究者发起的研究（IIS）与真实世界研究项目。\n任职要求：\n1. 医学相关专业硕士及以上学历；\n2. 具备优秀的学术沟通与演讲能力，能独立完成专家拜访；\n3. 能快速阅读并准确解读英文文献与临床试验数据；\n4. 有临床工作或医药行业经验者优先；\n5. 持有执业医师资格证者优先。\n薪资：30-45万/年\n工作地点：上海",
+  "_raw_text_note": "以上为示例文本，用于演示 raw_text 与结构化字段的一一对应关系；真实入库时 raw_text 存于 L0，此处仅为可读性内联。"
+}

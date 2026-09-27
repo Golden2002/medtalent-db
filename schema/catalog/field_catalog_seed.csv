@@ -1,0 +1,113 @@
+field_id,entity_id,title,description,data_type,unit,value_range,code_table_id,cardinality,collection_method,applies_to,related_fields,derivation,access_tier,status,version,owner
+F_PERSON_SUBJECT_CODE,person,对象编号,对外展示用的假名编号,string,,MT-YYYY-NNNNNN,,scalar,system,,,,"T1",active,1.0.0,data
+F_PERSON_ENROLL_CHANNEL,person,入组渠道,该人才档案的来源渠道,code,,,CT_ENROLL_CHANNEL,scalar,manual,,,,"T1",active,1.0.0,ops
+F_PERSON_BIRTH_YEAR,person_demographics,出生年份,仅保留年份以降低敏感性,integer,year,1930-2020,,scalar,questionnaire,,,,"T2",active,1.0.0,gov
+F_PERSON_SEX,person_demographics,性别,,code,,,CT_SEX,scalar,questionnaire,,,,"T2",active,1.0.0,gov
+F_PERSON_HUKOU_TYPE,person_demographics,户籍类型,城镇/农村；影响部分岗位报考资格,code,,,CT_HUKOU_TYPE,scalar,questionnaire,,,,"T2",active,1.0.0,gov
+F_PERSON_POLITICAL,person_demographics,政治面貌,选调生/公务员/事业单位岗位的硬性条件,code,,,CT_POLITICAL,scalar,questionnaire,,,,"T2",active,1.0.0,gov
+F_PERSON_HEALTH_LIMITS,person_demographics,体检受限项,色觉异常/听力/其他；影响部分临床与药师岗位,array,,,CT_HEALTH_LIMIT,array,questionnaire,,,,"T3",active,1.0.0,gov
+F_EDU_DEGREE_LEVEL,education_record,学历层次,专科/本科/硕士/博士/博士后,code,,,CT_DEGREE_LEVEL,scalar,resume_parse,,F_EDU_DEGREE_NAME,,"T1",active,1.0.0,data
+F_EDU_DEGREE_NAME,education_record,学位名称,如临床医学硕士（专业型）,string,,,,scalar,resume_parse,,,,"T1",active,1.0.0,data
+F_EDU_SCHOOL_NAME,education_record,毕业院校,,string,,,,scalar,resume_parse,,,,"T1",active,1.0.0,data
+F_EDU_SCHOOL_TAGS,education_record,院校标签,985/211/双一流/海外QS100/军医院校,array,,,,array,derived,,F_EDU_SCHOOL_NAME,由院校名映射到院校维表后生成,"T1",active,1.0.0,data
+F_EDU_MAJOR_RAW,education_record,专业原文,简历中的原始专业名,string,,,,scalar,resume_parse,,F_EDU_MAJOR_CODE,保留原文以支持再解析,"T1",active,1.0.0,data
+F_EDU_MAJOR_CODE,education_record,专业代码,映射到学科专业目录代码,code,,,CT_MAJOR,scalar,derived,,,由 F_EDU_MAJOR_RAW 映射,"T1",active,1.0.0,data
+F_EDU_IS_CLINICAL,education_record,是否临床医学类,判断执业医师报考资格的关键,boolean,,,,scalar,derived,,,由 F_EDU_MAJOR_CODE 推导,"T1",active,1.0.0,data
+F_EDU_GPA,education_record,绩点,必须同时记录 gpa_scale 否则不可比,number,4.0或5.0或百分制,0-100,,scalar,resume_parse,,F_EDU_GPA_SCALE,,"T1",active,1.0.0,data
+F_EDU_RANK_PCT,education_record,专业排名百分位,越小越好,number,%,0-100,,scalar,resume_parse,,,,"T1",active,1.0.0,data
+F_TRAIN_TYPE,training_record,培养类型,规培/专培/进修/住院总/轮转/实习,code,,,CT_TRAINING_TYPE,scalar,resume_parse,,,,"T1",active,1.0.0,data
+F_TRAIN_MONTHS,training_record,培养时长,统一单位：月,number,month,0-120,,scalar,resume_parse,,,,"T1",active,1.0.0,data
+F_CLIN_PROCEDURE_COUNT,clinical_exposure,操作例数,主刀或一助例数,integer,例,0-100000,,scalar,questionnaire,,,,"T1",active,1.0.0,data
+F_CRED_TYPE,credential,证书类型,,code,,,CT_CREDENTIAL_TYPE,scalar,resume_parse,,,,"T1",active,1.0.0,data
+F_CRED_STATUS,credential,证书状态,有效/过期/备考中/未通过,code,,,CT_CRED_STATUS,scalar,resume_parse,,,,"T1",active,1.0.0,data
+F_CRED_OBTAINED_DATE,credential,取得日期,,date,,,,scalar,resume_parse,,,,"T1",active,1.0.0,data
+F_EMP_EMPLOYER_TYPE,employment_record,雇主类型,,code,,,CT_EMPLOYER_TYPE,scalar,resume_parse,,,,"T1",active,1.0.0,data
+F_EMP_TITLE_RAW,employment_record,职位原文,,string,,,,scalar,resume_parse,,F_EMP_OCCUPATION_ID,保留原文,"T1",active,1.0.0,data
+F_EMP_OCCUPATION_ID,employment_record,归一化职业,映射到 occupation 树,string,,,,scalar,derived,,,由 F_EMP_TITLE_RAW 归一化,"T1",active,1.0.0,data
+F_RES_OUTPUT_TYPE,research_output,产出类型,,code,,,CT_RESEARCH_OUTPUT_TYPE,scalar,resume_parse,,,,"T1",active,1.0.0,data
+F_RES_AUTHOR_POSITION,research_output,作者位次,第一/共一/通讯/其他,code,,,CT_AUTHOR_POSITION,scalar,resume_parse,,,,"T1",active,1.0.0,data
+F_RES_JCR_Q,research_output,期刊分区,分区随年份变化必须记录 as_of,code,,,CT_QUARTILE,scalar,api,,,由 DOI 查询期刊库获得,"T1",active,1.0.0,data
+F_SKL_CONCEPT_ID,skill_assertion,能力概念,指向概念本体节点,string,,,,scalar,derived,,F_SKL_LABEL_RAW,映射后需人工抽检,"T1",active,1.0.0,data
+F_SKL_LEVEL,skill_assertion,能力等级,0-5；必须与 level_basis 同时存在,integer,level,0-5,CT_ABILITY_LEVEL,scalar,questionnaire,,F_SKL_LEVEL_BASIS,,"T1",active,1.0.0,data
+F_SKL_LEVEL_BASIS,skill_assertion,等级判定依据,自述/测评/证书/产出/上级评价/临床例数,code,,,CT_LEVEL_BASIS,scalar,manual,,,决定置信度上限,"T1",active,1.0.0,data
+F_SKL_EVIDENCE_ID,skill_assertion,证据引用,,string,,,,scalar,manual,,,为空则置信度上限0.5,"T1",active,1.0.0,data
+F_SKL_CONFIDENCE,skill_assertion,置信度,0-1,number,,0-1,,scalar,derived,,"F_SKL_LEVEL_BASIS|F_SKL_EVIDENCE_ID",由依据类型与证据强度计算,"T1",active,1.0.0,data
+F_SKL_TRANSFERABILITY,skill_assertion,可迁移性,0-4；本项目差异化字段,integer,level,0-4,CT_TRANSFERABILITY,scalar,manual,,F_SKL_TRANSFER_NOTE,,"T1",active,1.0.0,research
+F_SKL_TRANSFER_NOTE,skill_assertion,迁移说明,如外科住院总的应急决策到项目危机处理,text,,,,scalar,manual,,,,"T1",active,1.0.0,research
+F_EVD_VERIFIABILITY,evidence,可核验性,0-5,integer,level,0-5,,scalar,manual,,,,"T1",active,1.0.0,data
+F_JOB_TITLE_RAW,job_posting,岗位名称原文,必须保留原始标题,string,,,,scalar,jd_parse,,F_JOB_TITLE_NORM,禁止只存归一化结果,"T0",active,1.0.0,data
+F_JOB_TITLE_NORM,job_posting,归一化职位名,,string,,,,scalar,derived,,,由 F_JOB_TITLE_RAW 归一化,"T0",active,1.0.0,data
+F_JOB_OCCUPATION_ID,job_posting,职业节点,映射到 occupation 树,string,,,,scalar,derived,,,由 F_JOB_TITLE_NORM 映射,"T0",active,1.0.0,data
+F_JOB_FAMILY,job_posting,岗位族,F01-F17,code,,,CT_JOB_FAMILY,scalar,derived,,,由 F_JOB_OCCUPATION_ID 上卷,"T0",active,1.0.0,data
+F_JOB_IS_CAMPUS,job_posting,是否校招,应届可投,boolean,,,,scalar,jd_parse,,,,"T0",active,1.0.0,data
+F_JOB_SALARY_MIN,job_posting,薪酬下限,面议需置空并打 quality_flag,number,CNY,0-10000000,,scalar,jd_parse,,F_JOB_SALARY_PERIOD,,"T1",active,1.0.0,data
+F_JOB_SALARY_PERIOD,job_posting,薪酬周期,月/年/日,code,,,CT_SALARY_PERIOD,scalar,jd_parse,,,,"T1",active,1.0.0,data
+F_JOB_EDUCATION_REQ,job_posting,学历要求,,code,,,CT_DEGREE_LEVEL,scalar,jd_parse,,,,"T0",active,1.0.0,data
+F_JOB_LICENSE_REQ,job_posting,证照要求,执业医师/规培证等硬性条件,array,,,CT_CREDENTIAL_TYPE,array,jd_parse,,,,"T0",active,1.0.0,data
+F_JOB_RAW_REF,job_posting,原文引用,指向 L0 原始 JD,string,,,,scalar,system,,,所有解析字段的最终依据,"T2",active,1.0.0,data
+F_JOB_PARSE_VERSION,job_posting,解析器版本,用于批量重跑与质量对比,string,,,,scalar,system,,,,"T0",active,1.0.0,eng
+F_REQ_KIND,job_requirement,要求性质,硬性/软性/加分,code,,,CT_REQUIREMENT_KIND,scalar,jd_parse,,,,"T0",active,1.0.0,data
+F_REQ_TYPE,job_requirement,要求类型,学历/专业/经验/证书/技能/知识/语言,code,,,CT_REQUIREMENT_TYPE,scalar,jd_parse,,,,"T0",active,1.0.0,data
+F_REQ_RAW_TEXT,job_requirement,要求原文片段,必须保留以支持回查,text,,,,scalar,jd_parse,,,,"T0",active,1.0.0,data
+F_REQ_MIN_LEVEL,job_requirement,要求等级,0-5,integer,level,0-5,CT_ABILITY_LEVEL,scalar,derived,,,由 F_REQ_RAW_TEXT 解析,"T0",active,1.0.0,data
+F_REQ_SUBSTITUTABLE,job_requirement,可替代路径,如无规培证但有一作SCI可放宽,json,,,,scalar,manual,,,,"T0",active,1.0.0,research
+F_OCC_MEDICAL_RELIANCE,occupation,医学依赖度,0-5；本库核心分类变量,integer,level,0-5,,scalar,manual,,,,"T0",active,1.0.0,research
+F_OCC_TRANSITION_EASE,occupation,转出容易度,0-5；医学生转出到其他行业的难易（与能力可迁移性X0-X4是两套刻度）,integer,level,0-5,,scalar,manual,,,,"T0",active,1.0.0,research
+F_SKL_CLAIM_TYPE,skill_assertion,主张类型,能力/成就/潜质,code,,,CT_CLAIM_TYPE,scalar,manual,,,,"T1",active,1.0.0,research
+F_EV_SOURCE_PARTY,evidence,证据来源方,本人/第三方机构/雇主/同行上级,code,,,CT_EVIDENCE_SOURCE_TYPE,scalar,manual,,,,"T1",active,1.0.0,research
+F_OCC_LICENSE_REQUIRED,occupation,硬性执照,该职业是否法律要求执照,array,,,CT_CREDENTIAL_TYPE,array,manual,,,,"T0",active,1.0.0,research
+F_OCC_ENTRY_PATHS,occupation,进入路径,应届直投/需规培/需考证/需经验,array,,,,array,manual,,,,"T0",active,1.0.0,research
+F_CONCEPT_TYPE,concept,概念类型,技能/知识/能力/任务/技术/兴趣/工作风格/情境/价值观,code,,,CT_CONCEPT_TYPE,scalar,manual,,,,"T0",active,1.0.0,research
+F_CONCEPT_REUSABILITY,concept,可复用等级,transversal/cross_sector/occupation_specific,code,,,CT_REUSABILITY,scalar,manual,,,对标ESCO,"T0",active,1.0.0,research
+F_CONCEPT_MAPPING,concept,外部映射,ESCO与O*NET与职业分类大典,json,,,,scalar,manual,,,,"T0",active,1.0.0,research
+F_FIELD_COLLECTION_METHOD,field_catalog,采集方法,该字段的来源方法,code,,,CT_COLLECTION_METHOD,scalar,manual,,,,"T0",active,1.0.0,data
+F_FIELD_UNIT,field_catalog,单位,无单位字段置空,string,,,,scalar,manual,,,,"T0",active,1.0.0,data
+F_FIELD_DERIVATION,field_catalog,派生定义,派生字段的算法与输入,text,,,,scalar,manual,,,,"T0",active,1.0.0,data
+F_FC_STRATA,field_catalog,分层,主数据/辅助/派生,code,,,CT_STRATA,scalar,manual,,,,"T0",active,1.0.0,data
+F_FC_STABILITY,field_catalog,稳定性,定义是否还会变,code,,,CT_STABILITY,scalar,manual,,,,"T0",active,1.0.0,data
+F_FC_VALUE_TYPE,field_catalog,取值类型,整数/单选/多选/实数/字符串/日期,code,,,CT_VALUE_TYPE,scalar,manual,,,,"T0",active,1.0.0,data
+F_FC_IS_ARRAYED,field_catalog,是否数组,对标UKB arrayed,boolean,,,,scalar,manual,,,,"T0",active,1.0.0,data
+F_FC_INSTANCE_ROLE,field_catalog,实例含义,该字段在多次采集中代表什么,string,,,,scalar,manual,,,,"T0",active,1.0.0,data
+F_CAT_PARENT_ID,category_node,父分类,构建分类树,string,,,,scalar,manual,,,,"T0",active,1.0.0,data
+F_CAT_SUBTREE_COUNT,category_node,子树字段数,对标UKB tree_subtree_total,integer,个,0-100000,,scalar,derived,,,由分类树与字段目录聚合,"T0",active,1.0.0,data
+F_CAT_NODE_COUNT,category_node,直属字段数,对标UKB tree_node_total,integer,个,0-100000,,scalar,derived,,,同上取直属部分,"T0",active,1.0.0,data
+F_FV_FIELD_ID,field_value,字段ID,语义锚点指向字段目录,string,,,,scalar,derived,,,来自 field_catalog,"T1",active,1.0.0,data
+F_FV_SUBJECT,field_value,主体,值所属主体类型与ID,string,,,,scalar,system,,,,"T1",active,1.0.0,data
+F_FV_INSTANCE_KEY,field_value,实例键,第几次采集或第几段经历,string,,,,scalar,resume_parse,,,对标UKB instance,"T1",active,1.0.0,data
+F_FV_ARRAY_INDEX,field_value,数组序号,同一次内的第几个重复值,integer,,0-999,,scalar,resume_parse,,,对标UKB array,"T1",active,1.0.0,data
+F_FV_VALUE_NUM,field_value,数值,单位由所引用字段定义；与文本值互斥,number,见字段定义,,,scalar,derived,,,,"T1",active,1.0.0,data
+F_AP_ACTION,access_policy,访问动作,浏览/在线查看/导出单行/导出聚合/批量下载,code,,,CT_ACTION,scalar,manual,,,,"T0",active,1.0.0,gov
+F_AP_MIN_TIER,access_policy,最低层级,该动作所需的最低授权层级,code,,,CT_POLICY_TIER,scalar,manual,,,,"T0",active,1.0.0,gov
+F_OW_WINDOW_TYPE,observation_window,观测窗口类型,简历覆盖期/平台活跃期/随访期/在职期,code,,,CT_WINDOW_TYPE,scalar,manual,,,,"T1",active,1.0.0,research
+F_OW_START_DATE,observation_window,窗口开始,,date,,,,scalar,manual,,,,"T1",active,1.0.0,research
+F_OW_END_DATE,observation_window,窗口结束,为空表示持续中,date,,,,scalar,manual,,,,"T1",active,1.0.0,research
+F_FO_FIRST_DATE,first_occurrence,首次具备日期,回答何时首次具备该能力,date,,,,scalar,derived,,,由主张与证据的最早时间计算,"T1",active,1.0.0,research
+F_CM_MAPPING_TYPE,concept_mapping,映射类型,等价/上位/下位/相关/人工,code,,,CT_MAPPING_TYPE,scalar,manual,,,,"T0",active,1.0.0,research
+F_DR_VERSION,dataset_release,数据集版本,SemVer三段语义,string,,,,scalar,manual,,,,"T0",active,1.0.0,ops
+F_DR_CODEBOOK_URI,dataset_release,数据字典地址,为空则不允许发布,string,,,,scalar,manual,,,,"T0",active,1.0.0,ops
+F_DR_STATUS,dataset_release,发布状态,草稿/复核/已发布/退役,code,,,CT_RELEASE_STATUS,scalar,manual,,,,"T0",active,1.0.0,ops
+F_SRC_TYPE,source_registry,来源类型,平台接口/网页采集/官方文件等,code,,,CT_SOURCE_TYPE,scalar,manual,,,,"T0",active,1.0.0,data
+F_PRV_METHOD,provenance,抽取方法,HTML解析/模型抽取/人工录入等,code,,,CT_PROVENANCE_METHOD,scalar,system,,,,"T0",active,1.0.0,data
+F_PRV_EVIDENCE_GRADE,provenance,证据分级,A/B/C/D四级,code,,,CT_EVIDENCE_GRADE,scalar,manual,,,,"T0",active,1.0.0,data
+F_OCC_CNOCCODE,occupation,大典细类码,《职业分类大典2022》细类代码,string,,,,scalar,manual,,,,"T0",active,1.0.0,research
+F_OCC_ISCO08,occupation,ISCO-08码,国际标准职业分类码,string,,,,scalar,manual,,,,"T0",active,1.0.0,research
+F_OCC_ONETSOC,occupation,O*NET-SOC码,含xx细分的美国职业码,string,,,,scalar,manual,,,,"T0",active,1.0.0,research
+F_CONCEPT_ESCO_URI,concept,ESCO技能URI,全球唯一技能主键,string,,,,scalar,manual,,,data.europa.eu/esco/skill/{uuid},"T0",active,1.0.0,research
+F_EV_CEL_LEVEL,evidence,CEL证据等级,E0自述到E4履职记录五级,code,,,CT_CEL_LEVEL,scalar,manual,,,决定匹配分的证据折扣,"T1",active,1.0.0,research
+F_JOB_ZONE,job_posting,岗位准备度,对标O*NET Job Zone 1-5,code,,,CT_JOB_ZONE,scalar,derived,,,,"T0",active,1.0.0,research
+F_JOB_PARSE_CONF,job_posting,解析置信度,语义模棱两可时降低而非硬判,number,,0-1,,scalar,derived,,,,"T0",active,1.0.0,data
+F_PERSON_PII_NAME,person_pii,姓名密文,AES 加密存储；仅 T3 可在线查看且永不导出,string,,,,scalar,system,,,pgcrypto,"T3",active,1.0.0,gov
+F_PERSON_PII_CONTACT,person_pii,联系方式密文,电话与邮箱与微信；加密存储,string,,,,scalar,system,,,pgcrypto,"T3",active,1.0.0,gov
+F_PERSON_PII_ID_HASH,person_pii,证件号哈希,HMAC 用于去重不可还原,string,,,,scalar,system,,,HMAC-SHA256,"T3",active,1.0.0,gov
+F_CWA_MUST_DELETE,consent_withdrawal_action,必须删除清单,撤回同意后须删除的对象,array,,,,array,manual,,,,"T0",active,1.0.0,gov
+F_CWA_KEEP_AGG,consent_withdrawal_action,可留聚合,是否允许保留不可反推的聚合,boolean,,,,scalar,manual,,,,"T0",active,1.0.0,gov
+F_SR_REQUEST_TYPE,subject_request,请求类型,查阅/更正/删除/撤回/解释/拒绝自动化,code,,,CT_SUBJECT_REQUEST_TYPE,scalar,manual,,,,"T1",active,1.0.0,gov
+F_SR_DUE_AT,subject_request,应答复时间,按 SLA 计算,datetime,,,,scalar,derived,,,,"T1",active,1.0.0,gov
+F_SR_REJECT_BASIS,subject_request,拒绝依据,拒绝必须可引用法律依据,text,,,,scalar,manual,,,,"T1",active,1.0.0,gov
+F_RP_ENTITY,retention_policy,保留对象,表名或逻辑对象名,string,,,,scalar,manual,,,,"T0",active,1.0.0,gov
+F_RP_RETAIN_DAYS,retention_policy,保留天数,最小必要原则,integer,天,1-10000,,scalar,manual,,,,"T0",active,1.0.0,gov
+F_RP_ACTION,retention_policy,到期动作,删除/匿名化/归档,code,,,CT_RETENTION_ACTION,scalar,manual,,,,"T0",active,1.0.0,gov
+F_RP_LEGAL_HOLD,retention_policy,法律冻结,涉诉时冻结不删,boolean,,,,scalar,manual,,,,"T0",active,1.0.0,gov
+F_IR_SEVERITY,incident_report,事件严重度,低/中/高/严重,code,,,CT_SEVERITY,scalar,manual,,,,"T2",active,1.0.0,gov
+F_IR_SUBJECT_COUNT,incident_report,涉及人数,受影响主体数,integer,人,0-100000000,,scalar,manual,,,,"T2",active,1.0.0,gov
+F_SRC_TAKEDOWN,source_registry,下架时间,收到合规要求后的下架时刻,datetime,,,,scalar,manual,,,,"T0",active,1.0.0,gov

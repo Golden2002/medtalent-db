@@ -1,0 +1,51 @@
+# ============================================================================
+#  .gitignore —— 只提交源码、文档与结构定义；不提交任何可重建的产物
+#
+#  原则：仓库应该只包含"人写的东西"。所有能一条命令重建的（语料、落盘原文、
+#  备份包、静态页、PDF）都不入库——既避免仓库膨胀，也避免把生成物误当成事实来源。
+#  重建方法见 README「快速开始」。
+# ============================================================================
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.venv/
+venv/
+env/
+
+# ---- 本地工具链 ----
+# PostgreSQL 便携版（约 300MB）与数据目录，与本机路径绑定，绝不应入库
+.tools/
+*.log
+
+# ---- 备份包：含全库转储与用户数据 XLSX ----
+ops/backup/bk_*/
+ops/backup/*.dump
+ops/backup/*.xlsx
+ops/backup/*.tar.gz
+
+# ---- 生成物：可一条命令重建 ----
+# 岗位语料（gen_jd_corpus.py）与 L0 落盘原文（采集管道产出）
+ops/fixtures/jd/
+data/raw/
+data/interim/
+data/processed/
+# 静态演示页与 PDF（static_site.py）、字典导出（load_catalog.py）
+demo/dist/
+dist/
+# 分析产物与性能基线（运行期生成）
+analysis/
+
+# ---- 编辑器 / 操作系统 ----
+.vscode/
+.idea/
+*.swp
+*~
+Thumbs.db
+Desktop.ini
+.DS_Store

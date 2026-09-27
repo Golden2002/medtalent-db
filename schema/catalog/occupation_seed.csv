@@ -1,0 +1,152 @@
+occupation_id,parent_id,level,family,label_zh,label_en,medical_reliance,transition_ease,license_required,degree_typical,entry_paths,isco08_code,code_status,description
+OCC-F01,,1,F01,临床医疗,Clinical Care,5,1,C01|C02,D3|D4,需考证|需规培,22,E,医院与基层诊疗主体
+OCC-F01-01,OCC-F01,2,F01,临床医师,Medical Practitioners,5,1,C01|C02,D3|D4,需考证|需规培,221,E,内科外科等各专科医师
+OCC-F01-01-01,OCC-F01-01,3,F01,住院医师,Resident Physician,5,1,C01|C02,D3|D4,需考证|需规培,2211,E,规培阶段主体岗位
+OCC-F01-01-02,OCC-F01-01,3,F01,主治医师,Attending Physician,5,0,C01|C02|C03,D4,需考证|需规培,2212,E,需多年临床积累
+OCC-F01-01-03,OCC-F01-01,3,F01,全科医师,General Practitioner,5,2,C01|C02,D3,需考证|需规培,2211,E,基层与社区卫生主力
+OCC-F01-01-04,OCC-F01-01,3,F01,急诊科医师,Emergency Physician,5,1,C01|C02,D3|D4,需考证|需规培,2212,E,高强度高周转
+OCC-F01-01-05,OCC-F01-01,3,F01,麻醉科医师,Anesthesiologist,5,1,C01|C02,D3|D4,需考证|需规培,2212,E,手术平台核心
+OCC-F01-01-06,OCC-F01-01,3,F01,精神科医师,Psychiatrist,5,1,C01|C02,D3|D4,需考证|需规培,2212,E,需求增长快
+OCC-F01-02,OCC-F01,2,F01,医学技术与医技,Medical Technologists,4,2,C01,D3|D4,需考证,32,E,影像检验病理等技术岗位
+OCC-F01-02-01,OCC-F01-02,3,F01,影像科医师,Radiologist,5,1,C01|C02,D3|D4,需考证|需规培,2212,E,读片为主
+OCC-F01-02-02,OCC-F01-02,3,F01,病理科医师,Pathologist,5,1,C01|C02,D4,需考证|需规培,2212,E,诊断金标准
+OCC-F01-02-03,OCC-F01-02,3,F01,医学检验技师,Medical Laboratory Technician,4,3,,D1|D2|D3,应届直投,3212,E,检验科主力
+OCC-F01-02-04,OCC-F01-02,3,F01,医学影像技师,Radiologic Technologist,4,3,,D1|D2|D3,应届直投,3211,E,设备操作
+OCC-F01-03,OCC-F01,2,F01,非公立与新型医疗,Private & Digital Care,4,2,C01,D3|D4,需考证|需经验,22,E,民营与互联网医疗
+OCC-F01-03-01,OCC-F01-03,3,F01,医美主诊医师,Aesthetic Physician,4,2,C01|C02,D3|D4,需考证|需经验,2212,E,消费医疗
+OCC-F01-03-02,OCC-F01-03,3,F01,互联网医院医师,Telehealth Physician,4,3,C01|C02,D3,需考证,2211,E,线上问诊
+OCC-F01-03-03,OCC-F01-03,3,F01,健康体检医师,Health Checkup Physician,4,3,C01,D3,需考证,2211,E,体检中心
+OCC-F02,,1,F02,药企医学事务与临床研发,Pharma Medical Affairs & Clinical Development,4,3,C06,D3|D4,应届直投|需经验,,N,医学生最主流的非临床去向
+OCC-F02-01,OCC-F02,2,F02,医学事务,Medical Affairs,4,3,,D3|D4,应届直投|需经验,,N,科学交流与证据传递
+OCC-F02-01-01,OCC-F02-01,3,F02,医学科学联络官,Medical Science Liaison (MSL),4,3,,D3|D4,需经验,,N,专家学术沟通
+OCC-F02-01-02,OCC-F02-01,3,F02,医学顾问,Medical Advisor,4,3,,D3|D4,需经验,,N,产品医学策略
+OCC-F02-01-03,OCC-F02-01,3,F02,医学写作,Medical Writer,3,4,,D3|D4,应届直投,,N,临床与监管文件撰写
+OCC-F02-01-04,OCC-F02-01,3,F02,市场准入与HEOR,Market Access & HEOR,3,3,,D3|D4,应届直投,,N,卫生经济学与准入
+OCC-F02-02,OCC-F02,2,F02,临床研发与运营,Clinical Development & Operations,3,4,C06,D3|D4,应届直投,,N,临床试验全链条
+OCC-F02-02-01,OCC-F02-02,3,F02,临床监查员,Clinical Research Associate (CRA),3,4,C06,D2|D3,应届直投,2433,E,应届友好
+OCC-F02-02-02,OCC-F02-02,3,F02,临床数据管理员,Clinical Data Manager,2,4,,D3|D4,应届直投,2521,E,数据质量
+OCC-F02-02-03,OCC-F02-02,3,F02,临床项目经理,Clinical Project Manager,3,3,,D3|D4,需经验,1223,E,需项目经验
+OCC-F02-02-04,OCC-F02-02,3,F02,生物统计师,Biostatistician,2,4,,D3|D4,应届直投,2120,E,统计方法学
+OCC-F02-03,OCC-F02,2,F02,注册与安全,Regulatory & Safety,3,4,,D3|D4,应届直投,,N,合规与风险
+OCC-F02-03-01,OCC-F02-03,3,F02,药品注册专员,Regulatory Affairs Specialist,3,4,,D3|D4,应届直投,,N,注册申报
+OCC-F02-03-02,OCC-F02-03,3,F02,药物警戒专员,Pharmacovigilance Specialist,3,4,,D3|D4,应届直投,,N,不良反应监测
+OCC-F03,,1,F03,医疗器械与IVD,Medical Devices & IVD,3,3,,D3|D4,应届直投,,N,器械与体外诊断
+OCC-F03-01,OCC-F03,2,F03,临床与注册,Clinical & Regulatory,4,3,,D3|D4,应届直投,,N,器械合规与临床评价
+OCC-F03-01-01,OCC-F03-01,3,F03,临床评价工程师,Clinical Evaluation Engineer,4,3,,D3|D4,应届直投,,N,器械临床评价
+OCC-F03-01-02,OCC-F03-01,3,F03,器械注册专员,Device Regulatory Specialist,3,4,,D3|D4,应届直投,,N,注册申报
+OCC-F03-01-03,OCC-F03-01,3,F03,临床应用专员,Clinical Application Specialist,4,3,,D3,应届直投,,N,术式与设备支持
+OCC-F03-02,OCC-F03,2,F03,产品与研发,Product & R&D,3,3,,D3|D4,应届直投,,N,器械产品化
+OCC-F03-02-01,OCC-F03-02,3,F03,器械产品经理,Device Product Manager,3,3,,D3|D4,需经验,,N,需求与路线
+OCC-F03-02-02,OCC-F03-02,3,F03,IVD研发工程师,IVD R&D Engineer,3,3,,D3|D4,应届直投,2131,E,试剂与平台
+OCC-F04,,1,F04,CRO与临床研究服务,CRO & Clinical Research Services,3,4,C06,D2|D3|D4,应届直投,,N,临床试验外包服务
+OCC-F04-01,OCC-F04,2,F04,临床运营,Clinical Operations,3,4,C06,D2|D3,应届直投,,N,监查与协调
+OCC-F04-01-01,OCC-F04-01,3,F04,CRO临床监查员,CRO CRA,3,4,C06,D2|D3,应届直投,2433,E,应届为主入口
+OCC-F04-01-02,OCC-F04-01,3,F04,临床协调员,Clinical Research Coordinator (CRC),3,4,C06,D1|D2|D3,应届直投,3256,E,院内协调
+OCC-F04-01-03,OCC-F04-01,3,F04,SMO现场管理,SMO Site Manager,3,3,C06,D2|D3,需经验,,N,中心管理
+OCC-F04-02,OCC-F04,2,F04,数据与统计,Data & Statistics,2,4,,D3|D4,应届直投,,N,数据管理与统计
+OCC-F04-02-01,OCC-F04-02,3,F04,临床数据管理,Clinical Data Manager (CRO),2,4,,D3|D4,应届直投,2521,E,建库与清理
+OCC-F04-02-02,OCC-F04-02,3,F04,生物统计师,Biostatistician (CRO),2,4,,D3|D4,应届直投,2120,E,统计分析与报告
+OCC-F05,,1,F05,生物技术与创新药研发,Biotech & Drug Discovery,3,2,,D4,应届直投|需再读学位,21,E,早期研发与转化
+OCC-F05-01,OCC-F05,2,F05,研发与转化,Discovery & Translational,4,2,,D4,应届直投|需再读学位,2131,E,实验室科研主路径
+OCC-F05-01-01,OCC-F05-01,3,F05,研发科学家,Research Scientist,4,2,,D4,应届直投,2131,E,博士为主
+OCC-F05-01-02,OCC-F05-01,3,F05,转化医学研究员,Translational Researcher,4,2,,D4,应届直投,2131,E,桥接临床与研发
+OCC-F05-01-03,OCC-F05-01,3,F05,生物信息分析师,Bioinformatics Analyst,2,4,,D3|D4,应届直投,2131,E,组学数据处理
+OCC-F05-02,OCC-F05,2,F05,商务与临床前,BD & Preclinical,3,3,,D3|D4,需经验,,N,合作与毒理药理
+OCC-F05-02-01,OCC-F05-02,3,F05,医药商务拓展,Pharma Business Development,3,3,,D3|D4,需经验,1221,E,授权与合作
+OCC-F05-02-02,OCC-F05-02,3,F05,药理毒理研究员,Pharmacology & Toxicology Researcher,4,2,,D4,应届直投,2131,E,安全性评价
+OCC-F06,,1,F06,健康险与医疗支付,Health Insurance & Payment,2,3,,D2|D3,应届直投,,N,核保理赔与健康管理
+OCC-F06-01,OCC-F06,2,F06,核保与理赔,Underwriting & Claims,3,3,,D2|D3,应届直投,,N,医学审核
+OCC-F06-01-01,OCC-F06-01,3,F06,健康险核保,Health Underwriter,3,3,,D2|D3,应届直投,2413,E,风险与医学判断
+OCC-F06-01-02,OCC-F06-01,3,F06,理赔医学审核,Claims Medical Reviewer,3,4,,D2|D3,应届直投,,N,理赔医学判断
+OCC-F06-01-03,OCC-F06-01,3,F06,TPA医学顾问,TPA Medical Consultant,3,4,,D3,应届直投,,N,第三方服务
+OCC-F06-02,OCC-F06,2,F06,健康管理,Health Management,2,4,C11,D2|D3,应届直投,3253,E,慢病与健康促进
+OCC-F06-02-01,OCC-F06-02,3,F06,健康管理师,Health Manager,2,4,C11,D2|D3,应届直投,3253,E,健康干预
+OCC-F07,,1,F07,咨询与投资,Consulting & Investment,2,2,,D3|D4,应届直投|需经验,24,E,医药行业分析与投资
+OCC-F07-01,OCC-F07,2,F07,管理咨询,Management Consulting,2,3,,D3|D4,应届直投,2421,E,案例面试门槛
+OCC-F07-01-01,OCC-F07-01,3,F07,医药咨询顾问,Healthcare Consultant,3,3,,D3|D4,应届直投,2421,E,行业洞察
+OCC-F07-02,OCC-F07,2,F07,投资研究,Investment Research,2,2,,D3|D4,需经验,24,E,行研与投资
+OCC-F07-02-01,OCC-F07-02,3,F07,券商医药行业研究员,Sell-side Healthcare Analyst,3,2,,D3|D4,需经验,2413,E,研究与建模
+OCC-F07-02-02,OCC-F07-02,3,F07,医疗投资经理,Healthcare Investment Manager,3,2,,D3|D4,需经验,2412,E,一级市场
+OCC-F08,,1,F08,医疗AI与数字健康,Health AI & Digital Health,3,3,,D3|D4,应届直投,,N,医疗数据与智能产品
+OCC-F08-01,OCC-F08,2,F08,医学与真实世界研究,Medical & RWE,4,3,,D3|D4,应届直投,,N,临床视角的数字化
+OCC-F08-01-01,OCC-F08-01,3,F08,医疗AI医学经理,Health AI Medical Manager,4,3,,D3|D4,应届直投,,N,医学需求与验证
+OCC-F08-01-02,OCC-F08-01,3,F08,真实世界研究经理,RWE Manager,4,3,,D3|D4,需经验,,N,RWS项目
+OCC-F08-01-03,OCC-F08-01,3,F08,医学标注与质控,Medical Annotation & QC,3,4,,D2|D3,应届直投,,N,数据治理
+OCC-F08-02,OCC-F08,2,F08,算法与产品,Algorithm & Product,2,3,,D3|D4,应届直投,25,E,技术侧
+OCC-F08-02-01,OCC-F08-02,3,F08,医疗算法工程师,Health Algorithm Engineer,2,3,,D3|D4,应届直投,2512,E,需编程能力
+OCC-F08-02-02,OCC-F08-02,3,F08,数字健康产品经理,Digital Health Product Manager,2,4,,D3|D4,应届直投,,N,产品设计
+OCC-F09,,1,F09,政府与公共部门,Government & Public Sector,3,2,C01,D3|D4,需考录,24,E,考录与选调
+OCC-F09-01,OCC-F09,2,F09,药品与疾控监管,Regulatory & CDC,4,2,C01,D3|D4,需考录,22,E,技术监管
+OCC-F09-01-01,OCC-F09-01,3,F09,药品审评员,Drug Reviewer,4,2,C01,D4,需考录,2269,E,CDE等技术审评
+OCC-F09-01-02,OCC-F09-01,3,F09,疾控中心技术岗,CDC Technical Officer,4,3,C01,D3|D4,需考录,2263,E,公共卫生
+OCC-F09-02,OCC-F09,2,F09,行政与政策,Administration & Policy,2,2,,D2|D3|D4,需考录,24,E,公务员体系
+OCC-F09-02-01,OCC-F09-02,3,F09,卫健委公务员,Civil Servant (Health Commission),3,2,,D3|D4,需考录,2422,E,卫生行政
+OCC-F09-02-02,OCC-F09-02,3,F09,医保局公务员,Civil Servant (Healthcare Security),3,2,,D3|D4,需考录,2422,E,支付与政策
+OCC-F09-02-03,OCC-F09-02,3,F09,定向选调生,Targeted Selected Graduate,2,2,,D3|D4,需考录,2422,E,部分省份限专业
+OCC-F09-02-04,OCC-F09-02,3,F09,海关卫生检疫,Customs Health Quarantine,4,3,C01,D3|D4,需考录,3257,E,口岸卫生
+OCC-F10,,1,F10,高校与科研,Academia & Research,4,2,,D4,应届直投|需再读学位,23,E,教学与科研
+OCC-F10-01,OCC-F10,2,F10,科研岗,Research Positions,4,2,,D3|D4,应届直投,23,E,实验与课题
+OCC-F10-01-01,OCC-F10-01,3,F10,博士后,Postdoctoral Fellow,4,2,,D4,应届直投,2310,E,过渡性岗位
+OCC-F10-01-02,OCC-F10-01,3,F10,青年教师,Junior Faculty,4,1,,D4,需经验,2310,E,非升即走压力
+OCC-F10-01-03,OCC-F10-01,3,F10,科研助理,Research Assistant,4,4,,D2|D3,应届直投,2310,E,门槛低
+OCC-F10-02,OCC-F10,2,F10,平台与技术支撑,Platform & Support,3,4,,D2|D3,应届直投,32,E,仪器试剂支持
+OCC-F10-02-01,OCC-F10-02,3,F10,实验平台技术员,Core Facility Technician,3,4,,D2|D3,应届直投,3212,E,设备运维
+OCC-F10-02-02,OCC-F10-02,3,F10,试剂仪器技术支持,Reagent & Instrument Support,2,4,,D2|D3,应届直投,2433,E,厂商技术岗
+OCC-F11,,1,F11,出版与传播,Publishing & Communication,3,3,,D3|D4,应届直投,26,E,医学内容与传播
+OCC-F11-01,OCC-F11,2,F11,出版编辑,Publishing & Editing,3,4,,D3|D4,应届直投,2641,E,期刊与图书
+OCC-F11-01-01,OCC-F11-01,3,F11,医学编辑,Medical Editor,3,4,,D3|D4,应届直投,2641,E,期刊与出版社
+OCC-F11-01-02,OCC-F11-01,3,F11,SCI论文服务编辑,Academic Editing Specialist,3,4,,D3|D4,应届直投,2641,E,语言与投稿支持
+OCC-F11-02,OCC-F11,2,F11,媒体与科普,Media & Science Communication,3,3,,D3|D4,应届直投,2642,E,内容创作
+OCC-F11-02-01,OCC-F11-02,3,F11,医学媒体记者,Medical Journalist,3,3,,D3|D4,应届直投,2642,E,垂直媒体
+OCC-F11-02-02,OCC-F11-02,3,F11,科普作者,Science Writer,2,4,,D3|D4,应届直投,2641,E,面向公众
+OCC-F11-02-03,OCC-F11-02,3,F11,医药公关顾问,Pharma PR Consultant,2,3,,D3|D4,应届直投,2432,E,传播策略
+OCC-F12,,1,F12,法务与知识产权,Legal & IP,1,2,C07|C08,D3|D4,需考证,26,E,需额外资格
+OCC-F12-01,OCC-F12,2,F12,法律与合规,Legal & Compliance,2,2,C07,D3|D4,需考证,261,E,医疗法律
+OCC-F12-01-01,OCC-F12-01,3,F12,医疗诉讼律师,Healthcare Litigation Lawyer,2,1,C07,D3|D4,需考证|需再读学位,2611,E,需法考
+OCC-F12-01-02,OCC-F12-01,3,F12,药企合规经理,Pharma Compliance Manager,2,3,,D3|D4,需经验,2619,E,合规体系
+OCC-F12-02,OCC-F12,2,F12,知识产权,Intellectual Property,2,2,C08,D3|D4,需考证,26,E,专利与商标
+OCC-F12-02-01,OCC-F12-02,3,F12,专利代理师,Patent Agent,3,2,C08,D3|D4,需考证,2619,E,生物医药专利
+OCC-F13,,1,F13,教育培训,Education & Training,2,3,,D2|D3|D4,应届直投,23,E,教学与培训
+OCC-F13-01,OCC-F13,2,F13,职业教育,Professional Education,3,4,,D3|D4,应届直投,235,E,医学考试培训
+OCC-F13-01-01,OCC-F13-01,3,F13,医学考研讲师,Medical Exam Instructor,3,4,,D3|D4,应届直投,2351,E,内容与授课
+OCC-F13-01-02,OCC-F13-01,3,F13,规培与继续教育讲师,CME Instructor,3,4,,D3|D4,需经验,2351,E,行业培训
+OCC-F13-02,OCC-F13,2,F13,基础教育与留学,School & Overseas Education,1,3,,D2|D3,应届直投,23,E,跨行教学
+OCC-F13-02-01,OCC-F13-02,3,F13,K12生物教师,K12 Biology Teacher,1,3,,D3,需考证,2330,E,需教师资格
+OCC-F13-02-02,OCC-F13-02,3,F13,国际学校生物教师,International School Biology Teacher,1,3,,D3|D4,应届直投,2330,E,英文授课
+OCC-F13-02-03,OCC-F13-02,3,F13,医学留学顾问,Medical Study Abroad Consultant,2,4,,D2|D3,应届直投,2351,E,咨询销售混合
+OCC-F14,,1,F14,销售与商务,Sales & Business,2,4,,D1|D2|D3,应届直投,24,E,学术推广与渠道
+OCC-F14-01,OCC-F14,2,F14,学术推广,Academic Promotion,3,4,,D2|D3|D4,应届直投,2433,E,医药代表体系
+OCC-F14-01-01,OCC-F14-01,3,F14,医药代表,Medical Representative,3,4,,D1|D2|D3,应届直投,2433,E,需备案
+OCC-F14-01-02,OCC-F14-01,3,F14,器械销售,Device Sales Specialist,2,4,,D2|D3,应届直投,2433,E,术式跟台
+OCC-F14-02,OCC-F14,2,F14,商务拓展,Business Development,2,3,,D3|D4,需经验,12,E,合作与渠道
+OCC-F14-02-01,OCC-F14-02,3,F14,渠道与商务经理,Channel & BD Manager,2,3,,D3|D4,需经验,1221,E,渠道管理
+OCC-F14-02-02,OCC-F14-02,3,F14,海外市场专员,Overseas Market Specialist,2,3,,D3|D4,应届直投,2433,E,需外语
+OCC-F15,,1,F15,交叉与新兴,Emerging & Adjacent,2,3,C11,D2|D3|D4,应届直投,32,E,门槛与天花板差异大
+OCC-F15-01,OCC-F15,2,F15,健康服务,Health Services,2,4,C11,D2|D3,应届直投,32,E,非临床健康岗
+OCC-F15-01-01,OCC-F15-01,3,F15,营养师,Dietitian,3,3,,D2|D3,应届直投,2265,V,ISCO-08 2265 已核验
+OCC-F15-01-02,OCC-F15-01,3,F15,心理咨询师,Counselor,2,3,C12,D2|D3,应届直投,2269,E,需长期训练
+OCC-F15-01-03,OCC-F15-01,3,F15,运动医学与康复师,Sports Medicine & Rehabilitation Specialist,3,3,,D2|D3,应届直投,2264,V,ISCO-08 2264 已核验
+OCC-F15-01-04,OCC-F15-01,3,F15,视光师,Optometrist,3,3,,D2|D3,应届直投,2267,V,ISCO-08 2267 已核验
+OCC-F15-02,OCC-F15,2,F15,新兴业态,New Business Forms,2,3,,D2|D3,应届直投,32,E,形态仍在演化
+OCC-F15-02-01,OCC-F15-02,3,F15,医药电商运营,Pharma E-commerce Operations,2,4,,D2|D3,应届直投,2433,E,平台运营
+OCC-F15-02-02,OCC-F15-02,3,F15,跨境医疗顾问,Cross-border Medical Consultant,3,3,,D3|D4,应届直投,2269,E,需外语
+OCC-F15-02-03,OCC-F15-02,3,F15,宠物医疗医师,Veterinary Physician,3,2,C01,D3|D4,需考证,2250,E,需兽医资格
+OCC-F15-02-04,OCC-F15-02,3,F15,养老健康管理,Elderly Care Manager,2,4,,D2|D3,应届直投,3253,E,机构与社区
+OCC-F15-02-05,OCC-F15-02,3,F15,临床研究护士,Clinical Research Nurse,4,3,C05,D2|D3,应届直投,2221,E,护理背景
+OCC-F15-02-06,OCC-F15-02,3,F15,药事服务药师,Pharmaceutical Care Pharmacist,4,3,C04,D3|D4,需考证,2262,V,ISCO-08 2262 已核验
+OCC-F16,,1,F16,完全跨行,Cross-Industry,0,4,,D3|D4,应届直投,24,E,与医学无关，靠可迁移能力
+OCC-F16-01,OCC-F16,2,F16,互联网与数据,Internet & Data,0,4,,D3|D4,应届直投,25,E,需补技能
+OCC-F16-01-01,OCC-F16-01,3,F16,互联网产品经理,Internet Product Manager,0,4,,D3|D4,应届直投,,N,实习转正为主
+OCC-F16-01-02,OCC-F16-01,3,F16,数据分析师,Data Analyst,1,4,,D3|D4,应届直投,2521,E,需工具能力
+OCC-F16-01-03,OCC-F16-01,3,F16,用户研究员,User Researcher,1,4,,D3|D4,应届直投,2421,E,访谈与洞察
+OCC-F16-02,OCC-F16,2,F16,商业职能,Business Functions,0,4,,D3|D4,应届直投,24,E,管培与供应链
+OCC-F16-02-01,OCC-F16-02,3,F16,管理培训生,Management Trainee,0,4,,D3|D4,应届直投,2421,E,快消等
+OCC-F16-02-02,OCC-F16-02,3,F16,战略咨询顾问,Strategy Consultant,1,3,,D3|D4,应届直投,2421,E,案例面试
+OCC-F16-02-03,OCC-F16-02,3,F16,供应链专员,Supply Chain Specialist,0,4,,D2|D3,应届直投,3323,E,计划与采购
+OCC-F17,,1,F17,自主创业与自由职业,Entrepreneurship & Freelance,2,3,,D2|D3|D4,需经验,12,E,方差极大
+OCC-F17-01,OCC-F17,2,F17,医疗创业,Healthcare Entrepreneurship,3,2,C01,D3|D4,需经验|需考证,12,E,需资源与资质
+OCC-F17-01-01,OCC-F17-01,3,F17,诊所创办者,Clinic Founder,5,1,C01|C02,D3|D4,需考证|需经验,2211,E,资质与资金门槛
+OCC-F17-01-02,OCC-F17-01,3,F17,健康管理工作室主理人,Health Studio Owner,2,3,C11,D2|D3,需经验,,N,轻资产
+OCC-F17-02,OCC-F17,2,F17,个人品牌与顾问,Personal Brand & Consulting,2,3,,D3|D4,需经验,,N,内容与咨询
+OCC-F17-02-01,OCC-F17-02,3,F17,医学内容创作者,Medical Content Creator,2,4,,D2|D3|D4,应届直投,,N,平台化变现
+OCC-F17-02-02,OCC-F17-02,3,F17,独立医学顾问,Independent Medical Consultant,3,3,,D3|D4,需经验,2422,E,项目制

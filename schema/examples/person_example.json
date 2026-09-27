@@ -1,0 +1,195 @@
+{
+  "_comment": "示例记录：一名临床医学专业型硕士，用于验证数据模型的表达力。所有字段均来自 field_catalog_seed.csv。",
+  "_schema_version": "1.0.0",
+  "person": {
+    "person_id": "per_01J8ZQ4M7K2N5P8R3T6V9W2X4Y",
+    "subject_code": "MT-2026-000123",
+    "schema_version": "1.0.0",
+    "status": "active",
+    "enroll_channel": "EC1",
+    "access_tier": "T1",
+    "source_id": "src_selfsignup",
+    "confidence": 0.82,
+    "verify_status": "V2",
+    "quality_flags": ["gpa_scale_inferred"],
+    "valid_from": "2026-03-01",
+    "recorded_at": "2026-03-01T10:22:00+08:00"
+  },
+  "person_demographics": {
+    "birth_year": 1999,
+    "sex": "S2",
+    "hukou_province": "CN-42",
+    "hukou_type": "H2",
+    "political_status": "P1",
+    "health_limits": []
+  },
+  "education_records": [
+    {
+      "education_id": "edu_01J8ZQ4M7K2N5P8R3T6V9W2X50",
+      "degree_level": "D2",
+      "degree_name": "临床医学学士",
+      "school_name": "华中科技大学同济医学院",
+      "school_tags": ["985", "211", "双一流"],
+      "major_raw": "临床医学",
+      "major_code": "M10001",
+      "is_clinical": true,
+      "start_date": "2017-09-01",
+      "end_date": "2022-06-30",
+      "is_graduated": true,
+      "gpa": 3.7,
+      "gpa_scale": 4.0,
+      "rank_percentile": 12.5,
+      "verify_status": "V3",
+      "confidence": 0.95
+    },
+    {
+      "education_id": "edu_01J8ZQ4M7K2N5P8R3T6V9W2X51",
+      "degree_level": "D3",
+      "degree_name": "临床医学硕士（专业型）",
+      "school_name": "华中科技大学同济医学院",
+      "major_raw": "外科学",
+      "major_code": "M10001",
+      "is_clinical": true,
+      "start_date": "2022-09-01",
+      "end_date": "2025-06-30",
+      "is_graduated": true,
+      "rank_percentile": 8.0,
+      "verify_status": "V2",
+      "confidence": 0.9
+    }
+  ],
+  "training_records": [
+    {
+      "training_id": "trn_01J8ZQ4M7K2N5P8R3T6V9W2X52",
+      "training_type": "T01",
+      "institution": "华中科技大学同济医学院附属同济医院",
+      "department": "普通外科",
+      "start_date": "2022-09-01",
+      "end_date": "2025-06-30",
+      "months": 33.0,
+      "is_completed": true,
+      "verify_status": "V3"
+    }
+  ],
+  "clinical_exposures": [
+    {
+      "exposure_id": "cln_01J8ZQ4M7K2N5P8R3T6V9W2X53",
+      "department": "普通外科",
+      "procedure_count": 210,
+      "case_volume": 800,
+      "duration_months": 12.0,
+      "skills": ["con_skl_wound_closure", "con_skl_laparoscopy_basic", "con_skl_periop_management"],
+      "verify_status": "V2"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "cre_01J8ZQ4M7K2N5P8R3T6V9W2X54",
+      "credential_type": "C01",
+      "name": "临床类别执业医师资格证",
+      "issuing_body": "国家卫生健康委员会",
+      "obtained_date": "2023-11-15",
+      "status": "CS1",
+      "verify_status": "V3",
+      "confidence": 1.0
+    },
+    {
+      "credential_id": "cre_01J8ZQ4M7K2N5P8R3T6V9W2X55",
+      "credential_type": "C09",
+      "name": "CET-6",
+      "obtained_date": "2020-06-01",
+      "status": "CS1",
+      "verify_status": "V2",
+      "confidence": 0.9
+    }
+  ],
+  "research_outputs": [
+    {
+      "output_id": "res_01J8ZQ4M7K2N5P8R3T6V9W2X56",
+      "output_type": "RO1",
+      "title": "某术式术后并发症危险因素分析",
+      "venue": "Frontiers in Surgery",
+      "doi": "10.3389/fsurg.2024.00000",
+      "year": 2024,
+      "author_position": "AP2",
+      "is_first_author": true,
+      "if_value": 1.8,
+      "jcr_quartile": "Q2",
+      "verify_status": "V3"
+    }
+  ],
+  "evidence": [
+    {
+      "evidence_id": "evd_01J8ZQ4M7K2N5P8R3T6V9W2X57",
+      "evidence_type": "EV2",
+      "title": "一作论文 DOI:10.3389/fsurg.2024.00000",
+      "uri": "https://doi.org/10.3389/fsurg.2024.00000",
+      "verifiability": 5,
+      "access_tier": "T0"
+    },
+    {
+      "evidence_id": "evd_01J8ZQ4M7K2N5P8R3T6V9W2X58",
+      "evidence_type": "EV8",
+      "title": "普外科轮转出科考核记录",
+      "uri": "L0://raw/person/MT-2026-000123/rotation_eval_2024.pdf",
+      "verifiability": 2,
+      "access_tier": "T2"
+    }
+  ],
+  "skill_assertions": [
+    {
+      "assertion_id": "skl_01J8ZQ4M7K2N5P8R3T6V9W2X59",
+      "concept_id": "con_abl_literature_review",
+      "level": 4,
+      "level_basis": "LB4",
+      "evidence_id": "evd_01J8ZQ4M7K2N5P8R3T6V9W2X57",
+      "confidence": 0.85,
+      "transferability": 4,
+      "transfer_note": "能在海量文献中定位证据并评估质量，等价于行业研究中的信息检索与证据分级能力",
+      "first_observed_at": "2023-03-01",
+      "last_verified_at": "2026-03-01T10:22:00+08:00",
+      "verify_status": "V3"
+    },
+    {
+      "assertion_id": "skl_01J8ZQ4M7K2N5P8R3T6V9W2X5A",
+      "concept_id": "con_abl_crisis_decision",
+      "level": 4,
+      "level_basis": "LB6",
+      "evidence_id": "evd_01J8ZQ4M7K2N5P8R3T6V9W2X58",
+      "confidence": 0.70,
+      "transferability": 3,
+      "transfer_note": "术中突发出血的处理经验，等价于高压场景下的快速决策与流程执行",
+      "verify_status": "V2"
+    },
+    {
+      "assertion_id": "skl_01J8ZQ4M7K2N5P8R3T6V9W2X5B",
+      "concept_id": "con_skl_stakeholder_communication",
+      "level": 3,
+      "level_basis": "LB1",
+      "evidence_id": null,
+      "confidence": 0.45,
+      "transferability": 4,
+      "transfer_note": "与患者家属的高难度沟通经验可迁移至客户沟通与冲突处理",
+      "verify_status": "V1",
+      "_note": "无证据引用，置信度按规则封顶 0.5 且必须标为低可信"
+    }
+  ],
+  "preferences": [
+    {"pref_type": "PF1", "value_code": "CN-31", "weight": 0.9, "is_hard": true},
+    {"pref_type": "PF3", "value_code": "F02", "weight": 0.7, "is_hard": false},
+    {"pref_type": "PF4", "value_raw": "25-35万/年", "weight": 0.6},
+    {"pref_type": "PF8", "value_code": "true", "weight": 1.0, "is_hard": false}
+  ],
+  "provenance": [
+    {
+      "provenance_id": "prv_01J8ZQ4M7K2N5P8R3T6V9W2X5C",
+      "record_uid": "person:per_01J8ZQ4M7K2N5P8R3T6V9W2X4Y",
+      "source_id": "src_selfsignup",
+      "ingest_run_id": "run_2026-03-01_selfsignup_001",
+      "extract_method": "resume_parse",
+      "extractor_version": "resume_parser@0.3.1",
+      "fetched_at": "2026-03-01T10:22:00+08:00",
+      "human_verified": true
+    }
+  ]
+}
