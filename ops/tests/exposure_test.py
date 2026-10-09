@@ -72,6 +72,67 @@ def fetch(path):
         return e.code, e.read().decode("utf-8", "replace")
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _fetch_with(path, cookie):
+    """带会话 cookie 取页面/CSV，返回 (状态, 文本, 响应头字典)。"""
+    req = urllib.request.Request(ROOT + path)
+    req.add_header("Cookie", cookie)
+    try:
+        with urllib.request.build_opener(_NoRedirect()).open(req, timeout=90) as r:
+            return r.status, r.read().decode("utf-8", "replace"), dict(r.headers)
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode("utf-8", "replace"), dict(e.headers)
+
+
+def _login_t3():
+    """用一个临时 T3 账号登录，拿会话 cookie（导出禁令对 T3 才有意义：
+    低等级本来就看不到那些列，测不出"能看不能导"）。
+
+    账号自建自删，前缀 exposure_test@，不污染库。
+    """
+    import psycopg
+    from psycopg.rows import dict_row
+    email, pw = "exposure_test@local.test", "exposure-test-pw-3a71"
+    admin = ("host=127.0.0.1 port=55432 dbname=medtalent user=postgres connect_timeout=5 "
+             "options='-c search_path=mt,public'")
+    try:
+        with psycopg.connect(admin, row_factory=dict_row, autocommit=True) as c:
+            c.execute("""DELETE FROM mt.web_session WHERE user_id IN
+                           (SELECT user_id FROM mt.app_user WHERE email=%s)""", (email,))
+            c.execute("DELETE FROM mt.app_user WHERE email=%s", (email,))
+            c.execute("SELECT mt.web_user_add(%s,%s,'T3','暴露面测试')", (email, pw))
+        req = urllib.request.Request(ROOT + "/login")
+        req.data = urllib.parse.urlencode({"email": email, "password": pw}).encode()
+        req.method = "POST"
+        try:
+            with urllib.request.build_opener(_NoRedirect()).open(req, timeout=30) as r:
+                sc = r.headers.get("Set-Cookie") or ""
+        except urllib.error.HTTPError as e:
+            sc = e.headers.get("Set-Cookie") or ""
+        return sc.split(";")[0]
+    except Exception:                                     # noqa: BLE001
+        return None
+
+
+def _cleanup_t3():
+    import psycopg
+    admin = ("host=127.0.0.1 port=55432 dbname=medtalent user=postgres connect_timeout=5 "
+             "options='-c search_path=mt,public'")
+    try:
+        with psycopg.connect(admin, autocommit=True) as c:
+            c.execute("""DELETE FROM mt.web_session WHERE user_id IN
+                           (SELECT user_id FROM mt.app_user
+                             WHERE email='exposure_test@local.test')""")
+            c.execute("DELETE FROM mt.app_user WHERE email='exposure_test@local.test'")
+            c.execute("DELETE FROM mt.access_log WHERE actor='exposure_test@local.test'")
+    except Exception:                                     # noqa: BLE001
+        pass
+
+
 def main():
     portal.meta()
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), portal.Handler)
@@ -168,9 +229,52 @@ def main():
         check("READ ONLY" in inspect.getsource(portal.db),
               "请求路径仍在 READ ONLY 事务里（写不进去是被数据库拒绝的，不是靠自觉）")
 
+        # ===============================================================
+        print("\n【E】导出控制：动作级禁令必须真的拦住「带走」，但不影响「看」")
+        # 背景：mt.access_policy 有 5 条 action='export_row'、min_tier='X' 的禁令
+        # （体检受限项/姓名密文/联系方式/证件哈希/JD 原文），但此前**列级策略里 X 数为 0**
+        # —— 也就是"禁止导出"只是文档，CSV 照样导得出去。
+        # 迁移 032 把它落成显式表 export_denied，并在 to_csv()（CSV 唯一出口）强制。
+        import psycopg as _pg2
+        from psycopg.rows import dict_row as _dr2
+        admin = ("host=127.0.0.1 port=55432 dbname=medtalent user=postgres connect_timeout=5 "
+                 "options='-c search_path=mt,public'")
+        with _pg2.connect(admin, row_factory=_dr2) as c:
+            # E1 收敛性：每条 export_row=X 策略都必须有物理落点（这是 I4.4 的修复）
+            gap = c.execute("""
+                SELECT ap.policy_id FROM access_policy ap
+                 WHERE ap.action='export_row' AND ap.min_tier='X'
+                   AND NOT EXISTS (SELECT 1 FROM export_denied ed
+                                    WHERE ed.policy_id = ap.policy_id)""").fetchall()
+            n_pol = c.execute("""SELECT count(*) AS n FROM access_policy
+                                  WHERE action='export_row' AND min_tier='X'""").fetchone()["n"]
+            n_col = c.execute("SELECT count(*) AS n FROM export_denied").fetchone()["n"]
+        check(not gap, "%d 条「禁止导出」策略全部有物理落点（共 %d 列）；空转的：%s"
+              % (n_pol, n_col, "、".join(g["policy_id"] for g in gap) or "无"))
+        check(n_col >= n_pol, "落点列数（%d）不少于策略数（%d）" % (n_col, n_pol))
+
+        # E2 CSV 里必须没有禁导列，且响应头要告知（不能静默删列）
+        t3_cookie = _login_t3()
+        if t3_cookie:
+            for path, needle in (("/t/person_demographics.csv", "health_limits"),
+                                 ("/t/person_pii.csv", "full_name_enc"),
+                                 ("/t/job_posting.csv", "raw_text_ref")):
+                st, b, hdr = _fetch_with(path, t3_cookie)
+                head = b.splitlines()[0] if b else ""
+                check(st == 200 and needle not in head,
+                      "%s 的表头里没有禁导列 %s" % (path, needle))
+                check("X-Export-Denied" in dict(hdr) and needle in dict(hdr)["X-Export-Denied"],
+                      "  响应头 X-Export-Denied 明确列出被移除的列（不静默删列）")
+            # E3 反证：**页面里仍然看得到**该列 —— "能看"与"能导"是两件事，
+            # 砍掉"看"不是这些策略要表达的意思。
+            st, b, _ = _fetch_with("/t/person_demographics", t3_cookie)
+            check(st == 200 and "health_limits" in b,
+                  "但页面上仍然看得到 health_limits（能看 != 可以带走）")
+
     finally:
         srv.shutdown()
         srv.server_close()
+        _cleanup_t3()
 
     return H.report(width=74, list_fails=True)
 

@@ -149,7 +149,11 @@ DOMAIN_TABLES = {
                    # 列级剖析快照（schema/sql/027_column_profile.sql 创建）：
                    # 它是**数据质量**的产物（空值率/基数/Top-K），不是业务数据，
                    # 所以归治理域而不是人才/岗位域。目录页只读它，计算由 ops/profile.py 离线做。
-                   "column_profile"],
+                   "column_profile",
+                   # 导出禁令的显式落点（schema/sql/032_export_control.sql 创建）：
+                   # 动作级策略（禁止导出）→ 物理列。与 column_policy 分工：
+                   # 前者管"能不能带走"，后者管"能不能看"。
+                   "export_denied"],
     "小程序接入": ["external_identity", "response_session", "answer", "experience_episode",
                    "experience_task", "crosswalk", "sync_event"],
     "备份与发布": ["backup_policy", "backup_run", "restore_run", "dataset_release"],
@@ -203,6 +207,9 @@ class Session:
 
 ANON = Session()
 
+# 导出禁令的进程内缓存（迁移 032）
+_EXPORT_CACHE = None
+
 # 当前请求的会话：用线程局部存放，而不是把它穿进 20 多个 view 函数的签名。
 # 为什么线程局部在这里是安全的：`ThreadingHTTPServer` 一个请求一个线程，
 # 会话不会跨请求泄漏；而且它只用于**渲染**（页头显示身份），
@@ -212,6 +219,7 @@ _LOCAL = threading.local()
 
 def set_current_session(s: Session):
     _LOCAL.session = s
+    _LOCAL.csv_denied = None
 
 
 def current_session() -> Session:
@@ -1006,12 +1014,63 @@ def sql_box(sqltext, note="") -> str:
             % (esc(note or "本页数据来自："), pretty))
 
 
-def to_csv(cols, rows) -> bytes:
+def export_policy() -> dict:
+    """导出禁令（迁移 032 的 mt.export_denied），进程内缓存一次。
+
+    为什么要按**列名**再存一份：`/sql` 与图表面板的输出列**不带来源表**
+    （用户写什么 SQL 都可能），无法按表判断。此时按列名保守拦截 ——
+    宁可多拦一个同名的无害列，也不能放过一个该拦的。
+    这个取舍是刻意的，写在这里以免下一个人以为漏了什么。
+    """
+    global _EXPORT_CACHE
+    if _EXPORT_CACHE is None:
+        by_table, by_name = {}, {}
+        try:
+            with admin_db() as c:
+                for r in q(c, "SELECT table_name, column_name, because FROM export_denied"):
+                    by_table[(r["table_name"], r["column_name"])] = r["because"]
+                    by_name.setdefault(r["column_name"], []).append(r["table_name"])
+                _EXPORT_CACHE = {"by_table": by_table, "by_name": by_name}
+        except psycopg.Error:
+            # 读不到就**不拦**？不 —— 禁令读不到时应该按"最严"处理是做不到的
+            # （不知道禁哪些列）。但也不能因为读不到就崩掉所有导出。
+            # 选择：缓存为空并**在日志里说清楚**，同时让 refresh 能重试。
+            _EXPORT_CACHE = {"by_table": {}, "by_name": {}, "error": True}
+    return _EXPORT_CACHE
+
+
+def export_filter(cols, table=None):
+    """按导出禁令过滤列。返回 (保留的列, 被移除的列)。
+
+    与列级权限的分工：`column_policy` 管"能不能**看**"，本禁令管"能不能**带走**"。
+    所以被移除的列**仍然会出现在页面上** —— 那是设计，不是 bug。
+    """
+    pol = export_policy()
+    keep, dropped = [], []
+    for c in cols:
+        hit = (table, c) in pol["by_table"] if table else False
+        if not hit:
+            hit = c in pol["by_name"]
+        (dropped if hit else keep).append(c)
+    return keep, dropped
+
+
+def to_csv(cols, rows, table=None) -> bytes:
+    """CSV 序列化的**唯一出口** —— 导出禁令在这里强制，而不是靠各调用点自觉。
+
+    与 `db()`（权限注入）和 `_send`（审计）同一个道理：安全性质挂在**单点**上。
+    """
+    allowed, dropped = export_filter(cols, table)
+    if dropped:
+        # 记到线程局部，由 _send 写进响应头（见 _send 的说明）。
+        # 不能塞进 CSV 正文：那会破坏表头、让所有按行解析的脚本（含本项目的
+        # "CSV 行数 == 页面行数"断言）全部失效。
+        _LOCAL.csv_denied = dropped
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(cols)
+    w.writerow(allowed)
     for r in rows:
-        w.writerow([r.get(c) for c in cols])
+        w.writerow([r.get(c) for c in allowed])
     return ("\ufeff" + buf.getvalue()).encode("utf-8")   # BOM：Excel 直接打开不乱码
 
 
@@ -2109,6 +2168,7 @@ def view_sql(c, qs, want_csv=False):
             err = str(e).splitlines()[0]
 
     if want_csv and cols:
+        # 任意 SQL 的输出列**不带来源表**，所以按列名保守拦截（见 export_policy 的说明）
         return to_csv(cols, rows)
 
     result = ""
@@ -4694,6 +4754,22 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def _send(self, status, body: bytes, ctype="text/html; charset=utf-8", extra=None):
+        extra = dict(extra or {})
+        # 导出禁令命中的列：写进响应头。
+        # 为什么不写进 CSV 正文：那会破坏表头，让所有按行解析的脚本
+        # （含本项目的"CSV 行数 == 页面行数"断言）失效。
+        # 为什么必须让调用方知道：静默删列比报错更危险 ——
+        # 用户会以为"这一列本来就没有数据"。
+        denied = getattr(_LOCAL, "csv_denied", None)
+        if denied:
+            # ⚠ 响应头**必须是 latin-1**（HTTP 规范）。第一版这里写了中文说明，
+            # 结果 send_header 抛 UnicodeEncodeError 把整个请求打成
+            # RemoteDisconnected —— 一个"加个提示"的改动弄崩了导出功能。
+            # 所以头部一律 ASCII；中文解释放在页面里（页面是 UTF-8，没这个限制）。
+            extra["X-Export-Denied"] = ", ".join(denied)
+            extra["X-Export-Denied-Note"] = ("columns removed per export policy; "
+                                             "still viewable inline")
+            _LOCAL.csv_denied = None
         # ------------------------------------------------------------------
         # 审计在这里统一记 —— **唯一的输出点**，所以覆盖全部路由（含 404/405/403）。
         # 为什么不在每个路由里各写一次（第一版就是这么写的）：那样只有"记得加"的页面
@@ -4722,6 +4798,16 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("X-Robots-Tag", "noindex")
         for k, v in (extra or {}).items():
+            # 防御：HTTP 头是 latin-1，任何非 ASCII 值都会让 send_header 抛异常，
+            # 而那个异常发生在**已经写好状态行之后** —— 表现为客户端收到
+            # RemoteDisconnected（"服务端无响应"），排查时完全看不出是头部编码问题。
+            # 实测踩过一次（在导出禁令的提示头里写了中文）。
+            # 这里统一兜底：非 latin-1 的值改成 URL 编码，宁可提示不好看，也不能崩掉响应。
+            try:
+                str(v).encode("latin-1")
+            except UnicodeEncodeError:
+                v = urllib.parse.quote(str(v))
+                print("[!] 响应头 %s 含非 latin-1 字符，已 URL 编码" % k, file=sys.stderr)
             self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
@@ -4941,7 +5027,8 @@ class Handler(BaseHTTPRequestHandler):
         where, params = browse_where(name, fcol, fval)
         rows = q(c, sql.SQL("SELECT * FROM {}.{}{}").format(
             sql.Identifier(SCHEMA), sql.Identifier(name), where), params)
-        return to_csv(cols, rows)
+        # 这里知道来源表，所以按 (表, 列) 精确判断禁令 —— 比按列名保守拦截更准
+        return to_csv(cols, rows, table=name)
 
 
 def serve(port=PORT):

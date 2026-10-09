@@ -308,12 +308,22 @@ def d4_security(c):
         "v_column_policy_coverage：字典 %s + 人工 %s / 共 %s"
         % (cov["fc"], cov["ap"], cov["n"]))
 
-    # I4.4 动作级禁令（export_row=X）有没有落到列级策略上
-    n_x_policy = q1(c, "SELECT count(*) FROM mt.access_policy WHERE min_tier='X'")
-    n_x_col = q1(c, "SELECT count(*) FROM mt.column_policy WHERE min_tier='X'")
-    add("D4", "I4.4", "动作级 X 禁令数 / 列级 X 数", "%s/%s" % (n_x_policy, n_x_col), "-", "INFO",
-        "access_policy(min_tier='X') 对比 column_policy(min_tier='X')；"
-        "两者未汇合意味着导出禁令目前没有强制点")
+    # I4.4 动作级禁令（export_row=X）有没有落到物理列上
+    # 这条指标原来只报"动作级 X 数 / 列级 X 数 = 5/0"，是个**空洞**：
+    # 它说明"禁止导出"只是文档，CSV 照样导得出去（导出是真实的泄露渠道）。
+    # 迁移 032 把禁令落成显式表 mt.export_denied，并在 to_csv()（CSV 唯一出口）强制，
+    # 于是这条指标改成**可判定的收敛性**：每条禁令都必须有落点。
+    n_x_policy = q1(c, "SELECT count(*) FROM mt.access_policy "
+                       "WHERE action='export_row' AND min_tier='X'")
+    n_landed = q1(c, """SELECT count(DISTINCT ap.policy_id) FROM mt.access_policy ap
+                          JOIN mt.export_denied ed ON ed.policy_id = ap.policy_id
+                         WHERE ap.action='export_row' AND ap.min_tier='X'""")
+    n_den_col = q1(c, "SELECT count(*) FROM mt.export_denied")
+    add("D4", "I4.4", "禁止导出策略的强制点数 / 总条数",
+        "%s/%s（落点 %s 列）" % (n_landed, n_x_policy, n_den_col), "相等", "MUST",
+        "access_policy(action='export_row',min_tier='X') 对比 export_denied.policy_id；"
+        "强制点在 portal.to_csv()——CSV 的**唯一出口**")
+    RESULTS[-1]["ok"] = (n_x_policy > 0 and n_landed == n_x_policy)
 
     # I4.5 访问日志是否真的在写（"记录访问用户"这条需求的直接证据）
     n_log = q1(c, "SELECT count(*) FROM mt.access_log")
