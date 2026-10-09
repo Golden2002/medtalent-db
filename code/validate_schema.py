@@ -97,6 +97,26 @@ def balanced_parens(body):
     return depth == 0
 
 
+def strip_sql_comments(stmt: str) -> str:
+    """去掉 `--` 行注释（保留行数，便于行号仍然对得上）。
+
+    为什么必须做（实测撞出来的）：022 的注释里写了一句
+        `-- 可重放：CREATE TABLE IF NOT EXISTS / CREATE OR REPLACE FUNCTION。`
+    而 CREATE_TABLE 正则里的 `(?:IF\\s+NOT\\s+EXISTS\\s+)?` 在 `EXISTS ` 后面遇到 `/`
+    （不是合法标识符开头）时会**回溯**，于是把 `IF` 当成表名，报出
+    "表 IF 括号不配平"。也就是说：**校验器在读注释里的示例代码，并把它当成了真代码。**
+    这不是"忍一下"的小问题 —— 一个会对文档文字误报的校验器，会训练人忽略它的输出。
+
+    只处理 `--`（本项目的迁移注释一律单独成行），不做通用的引号内识别：
+    真正需要精确解析的场景应该交给 PostgreSQL 自己（`--check` 与实跑才是权威）。
+    """
+    out = []
+    for ln in stmt.split("\n"):
+        i = ln.find("--")
+        out.append(ln[:i] if i >= 0 else ln)
+    return "\n".join(out)
+
+
 def outer_body(stmt, start=0):
     """取出 CREATE TABLE 名之后的括号主体。
     start 必须传 CREATE TABLE 匹配的结束位置——否则会误取注释中的括号。"""
@@ -163,7 +183,8 @@ def main(root):
 
         for stmt, offset in split_statements(text):
             line = text[:offset].count("\n") + 1
-            stripped = stmt.strip()
+            # 先剥注释再解析：否则会把注释里的示例 SQL 当真代码（见 strip_sql_comments）
+            stripped = strip_sql_comments(stmt).strip()
             if not stripped:
                 continue
 

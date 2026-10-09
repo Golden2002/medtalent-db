@@ -5,6 +5,6 @@
     "I4.1"
   ],
   "why": {
-    "I4.1": "应用层仍有 9 处以超级用户连接（含 :8082 门户）。数据库层的列级授权已建成并实测有效，但超级用户绕过一切，所以这批授权对运行中的服务尚无约束力。处理决定见 docs/23 §5 第 1 条：门户改 mt_portal + 每请求 SET LOCAL ROLE；backup.py 作为显式例外保持 postgres。"
+    "I4.1": "10 个服务入口里仍有 7 个以超级用户连接：code/demo/portal_dev.py、console.py、app.py、static_site.py、code/db.py、code/bridge/{exchange,outbox,projection}.py。**只读门户 :8082 已完成接线**（PORTAL_DSN=mt_portal + 每请求 SET LOCAL ROLE，由 I4.1b 独立验证，端到端探针与 portal_test 均通过）。已登记的例外 2 个：code/demo/portal.py（admin_db() 仅用于进程级元数据缓存与构建期自检；请求路径走 PORTAL_DSN）、ops/backup/backup.py（备份必须用超级用户：非超级用户 pg_dump 报 RLS 错误，--enable-row-security 会静默丢行）。剩余 7 个入口是真实待办：写路径（dev/console/bridge）需要各自的受限写角色，不能在只读角色的基础上顺手放开。"
   }
 }

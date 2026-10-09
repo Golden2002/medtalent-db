@@ -46,13 +46,63 @@ ROOT = "http://127.0.0.1:%d" % PORT
 check = H.check
 
 
+# 面板渲染用**明确的高等级会话**：本套测试回答的是「面板口径对不对」，
+# 不是「某个等级能不能看」（后者由 ops/tests/access_test.py 负责）。
+# 用匿名会话渲染会得到 403，那会把权限问题伪装成口径问题。
+TEST_SESSION = P.Session(actor="viz_test", tier="T3", ok=True)
+
+
 def conn():
     return H.connect(P.DSN)
 
 
+COOKIE = None
+TEST_EMAIL = "viz_test@local.test"
+TEST_PW = "viz-test-password-4c19"
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """不跟随 302：登录成功返回 302 + Set-Cookie，跟随会把 cookie 丢掉。"""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def login():
+    """以 T3 账号登录，取回会话 cookie（账号自建自删）。"""
+    global COOKIE
+    with H.connect(P.DSN) as c:
+        c.execute("SELECT mt.web_user_add(%s, %s, 'T3', '可视化测试账号')",
+                  (TEST_EMAIL, TEST_PW))
+        c.commit()
+    req = urllib.request.Request(ROOT + "/login")
+    req.data = urllib.parse.urlencode({"email": TEST_EMAIL, "password": TEST_PW}).encode()
+    req.method = "POST"
+    try:
+        with urllib.request.build_opener(_NoRedirect()).open(req, timeout=30) as r:
+            sc = r.headers.get("Set-Cookie") or ""
+    except urllib.error.HTTPError as e:
+        sc = e.headers.get("Set-Cookie") or ""
+    COOKIE = sc.split(";")[0]
+    return COOKIE
+
+
+def cleanup_login():
+    """先子后父：web_session 引用 app_user。审计行也清掉，避免影响其它套件的计数。"""
+    with H.connect(P.DSN) as c:
+        c.execute("""DELETE FROM mt.web_session WHERE user_id IN
+                       (SELECT user_id FROM mt.app_user WHERE email = %s)""", (TEST_EMAIL,))
+        c.execute("DELETE FROM mt.app_user WHERE email = %s", (TEST_EMAIL,))
+        c.execute("DELETE FROM mt.access_log WHERE actor = %s", (TEST_EMAIL,))
+        c.commit()
+
+
 def get(path, timeout=180):
     try:
-        with urllib.request.urlopen(ROOT + path, timeout=timeout) as r:
+        req = urllib.request.Request(ROOT + path)
+        if COOKIE:
+            req.add_header("Cookie", COOKIE)
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.status, r.read().decode("utf-8")
     except urllib.error.HTTPError as e:
         return e.code, e.read().decode("utf-8")
@@ -62,6 +112,15 @@ def main():
     P.meta()
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), P.Handler)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
+
+    # 先登录：门户跑在受限角色上，匿名只能读 T0（这是**正确**行为）。
+    # 本套测试要回答"图与口径对不对"，所以用一个明确的 T3 会话抓页面 ——
+    # 否则权限不足会被误读成"图没画出来"。
+    try:
+        cleanup_login()
+    except Exception:                                    # noqa: BLE001
+        pass
+    check(bool(login()), "可视化测试账号登录成功并拿到会话 cookie")
 
     try:
         # ===============================================================
@@ -83,7 +142,7 @@ def main():
 
         # ===============================================================
         print("\n【T2】16 个可视化面板全部可渲染、可导 CSV")
-        with P.db() as c:
+        with P.db(TEST_SESSION) as c:
             ok, problems = 0, []
             for it in V.VIZ:
                 try:
@@ -113,7 +172,7 @@ def main():
 
         # ===============================================================
         print("\n【T3】跨组件口径一致（这一层最要紧的断言）")
-        with P.db() as c:
+        with P.db(TEST_SESSION) as c:
             row = P.q(c, M.CONCEPT_COVERAGE_SQL, M.coverage_params())[0]
             cov_spec = M.coverage_pct(row)
             page = P.view_quality(c, {}).decode("utf-8")
@@ -197,7 +256,7 @@ def main():
 
         # ===============================================================
         print("\n【T6】分析页自动出图（分析与可视化是同一件事）")
-        with P.db() as c:
+        with P.db(TEST_SESSION) as c:
             for aid, _t, _d, sql in P.ANALYSES:
                 rows = P.analysis_rows(c, sql)
                 cols = list(rows[0].keys()) if rows else []
@@ -220,7 +279,7 @@ def main():
 
         # ===============================================================
         print("\n【T7】空数据画空状态，不画空坐标系")
-        with P.db() as c:
+        with P.db(TEST_SESSION) as c:
             for f, args in ((CH.bar_h, ([], "k", "v")),
                             (CH.line, ([], [])),
                             (CH.heatmap, ([], [])),
@@ -236,6 +295,8 @@ def main():
     finally:
         srv.shutdown()
         srv.server_close()
+        # 构造了多少就清多少（账号 + 会话 + 本次自产的审计行）
+        cleanup_login()
 
     return H.report(width=74, list_fails=True)
 

@@ -222,6 +222,49 @@ def main():
         print("  [信息] 非字典依据占比 %.1f%%（%d/%d 列）—— 这个数字高说明该补字典了"
               % (pct, pat + dfn, cols))
 
+        # ===============================================================
+        print("\n【A8】不能自己给自己发权限（会话函数不得对应用角色开放）")
+        # 这一条测的是**另一个攻击面**：A1–A7 测"角色能不能读某列"，
+        # 而这里测"角色能不能造出更高等级的身份证"。
+        # 为什么必须有：PostgreSQL 的 CREATE FUNCTION **默认把 EXECUTE 授予 PUBLIC**，
+        # 而 web_session_new 是 SECURITY DEFINER 且**等级是参数** ——
+        # 任何能执行它的角色都能 `SELECT mt.web_session_new('attacker','T3')`
+        # 拿到一个合法 T3 会话。本轮实测确认过这条路径存在（026 才堵上）。
+        for role in ("mt_portal", "mt_t0", "mt_t1", "mt_t2", "mt_t3"):
+            can = c.execute("SELECT has_function_privilege(%s, "
+                            "'mt.web_session_new(text,text,text,interval,text)', "
+                            "'EXECUTE') AS x", (role,)).fetchone()["x"]
+            check(not can, "%s 不能执行 web_session_new（否则可自造任意等级会话）" % role)
+        can = c.execute("SELECT has_function_privilege('mt_portal', "
+                        "'mt.web_user_add(text,text,text,text)', 'EXECUTE') AS x").fetchone()["x"]
+        check(not can, "mt_portal 不能创建账号（造账号是运维动作，不是门户能力）")
+        can = c.execute("SELECT has_function_privilege('mt_portal', "
+                        "'mt.web_login(text,text,interval,text)', 'EXECUTE') AS x").fetchone()["x"]
+        check(can, "mt_portal 能执行 web_login（登录是门户的正当职责）")
+        # 会话表本身也不能被应用角色直接读写（只能经函数）
+        for role in ("mt_portal", "mt_t1", "mt_t3"):
+            for priv in ("SELECT", "INSERT", "UPDATE", "DELETE"):
+                can = c.execute("SELECT has_table_privilege(%s, 'mt.web_session', %s) AS x",
+                                (role, priv)).fetchone()["x"]
+                check(not can, "%s 对 web_session 没有 %s 权限（只能经函数访问）" % (role, priv))
+        # 门户角色的口令哈希不可读
+        can = c.execute("SELECT has_table_privilege('mt_portal', 'mt.app_user', 'SELECT') AS x"
+                        ).fetchone()["x"]
+        check(not can, "mt_portal 读不到 app_user（因此读不到任何口令哈希）")
+
+        # ===============================================================
+        print("\n【A9】审计表只能追加：应用角色不能改也不能删")
+        # "审计可信"的前提是它不可被篡改。仅仅"记下来了"不够。
+        for role in ("mt_portal", "mt_t0", "mt_t1", "mt_t2", "mt_t3"):
+            for priv in ("UPDATE", "DELETE", "TRUNCATE"):
+                can = c.execute("SELECT has_table_privilege(%s, 'mt.access_log', %s) AS x",
+                                (role, priv)).fetchone()["x"]
+                check(not can, "%s 对 access_log 没有 %s 权限（append-only）" % (role, priv))
+            can = c.execute("SELECT has_function_privilege(%s, "
+                            "'mt.log_access(text,text,text,integer,text,jsonb)', "
+                            "'EXECUTE') AS x", (role,)).fetchone()["x"]
+            check(can, "%s 能调用 log_access（唯一允许的写入路径）" % role)
+
     return H.report(width=74, list_fails=True)
 
 

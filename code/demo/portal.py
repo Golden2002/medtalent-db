@@ -44,6 +44,7 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -63,6 +64,25 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 DSN = ("host=127.0.0.1 port=55432 dbname=medtalent user=postgres "
        "client_encoding=UTF8 options='-c search_path=mt,public'")
+
+# ---------------------------------------------------------------------------
+# 门户自己的连接串：**不是超级用户**
+# ---------------------------------------------------------------------------
+# 这一行是"访问控制到底有没有生效"的分水岭。
+# 实测（ops/fixtures/_lab_access.py）：超级用户读带 RLS 的表会**绕过策略**，
+# 连 FORCE ROW LEVEL SECURITY 都拦不住。所以只要门户用 postgres 连接，
+# 迁移 017–021 建的 1029 条列级授权对它就**没有任何约束力**——那是装饰。
+#
+# mt_portal 的特性（迁移 017 建的）：
+#   · 非超级用户、不绕过 RLS、NOINHERIT
+#   · **自身没有任何表权限**，必须先 `SET LOCAL ROLE mt_tN` 才能读到数据
+# 于是"忘记设等级"的结果是**读不到数据**，而不是读到全部数据 —— 这个默认方向才安全。
+PORTAL_DSN = ("host=127.0.0.1 port=55432 dbname=medtalent user=mt_portal "
+              "client_encoding=UTF8 connect_timeout=5 "
+              "options='-c search_path=mt,public'")
+
+TIERS = ("T0", "T1", "T2", "T3")        # 白名单：等级绝不采信用户输入的原文
+SESSION_COOKIE = "mt_session"
 SCHEMA = "mt"
 PORT = 8082
 PAGE_SIZE = 50
@@ -115,7 +135,12 @@ DOMAIN_TABLES = {
                    #   column_policy  —— 字段级最低可读等级，由 refresh_column_policy() 推导
                    # 这两张表是"每个字段权限不同"这条需求的载体，属治理域。
                    # （ops/health.py 的 I1.2 指标就是靠这里发现它们漏登记的 —— 这正是指标的作用。）
-                   "access_tier", "column_policy"],
+                   "access_tier", "column_policy",
+                   # 网页登录与会话（schema/sql/022_web_login.sql 创建）：
+                   #   app_user     —— 登录用户及其等级（口令只存 bcrypt 哈希）
+                   #   web_session  —— 服务端会话；等级由库里的行决定，不放在 cookie 里
+                   # 它们是"记录访问用户"的载体，同属治理域。
+                   "app_user", "web_session"],
     "小程序接入": ["external_identity", "response_session", "answer", "experience_episode",
                    "experience_task", "crosswalk", "sync_event"],
     "备份与发布": ["backup_policy", "backup_run", "restore_run", "dataset_release"],
@@ -132,18 +157,182 @@ def domain_of(table: str) -> str:
 # ---------------------------------------------------------------------------
 # 连接与查询
 # ---------------------------------------------------------------------------
-def db(readonly: bool = False):
-    """普通连接；readonly=True 时显式开启只读事务。
+# 会话：等级由**数据库里的行**决定，不来自 cookie 里的声明
+# ---------------------------------------------------------------------------
+# 为什么不做"签名 cookie 里带等级"：cookie 是客户端可伪造的，而本项目的强制点是
+# 数据库（`SET LOCAL ROLE mt_tN`）。若等级来自 cookie，伪造 cookie 就等于伪造 T3 权限 ——
+# 前端一破、后端全开。所以用服务端会话表（迁移 022），cookie 里只放一个随机 256 位
+# 会话 id，等级由 `mt.web_session_lookup()` 从库里查回来。
+class Session:
+    """一次 HTTP 请求的身份：谁（actor）、能读哪个等级（tier）、会话 id。
 
-    注意 autocommit=True + 显式 BEGIN：若用 psycopg 的隐式事务再发 BEGIN，
-    PostgreSQL 会警告"事务已在进行中"，且只读语义不明确。
+    匿名访客也有一个会话对象（tier=T0）—— 这样"没有身份"和"身份是 T0"在代码里
+    是同一条路径，不会出现"忘了判断登录态就当成高权限"的分支。
     """
-    if readonly:
-        c = psycopg.connect(DSN, row_factory=dict_row, autocommit=True)
-        with c.cursor() as cur:
+
+    def __init__(self, actor="anonymous", tier="T0", session_id=None,
+                 user_id=None, ok=False, expired=False):
+        self.actor = actor or "anonymous"
+        self.tier = tier if tier in TIERS else "T0"
+        self.session_id = session_id
+        self.user_id = user_id
+        self.ok = ok                    # 会话有效（已登录且未过期）
+        self.expired = expired
+
+    @property
+    def role(self) -> str:
+        return "mt_" + self.tier.lower()
+
+    @property
+    def is_anonymous(self) -> bool:
+        return not self.ok
+
+    def __repr__(self):
+        return "<Session %s %s%s>" % (self.actor, self.tier,
+                                      "" if self.ok else " (匿名)")
+
+
+ANON = Session()
+
+# 当前请求的会话：用线程局部存放，而不是把它穿进 20 多个 view 函数的签名。
+# 为什么线程局部在这里是安全的：`ThreadingHTTPServer` 一个请求一个线程，
+# 会话不会跨请求泄漏；而且它只用于**渲染**（页头显示身份），
+# 真正的权限判断在数据库（`SET LOCAL ROLE`），不依赖这个变量。
+_LOCAL = threading.local()
+
+
+def set_current_session(s: Session):
+    _LOCAL.session = s
+
+
+def current_session() -> Session:
+    return getattr(_LOCAL, "session", ANON)
+
+
+def session_from_cookie(cookie_header: str) -> Session:
+    """从 Cookie 头解析会话 id 并回库查等级。
+
+    查库用的是 SECURITY DEFINER 的 `web_session_lookup()`：门户角色读不到
+    `web_session` 表本身（迁移 022 已 REVOKE），只能通过这个函数问"这个 id 是谁"。
+    """
+    if not cookie_header:
+        return ANON
+    sid = None
+    for part in cookie_header.split(";"):
+        k, _, v = part.strip().partition("=")
+        if k == SESSION_COOKIE and v:
+            sid = v.strip('"')
+            break
+    if not sid:
+        return ANON
+    try:
+        with psycopg.connect(PORTAL_DSN, row_factory=dict_row, autocommit=True) as c:
+            r = c.execute("SELECT * FROM mt.web_session_lookup(%s)", (sid,)).fetchone()
+    except psycopg.Error:
+        # 会话查询失败 ⇒ 退回匿名。**默认方向必须是拒绝**，不是放行。
+        return ANON
+    if not r or not r["ok"]:
+        return Session(session_id=sid, expired=bool(r and r["expired"]))
+    return Session(actor=r["actor"], tier=r["tier"], session_id=sid,
+                   user_id=r["user_id"], ok=True)
+
+
+def db(session: Session = None, readonly: bool = True, as_role: bool = True):
+    """以门户角色连接，并把会话等级翻译成数据库角色。
+
+    这是**唯一的**权限注入点：所有读数据的页面都经 `with db(session) as c:`，
+    所以"某个页面忘了判权限"不会导致越权 —— 它只会读到 T0 能读的列。
+
+    `as_role=False`：**认证类操作**专用。登录/建会话这类函数只授给了 `mt_portal`
+    （迁移 022/023），没有授给四个等级角色 —— 因为"用哪个等级读数据"和
+    "能不能登录"是两件事。本探针第一版没区分这两者，于是登录请求先
+    `SET LOCAL ROLE mt_t0`，紧接着调用 `web_login()` 就被数据库拒绝：
+    **连登录都登不进去**。这个错误只有把两条路径分开才对。
+
+    为什么 `SET LOCAL ROLE` 而不是 `SET ROLE`：LOCAL 在事务结束（含异常回滚）时
+    自动失效，连接被线程复用时不会串身份。
+    为什么等级用白名单校验后再拼进 SQL：`SET LOCAL ROLE` **不接受参数占位符**
+    （扩展协议会把它发成 $1），只能拼字符串 —— 那就必须先证明它来自白名单。
+    """
+    session = session or ANON
+    tier = session.tier if session.tier in TIERS else "T0"
+    role = "mt_" + tier.lower()
+    c = psycopg.connect(PORTAL_DSN, row_factory=dict_row, autocommit=True)
+    with c.cursor() as cur:
+        cur.execute("SET LOCAL statement_timeout = %s" % STATEMENT_TIMEOUT_MS)
+        if readonly:
             cur.execute("BEGIN TRANSACTION READ ONLY")
-        return c
-    return psycopg.connect(DSN, row_factory=dict_row)
+        else:
+            cur.execute("BEGIN")
+        # 身份与等级都放进会话变量：日志函数从会话变量取"谁"，
+        # 而"能读什么"由 SET LOCAL ROLE 决定 —— 两者都不可由客户端直接指定。
+        cur.execute("SELECT set_config('mt.actor', %s, true)", (session.actor,))
+        cur.execute("SELECT set_config('mt.tier', %s, true)", (tier,))
+        if as_role:
+            cur.execute("SET LOCAL ROLE " + role)
+    # 把会话挂在连接对象上：这样"需要另开一个连接"的少数地方
+    # （例如只读 SQL 控制台要隔离用户查询）能拿到同一个身份，
+    # 而不必把 session 一路穿进 20 多个 view 函数的签名里。
+    c.session = session
+    c.tier = tier
+    return c
+
+
+def log_visit(session: Session, action: str, target: str, tier: str = None,
+              rows: int = None, purpose: str = None, detail: dict = None):
+    """写一条访问日志。
+
+    **必须用独立连接**：页面的查询跑在 `READ ONLY` 事务里，而只读事务会拒绝
+    审计写入 —— 实测 `cannot execute INSERT in a read-only transaction`，
+    而且 SECURITY DEFINER 也救不了它（只读是事务级属性，不是权限问题）。
+    所以审计走自己的短连接：页面只读这条纪律不被破坏（`change_log` 仍不增长），
+    同时"谁读过什么"真的被记下来。
+
+    写不进去也不能让页面崩：审计失败只是少一条记录，而页面 500 是可用性事故。
+    但**必须打印到 stderr**，否则"审计静默失效"会变成一个查不出来的洞。
+    """
+    if not session or session.is_anonymous and action == "view":
+        pass                                     # 匿名访问也要记（这正是要记的）
+    try:
+        with psycopg.connect(PORTAL_DSN, row_factory=dict_row, autocommit=True) as c:
+            c.execute("SELECT mt.log_access(%s, %s, %s, %s, %s, %s)",
+                      (action, target, tier or (session.tier if session else "T0"),
+                       rows, purpose, json.dumps(detail or {}, ensure_ascii=False)))
+    except psycopg.Error as e:
+        print("[!] 审计写入失败（不影响页面）：%s" % str(e).splitlines()[0], file=sys.stderr)
+
+
+def revoke_session(sid: str):
+    """撤销一个会话，用独立连接。
+
+    为什么不在 do_GET 的主连接里做：那条连接在 `READ ONLY` 事务里，
+    而撤销会话是 UPDATE —— 只读事务会拒绝（实测：SECURITY DEFINER 也救不了，
+    只读是事务级属性）。和审计写入同一个道理。
+    """
+    if not sid:
+        return
+    try:
+        with psycopg.connect(PORTAL_DSN, row_factory=dict_row, autocommit=True) as c:
+            c.execute("SELECT mt.web_session_revoke(%s)", (sid,))
+    except psycopg.Error as e:
+        print("[!] 会话撤销失败：%s" % str(e).splitlines()[0], file=sys.stderr)
+
+
+# 路径 → 该页"通常"需要的等级。**只用于错误提示文案**，不是权限判断：
+# 真正的判断在数据库（列级授权 + SET LOCAL ROLE），这里只是把拒绝翻译成人话。
+# 写成映射而不是"从错误信息里猜"，是因为提示必须稳定且可核对。
+_TIER_HINT = {
+    "/talent": "T1", "/talent.csv": "T1", "/match": "T1", "/real": "T1",
+    "/occupations": "T1", "/tree": "T1", "/analyze": "T1", "/viz": "T1",
+    "/search": "T1", "/catalog": "T0",
+    "/quality": "T2", "/audit": "T2", "/lineage": "T2",
+    "/t/access_log": "T2", "/t/change_log": "T2",
+    "/t/person_pii": "T3", "/t/app_user": "T3", "/t/web_session": "T3",
+}
+
+
+def _required_tier_for(path: str) -> str:
+    return _TIER_HINT.get(path, "T1")
 
 
 def q(c, sqltext, p=None):
@@ -277,10 +466,27 @@ def lbl(code_table_id: str, code) -> str:
 META = {}          # 进程内缓存：门户是只读的，元数据在一次演示里不必反复重读
 
 
+def admin_db(readonly: bool = True):
+    """特权连接：**只用于**进程级元数据缓存与构建期自检，不用于处理用户请求。
+
+    为什么元数据允许用特权连接：`load_meta()` 读的是系统目录（pg_class/information_schema）
+    与**每张表的行数**——行数是明确公开的信息（需求原文："数量…可以公开"），
+    而且实测 T0 角色也算得出来（`count(*)` 不引用任何列，不受列级权限限制）。
+    但它是**进程级缓存**、只建一次、不分会话，所以这里不做角色切换。
+    用户请求一律走 `db(session)`；两者分开是为了让"哪条路径带权限"一眼可见。
+    """
+    if readonly:
+        c = psycopg.connect(DSN, row_factory=dict_row, autocommit=True)
+        with c.cursor() as cur:
+            cur.execute("BEGIN TRANSACTION READ ONLY")
+        return c
+    return psycopg.connect(DSN, row_factory=dict_row)
+
+
 def meta() -> dict:
     global META
     if not META:
-        with db() as c:
+        with admin_db() as c:
             META = load_meta(c)
     return META
 
@@ -422,6 +628,9 @@ details{margin:8px 0}
 summary{cursor:pointer;color:#0969da;font-size:13px;outline:none}
 .nul{color:#6e7781;font-style:italic}
 .pill{display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;border:1px solid}
+/* 身份条：等级必须常驻可见（"看不到"和"没有"在界面上长得一样） */
+.who{font-size:12px;color:#57606a;margin-left:auto;display:inline-flex;align-items:center;gap:6px}
+.loginlink{margin-left:10px;font-size:12px}
 .p-t{background:#ddf4e4;border-color:#a2d5b3;color:#116329}
 .p-v{background:#ddf4ff;border-color:#a5d6ff;color:#0a3069}
 .p-e{background:#fff8c5;border-color:#eac54f;color:#7d4e00}
@@ -470,11 +679,12 @@ details.analysis>summary:hover{filter:brightness(1.06)}
 .kv>div:nth-child(odd){color:#57606a;background:#fafbfc;font-size:12.5px}
 """
 
-NAV = [("/", "总览"), ("/viz", "可视化"), ("/talent", "人才库"), ("/occupations", "职业库"),
+NAV = [("/", "总览"), ("/catalog", "数据目录"), ("/viz", "可视化"), ("/talent", "人才库"),
+       ("/occupations", "职业库"),
        ("/tree", "职业树"), ("/match", "匹配"), ("/real", "真实案例"),
        ("/extend", "扩展与演化"),
        ("/schema", "表与视图"), ("/search", "检索"), ("/analyze", "分析"),
-       ("/quality", "质量"), ("/lineage", "血缘"), ("/sql", "SQL"),
+       ("/quality", "质量"), ("/audit", "访问日志"), ("/lineage", "血缘"), ("/sql", "SQL"),
        ("/dev", "开发者模式")]
 
 
@@ -483,12 +693,14 @@ def esc(s) -> str:
 
 
 def page(title, body, msg="", kind="info", subtitle="", nav=None,
-         here=None, crumbs=None) -> bytes:
+         here=None, crumbs=None, session=None) -> bytes:
     """页面外壳。
 
     `here`：当前所在的顶级栏目（用于高亮导航）。详情页的 h1 是记录名/表名/分析名，
     跟导航标签对不上——不显式指定，这些页面上一个导航项都不会高亮，用户就丢了位置。
     `crumbs`：[祖先链]，元素是 (href, 文本)，href 为 None 表示纯文本。只放祖先，不放当前页。
+    `session`：当前身份。**必须在每个页面上显示等级** —— 用户看不到"我现在是什么等级"，
+    就会把"权限不足导致的空数据"误读成"库里没有数据"。
     """
     active = here or title
     parts = []
@@ -502,6 +714,15 @@ def page(title, body, msg="", kind="info", subtitle="", nav=None,
         else:
             parts.append('<a href="%s" class="%s"%s>%s</a>' % (u, cls, cur, t))
     nav_html = "".join(parts)
+    # 身份条：等级 + 是谁 + 登录/退出入口。
+    # 这不是装饰：等级决定了这一页能读到哪些列，而"看不到"和"没有"在界面上长得一样，
+    # 不把等级摆在眼前，用户会把权限限制读成数据缺失。
+    s = session or current_session()
+    who = ('<span class="who">%s <span class="pill %s">%s</span></span>'
+           '<a class="loginlink" href="/logout">退出</a>'
+           % (esc(s.actor), "p-t" if s.ok else "p-n", esc(s.tier))) if s.ok else \
+          ('<span class="who">未登录 <span class="pill p-n">T0</span></span>'
+           '<a class="loginlink" href="/login">登录</a>')
     m = '<div class="note %s">%s</div>' % (kind, esc(msg)) if msg else ""
     sub = '<div class="sub">%s</div>' % subtitle if subtitle else ""
     crumb_html = ""
@@ -511,9 +732,9 @@ def page(title, body, msg="", kind="info", subtitle="", nav=None,
         crumb_html = '<div class="crumbs">%s</div>' % '<span class="sep">›</span>'.join(segs)
     doc = """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <title>%s · 医学生人才信息库</title><style>%s</style></head><body>
-<nav aria-label="主导航"><span class="brand">医学生人才信息库 · 数据库门户</span>%s</nav>
+<nav aria-label="主导航"><span class="brand">医学生人才信息库 · 数据库门户</span>%s%s</nav>
 <div class="wrap"><div class="phead">%s<h1>%s</h1>%s</div>%s%s</div></body></html>""" % (
-        esc(title), CSS, nav_html, crumb_html, esc(title), sub, m, body)
+        esc(title), CSS, nav_html, who, crumb_html, esc(title), sub, m, body)
     return doc.encode("utf-8")
 
 
@@ -1455,7 +1676,9 @@ def view_sql(c, qs, want_csv=False):
     if text:
         try:
             stmt = validate_sql(text)
-            rc = db(readonly=True)
+            # 用**同一个会话身份**另开连接：SQL 控制台也必须受列级权限约束，
+            # 否则它就成了绕过访问控制的后门（"我有一条 SQL 通路"就等于"我有全部列"）。
+            rc = db(getattr(c, "session", None), readonly=True)
             try:
                 with rc.cursor() as cur:
                     # SET 不接受参数占位符（扩展协议会把它发成 $1 → 语法错误）。
@@ -3443,6 +3666,184 @@ def view_real(c, qs) -> bytes:
     return page("真实案例验证", body, subtitle="公开案例 · 画像向量 · 匹配对照 · 维度体检")
 
 
+def public_overview(c) -> str:
+    """公开（T0）概览：只放**匿名访客确实读得到**的数字。
+
+    为什么逐个 try：一页里放 6 个数字，其中 1 个读不到就整页 403，是糟糕的取舍。
+    这里改成"读得到的就显示、读不到的就说明需要登录"，于是匿名访客看到的永远是**真实**的
+    公开信息，而不是一堵墙。
+    但**不能把读不到当成 0**：那会把"权限不足"显示成"库里没有数据"——
+    正是本项目一直在防的那种误读。所以读不到就明说。
+    """
+    items = [
+        ("人才档案", "SELECT count(*) FROM mt.person"),
+        ("岗位", "SELECT count(*) FROM mt.job_posting"),
+        ("职业（含层级）", "SELECT count(*) FROM mt.occupation"),
+        ("码表 / 码值", "SELECT (SELECT count(*) FROM mt.code_table)::text || ' / ' || "
+                        "(SELECT count(*) FROM mt.code_value)::text"),
+        ("已登记字段", "SELECT count(*) FROM mt.field_catalog"),
+        ("画像维度", "SELECT count(*) FROM mt.dimension"),
+    ]
+    cards, denied = [], []
+    for label, sqltext in items:
+        try:
+            v = q1(c, sqltext)
+            # 有的指标本身就是字符串（例如"码表 / 码值"拼出来的 "78 / 584"），
+            # 而 `"{:,}"` 只能作用于数字 —— 对字符串会抛 ValueError。
+            # 用 isinstance 判断，而不是指望所有指标都是整数。
+            shown = "{:,}".format(v) if isinstance(v, int) else str(v)
+            cards.append(metric(shown, label, "公开"))
+        except psycopg.Error:
+            denied.append(label)
+    html = '<div class="cards">%s</div>' % "".join(cards)
+    if denied:
+        html += ('<div class="note warn">以下数字需要登录后查看：%s'
+                 '（不是"库里没有"，是当前等级读不到）</div>' % esc("、".join(denied)))
+    return html
+
+
+def view_login(c, qs, session=None, err="", msg="") -> bytes:
+    """登录页。
+
+    这是"记录访问用户"的入口：没有它，审计只能记"某个进程读了一行"。
+    刻意做成极小的表单（邮箱 + 口令），因为真正的身份体系在对方的小程序侧，
+    本页只是让"谁是访问者"在本机有一个可追责的落点。
+    """
+    session = session or ANON
+    who = ""
+    if session.ok:
+        who = ('<div class="note ok">当前身份：<b>%s</b>（等级 <b>%s</b>，会话 %s…）'
+               '<br><a href="/logout">退出</a></div>'
+               % (esc(session.actor), esc(session.tier), esc((session.session_id or "")[:8])))
+    # c 可能为 None（登录失败时复用本函数渲染，而那条请求没有可用的连接）。
+    # 用 `c is not None` 显式判断，而不是让 AttributeError 去当"没有连接"的信号 ——
+    # 后者会把"复用渲染"这种正常用法变成 500。
+    tiers = q(c, "SELECT tier, rank, title_zh, audience, description, is_public "
+                 "FROM access_tier ORDER BY rank") \
+        if (c is not None and _can_read_tiers(c)) else []
+    tier_rows = "".join(
+        "<tr><td><span class='pill %s'>%s</span></td><td>%s</td><td>%s</td><td class='muted'>%s</td></tr>"
+        % ("p-t" if t["is_public"] else "p-v", esc(t["tier"]), esc(t["title_zh"]),
+           esc(t["audience"] or ""), esc(t["description"]))
+        for t in tiers)
+    body = """
+<div class="sub">数据库里的每一行都可能被读取，但<b>不是每一列对每个人都可见</b>。
+本页建立的是"谁是访问者"这一件事；"能看到哪些列"由数据库的列级授权决定，
+不是由这个页面决定 —— 页面只负责把身份交给数据库。</div>
+<div class="card"><h2>公开（T0）概览 <span class="muted">· 未登录也能看到的真实数字</span></h2>
+%s</div>
+%s
+%s
+%s
+<div class="card"><h2>登录</h2>
+<form method="post" action="/login">
+  <div class="row">
+    <div style="flex:2 1 260px"><label>邮箱</label>
+      <input name="email" type="email" required autocomplete="username"></div>
+    <div style="flex:2 1 260px"><label>口令</label>
+      <input name="password" type="password" required autocomplete="current-password"></div>
+    <div style="flex:0 0 120px"><button type="submit">登录</button></div>
+  </div>
+</form>
+<p class="muted">口令以 bcrypt 哈希存储（<code>crypt()/gen_salt('bf')</code>），库里没有明文；
+校验在 <code>SECURITY DEFINER</code> 函数里做，所以门户进程<b>读不到任何哈希</b>。
+"用户不存在"与"口令错误"返回同一个提示 —— 区分它们等于提供了一个账号枚举接口。
+<br>账号由 <code>python ops\\secure.py</code> 创建；<b>系统不预置任何默认账号</b>
+（默认口令比没有口令更危险，外面挂着域名时尤其致命）。</p></div>
+<div class="card"><h2>等级阶梯 <span class="muted">· 等级决定能读哪些列，而等级来自数据库里的用户行</span></h2>
+%s</div>
+""" % (public_overview(c) if c is not None else
+       '<p class="muted">（这次请求没有可用连接，公开概览略）</p>',
+       who, ('<div class="note err">%s</div>' % esc(err)) if err else "",
+       ('<div class="note info">%s</div>' % esc(msg)) if msg else "",
+       ("<table><thead><tr><th>等级</th><th>名称</th><th>对应谁</th><th>说明</th></tr></thead>"
+        "<tbody>%s</tbody></table>" % tier_rows) if tier_rows else
+       '<p class="muted">（当前会话看不到等级表：它需要 <code>mt_portal</code> 的读权限）</p>')
+    return page("登录", body, subtitle="身份与等级", session=session)
+
+
+def _can_read_tiers(c) -> bool:
+    try:
+        q(c, "SELECT 1 FROM access_tier LIMIT 1")
+        return True
+    except psycopg.Error:
+        return False
+
+
+def view_no_permission(c, qs, session=None, need="T1", target="", db_error="") -> bytes:
+    """权限不足页。**权限不足必须是一个正常状态，不是 500。**
+
+    这是本次接线里最重要的可用性决定：数据库拒绝读某列时抛的是 `InsufficientPrivilege`，
+    如果让它冒泡成 500，用户看到的是"服务器错误"——他会以为系统坏了，
+    而不是"我的等级不够"。而且 500 会掩盖真正的缺陷。
+    所以这里把它渲染成明确的、可行动的页面：缺哪个等级、怎么升级、当前是什么身份。
+    """
+    session = session or current_session()
+    body = """
+<div class="note err"><b>权限不足：这个页面需要 <span class="pill p-v">%s</span> 等级，
+你当前是 <span class="pill p-n">%s</span>。</b></div>
+<div class="card"><h2>这不是错误，是访问控制在工作</h2>
+<p>数据库<b>拒绝</b>了这次读取 —— 拒绝发生在 PostgreSQL 的列级授权层，
+不是页面上藏了一下列。也就是说：即使这个页面写错了、把不该读的列放进了查询，
+数据库也不会把数据交出来。</p>
+<p>被拒绝的对象：<code>%s</code></p>
+%s
+<h3>怎么继续</h3>
+<ul>
+<li>如果这是你该看的数据：<a href="/login">登录</a>（或请管理员把账号提升到 %s 级）。</li>
+<li>如果只想看能公开的部分：<a href="/">回到总览</a> ·
+    <a href="/schema">表与视图</a> · <a href="/catalog">数据目录</a>
+    —— 这些页面只用到公开（T0）的列。</li>
+</ul>
+<h3>为什么"看不到"和"没有"要分清楚</h3>
+<p>本页如果不说明，你会把"因为权限而读不到"误读成"库里没有这个数据"。
+这两种情况的处理方式完全不同，所以界面必须把它们区分开。</p></div>
+""" % (esc(need), esc(session.tier), esc(target),
+       ('<p class="muted">数据库原话：<code>%s</code></p>' % esc(db_error)) if db_error else "",
+       esc(need))
+    return page("权限不足", body, subtitle="列级授权拒绝了这次读取", session=session)
+
+
+def view_audit(c, qs, session=None) -> bytes:
+    """访问日志页（谁在什么时候读了什么）。
+
+    需求原文：「数据是重要资产，因此需要记录访问用户」。这一页就是那条需求的证据：
+    日志不是"设计上会有"，而是**表里真的有多少行、最近一条是什么**。
+    """
+    session = session or current_session()
+    try:
+        rows = q(c, """SELECT access_id, actor, actor_role, action, target,
+                              access_tier, row_count, purpose, at
+                         FROM access_log ORDER BY access_id DESC LIMIT 200""")
+        total = q1(c, "SELECT count(*) FROM access_log")
+        actors = q(c, """SELECT actor, actor_role, count(*) AS n, max(at) AS last_at
+                           FROM access_log GROUP BY 1,2 ORDER BY 3 DESC LIMIT 20""")
+    except psycopg.Error as e:
+        # access_log 本体是 T2：低等级看不到是**预期**的，不是故障
+        return view_no_permission(c, qs, session, need="T2", target="mt.access_log")
+    body = """
+<div class="sub">每一条都是数据库收到的一次读取请求。这个页面本身被访问时也会写一条 ——
+审计表不审计自己就等于留了个洞。</div>
+<div class="cards">
+%s
+</div>
+<div class="card"><h2>按访问者汇总</h2>
+%s</div>
+<div class="card"><h2>最近 200 条</h2>
+%s
+<p class="muted"><b>可信度的边界要说清楚</b>：<code>actor</code> 来自应用声明的会话身份，
+应用理论上可以说谎；<code>actor_role</code> 来自 PostgreSQL 的 <code>current_setting('role')</code>，
+即**数据库认定的**调用者角色，不可伪造。两者都记，不一致时一眼能看出来。</p></div>
+""" % ("".join(metric(f"{total:,}", "日志条数"),
+               metric(len(actors), "访问者数（按 角色 分组）")),
+       render_rows("access_log", list(actors[0].keys()) if actors else
+                   ["actor", "actor_role", "n", "last_at"], actors) if actors
+       else '<p class="muted">（0 行：还没有任何访问被记录）</p>',
+       render_rows("access_log", list(rows[0].keys()) if rows else [], rows, maxlen=40)
+       if rows else '<p class="muted">（0 行）</p>')
+    return page("访问日志", body, subtitle="谁 · 什么时候 · 读了什么 · 多少行", session=session)
+
+
 def view_extend(c, qs) -> bytes:
     h = q(c, "SELECT * FROM v_evolution_health")[0]
     usage = {
@@ -3860,13 +4261,40 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _cookie_session(self):
+        return session_from_cookie(self.headers.get("Cookie", ""))
+
     def do_GET(self):
         u = urllib.parse.urlparse(self.path)
         qs = urllib.parse.parse_qs(u.query)
         path = u.path.rstrip("/") or "/"
+        sess = self._cookie_session()
+        set_current_session(sess)
         try:
-            with db() as c:
+            with db(sess) as c:
+                # 登录/登出：它们不需要数据权限，所以放在最前面
+                if path == "/login":
+                    return self._send(200, view_login(c, qs, sess))
+                if path == "/logout":
+                    revoke_session(sess.session_id)
+                    log_visit(sess, "logout", "web")
+                    return self._send(302, b"", extra={
+                        "Location": "/",
+                        "Set-Cookie": "%s=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"
+                                      % SESSION_COOKIE})
+                if path == "/audit":
+                    log_visit(sess, "view", "audit")
+                    return self._send(200, view_audit(c, qs, sess))
                 if path == "/":
+                    log_visit(sess, "view", "home")
+                    # 匿名访客看到的是**公开落地页**（T0 概览 + 登录入口），
+                    # 而不是整页失败或一堵 403 墙。
+                    # 首页要画职业/岗位的聚合图，那些数据是 T1 —— 所以对匿名访客
+                    # 正确的行为不是"报错"，而是"给他能看的，并告诉他还有更多"。
+                    if sess.is_anonymous:
+                        return self._send(200, view_login(c, qs, sess, msg=(
+                            "首页的完整仪表盘需要登录（它包含岗位与职业的聚合，属 T1）。"
+                            "下面是公开数据概览。")))
                     return self._send(200, view_home(c, qs))
                 if path == "/schema":
                     return self._send(200, view_schema(c, qs))
@@ -3960,11 +4388,71 @@ class Handler(BaseHTTPRequestHandler):
                                             % esc(path)))
         except PortalError as e:
             return self._send(e.status, page("出错了", '<div class="note err">%s</div>'
-                                             '<p><a href="/">回到总览</a></p>' % esc(e.message)))
+                                             '<p><a href="/">回到总览</a></p>' % esc(e.message),
+                                             session=sess))
+        except psycopg.errors.InsufficientPrivilege as e:
+            # **权限不足是正常状态，不是 500。** 让数据库的拒绝变成一句人话。
+            need = _required_tier_for(path)
+            # 把数据库给的原话也带上：它会**点名**是哪个对象被拒（例如
+            # "permission denied for view v_dimension_registry"），
+            # 这比"你需要 T1"有用得多 —— 运维据此就知道该给哪个等级授哪张表。
+            log_visit(sess, "denied", path, tier=sess.tier,
+                      detail={"need": need, "db_error": str(e).splitlines()[0][:200]})
+            return self._send(403, view_no_permission(
+                None, qs, sess, need=need, target=path,
+                db_error=str(e).splitlines()[0]))
+        except psycopg.errors.UndefinedTable as e:
+            return self._send(404, page("对象不存在", '<div class="note err">%s</div>'
+                                        '<p><a href="/schema">表与视图</a></p>'
+                                        % esc(str(e).splitlines()[0]), session=sess))
         except psycopg.Error as e:
             return self._send(500, page("数据库错误",
                                         '<div class="note err">%s</div>'
-                                        % esc(str(e).splitlines()[0])))
+                                        % esc(str(e).splitlines()[0]), session=sess))
+
+    def do_POST(self):
+        """只处理登录。门户的其它写操作一律没有 —— 这是"只读门户"的边界。"""
+        u = urllib.parse.urlparse(self.path)
+        path = u.path.rstrip("/") or "/"
+        sess = self._cookie_session()
+        set_current_session(sess)
+        if path != "/login":
+            return self._send(405, page("不支持", '<div class="note err">门户只读，'
+                                        '只接受 /login 的 POST。</div>', session=sess))
+        n = int(self.headers.get("Content-Length") or 0)
+        if n > 4096:
+            return self._send(413, page("请求过大", '<div class="note err">表单过大。</div>',
+                                        session=sess))
+        form = urllib.parse.parse_qs(self.rfile.read(n).decode("utf-8", "replace"))
+        email = (form.get("email", [""])[0] or "").strip()
+        pw = form.get("password", [""])[0] or ""
+        try:
+            # 登录要**写**一行会话，所以这条连接不能是只读事务；
+            # 而且要 as_role=False —— 认证函数只授给了 mt_portal，
+            # 不授给四个等级角色（"能登录"与"能读哪个等级的数据"是两件事）。
+            # 这不破坏"门户只读"：写的是 web_session（认证状态），
+            # 不是任何业务数据 —— change_log 不会因此增长。
+            with db(sess, readonly=False, as_role=False) as c:
+                r = q(c, "SELECT * FROM mt.web_login(%s, %s)", (email, pw))[0]
+        except psycopg.Error as e:
+            return self._send(500, page("登录失败", '<div class="note err">%s</div>'
+                                        % esc(str(e).splitlines()[0]), session=sess))
+        if r["reason"] != "ok" or not r["session_id"]:
+            log_visit(sess, "login_failed", "web", detail={"email_domain":
+                      email.split("@")[-1] if "@" in email else ""})
+            return self._send(200, view_login(None, {}, sess,
+                                              err="邮箱或口令不正确。"
+                                                  "（系统刻意不区分这两种情况，"
+                                                  "否则等于提供账号枚举接口）"))
+        log_visit(Session(actor=r["actor"], tier=r["tier"], session_id=r["session_id"],
+                          ok=True), "login", "web")
+        # 会话 cookie 只放随机 id：等级由数据库里的行决定，不放客户端。
+        # HttpOnly 挡 XSS 读 cookie；SameSite=Lax 挡跨站携带；Secure 留给 Cloudflare 终止 TLS 之后再加
+        # （本机 127.0.0.1 是 http，加了 Secure 浏览器就不回传，登录会"成功但没生效"）。
+        return self._send(302, b"", extra={
+            "Location": "/",
+            "Set-Cookie": "%s=%s; Path=/; Max-Age=28800; HttpOnly; SameSite=Lax"
+                          % (SESSION_COOKIE, r["session_id"])})
 
     def _table_csv(self, c, name, qs) -> bytes:
         m = meta()
@@ -4030,8 +4518,12 @@ def cmd_check():
     print("  [PASS] 外键的子表全部在目录中" if not unknown_fk
           else "  [FAIL] 外键指向未知表：%s" % unknown_fk)
 
-    # 每张表都必须能渲染出详情页
-    with db() as c:
+    # 每张表都必须能渲染出详情页。
+    # 用**特权连接**：`--check` 回答的是"页面代码本身能不能渲染"，
+    # 不是"某个等级能不能看"——后者由 `--check-tiers` 单独回答。
+    # 分成两件事的理由：权限不足是**预期状态**，把它混进构建期自检的失败项，
+    # 会让"--check 红了"既可能是代码问题也可能是等级问题，等于两个信号互相掩盖。
+    with admin_db() as c:
         for r in m["rels"]:
             try:
                 b = view_table(c, r["name"], {})

@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 
@@ -231,21 +232,63 @@ def d3_performance(c):
 
 def d4_security(c):
     """D4 安全与隐私：这一维度最容易被"写在文档里"骗过去，所以全部用实测。"""
-    # I4.1 应用层还在用超级用户连接的进程数（>0 则列级授权对运行中的服务无约束力）
-    procs = []
-    for rel in ("code/demo/portal.py", "code/demo/portal_dev.py", "code/demo/console.py",
-                "code/demo/app.py", "code/demo/static_site.py", "code/db.py",
-                "code/bridge/exchange.py", "code/bridge/outbox.py", "code/bridge/projection.py",
-                "ops/backup/backup.py"):
+    # I4.1 请求路径是否还在用超级用户连接
+    # **实测教训：这一条的第一版是错的。** 它 grep 全文件里的 `user=postgres`，
+    # 于是门户接线完成之后仍然报 9 —— 因为 admin_db()（进程级元数据缓存）和
+    # ops/backup/backup.py（备份）里确实还有那个串，而那是**有理由的例外**。
+    # 一个把"有理由的例外"和"缺陷"混在一起报红的指标，会逼人忽略它。
+    # 修正：例外必须**逐条显式登记并写明理由**，指标只统计登记之外的文件。
+    exempt = {
+        "code/demo/portal.py":
+            "admin_db() 仅用于进程级元数据缓存（系统目录 + 每张表行数；行数按需求是公开信息）"
+            "与 --check 构建期自检；**用户请求一律走 PORTAL_DSN（mt_portal）**，"
+            "由 I4.1b 独立验证",
+        "ops/backup/backup.py":
+            "备份必须用超级用户：非超级用户 pg_dump 会报 RLS 错误，"
+            "而 --enable-row-security 会**静默丢行**（实测）——宁要超级用户，"
+            "也不能要一份悄悄少了几行的备份",
+    }
+    hits = []
+    # 只扫**对外提供服务的入口**，不扫全仓。
+    # 为什么：全仓扫描会把临时探针脚本、一次性诊断脚本都算进来
+    # （实测报出 34 个文件），那个数字没有意义 —— "请求路径"指的是
+    # 真的会接受用户请求/执行数据操作的那些入口。范围错了，指标就废了。
+    serving = ["code/demo/portal.py", "code/demo/portal_dev.py", "code/demo/console.py",
+               "code/demo/app.py", "code/demo/static_site.py", "code/db.py",
+               "code/bridge/exchange.py", "code/bridge/outbox.py",
+               "code/bridge/projection.py", "ops/backup/backup.py"]
+    for rel in serving:
         p = os.path.join(BASE, rel)
-        if os.path.isfile(p):
-            with open(p, encoding="utf-8") as fh:
-                if "user=postgres" in fh.read():
-                    procs.append(rel)
-    add("D4", "I4.1", "仍以超级用户连接的应用进程数", len(procs), 0, "MUST",
-        "grep user=postgres（实测 %d 处：%s）" % (len(procs), ", ".join(procs[:3]) + ("…" if len(procs) > 3 else "")),
-        note="ops/backup/backup.py 应保持 postgres：非超级用户 pg_dump 会报 RLS 错误，"
-             "而 --enable-row-security 会静默丢行（已实测）")
+        if not os.path.isfile(p):
+            continue
+        with open(p, encoding="utf-8") as fh:
+            if "user=postgres" in fh.read():
+                hits.append(rel)
+    unexempt = sorted(h for h in hits if h not in exempt)
+    add("D4", "I4.1", "服务入口仍用超级用户连接的文件数", len(unexempt), 0, "MUST",
+        "只扫 %d 个服务入口；命中 %d 个，其中已登记例外 %d 个"
+        % (len(serving), len(hits), len(hits) - len(unexempt)),
+        note=("未接线的入口：%s。每个都要单独决定：改用受限角色（数据面），"
+              "还是登记为例外（工具面，必须写理由）。" % ("、".join(unexempt) or "无"))
+             + " || 例外：" + " | ".join("%s：%s" % (k, v) for k, v in exempt.items()))
+
+    # I4.1b 门户的请求路径**确实**用了受限角色（把 I4.1 的例外变成可验证的事实）
+    # 只靠"文件里有 PORTAL_DSN"不算证据，要确认 ① 它存在 ② 它的 user 不是超级用户
+    # ③ 处理请求的地方（with db(）用的是它。
+    portal_py = os.path.join(BASE, "code", "demo", "portal.py")
+    ok_role, role_note = False, ""
+    if os.path.isfile(portal_py):
+        src = open(portal_py, encoding="utf-8").read()
+        m = re.search(r'PORTAL_DSN\s*=\s*\(([^)]*)\)', src, re.S)
+        role = re.search(r"user=(\w+)", m.group(1)) if m else None
+        uses = "psycopg.connect(PORTAL_DSN" in src
+        ok_role = bool(role) and role.group(1) != "postgres" and uses
+        role_note = ("PORTAL_DSN 的 user=%s，且请求路径用 psycopg.connect(PORTAL_DSN"
+                     % (role.group(1) if role else "?") + ")"
+                     if ok_role else
+                     "PORTAL_DSN 缺失、或 user 是 postgres、或请求路径没用它")
+    add("D4", "I4.1b", "门户请求路径使用受限角色", "是" if ok_role else "否", "是", "MUST",
+        role_note)
 
     # I4.2 列级策略覆盖率
     add("D4", "I4.2", "列级策略覆盖的列数 / 全部列数",

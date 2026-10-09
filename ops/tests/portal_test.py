@@ -54,10 +54,64 @@ def q1(sql, p=None):
         return H.q1(c, sql, p)
 
 
+COOKIE = None                       # 登录后的会话 cookie（见 login()）
+TEST_EMAIL = "portal_test@local.test"
+TEST_PW = "portal-test-password-8f21"
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """不跟随 302：登录成功返回 302 + Set-Cookie，跟随就会把 cookie 丢掉。"""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def login(user_id_holder=None):
+    """以 T3 账号登录，拿到会话 cookie。
+
+    为什么测试必须登录（而不是继续匿名）：
+    门户现在跑在两个非超级用户角色上（`mt_portal` + `SET LOCAL ROLE mt_tN`），
+    匿名访客只能读 T0 的列 —— 数据页会（正确地）返回 403。
+    测试的目标是"页面渲染对不对"，所以要先用一个明确等级的账号进去；
+    "匿名被拒"这件事由 access_test.py 与 portal_test 的 T-系列单独断言。
+
+    账号由本测试自己建、自己删，不留垃圾；前缀 portal_test@ 便于识别。
+    """
+    global COOKIE
+    with conn() as c:
+        c.execute("SELECT mt.web_user_add(%s, %s, 'T3', '门户测试账号')",
+                  (TEST_EMAIL, TEST_PW))
+        c.commit()
+    req = urllib.request.Request(ROOT + "/login")
+    req.data = urllib.parse.urlencode({"email": TEST_EMAIL, "password": TEST_PW}).encode()
+    req.method = "POST"
+    try:
+        with urllib.request.build_opener(_NoRedirect()).open(req, timeout=30) as r:
+            sc = r.headers.get("Set-Cookie") or ""
+    except urllib.error.HTTPError as e:
+        sc = e.headers.get("Set-Cookie") or ""
+    COOKIE = sc.split(";")[0]
+    return COOKIE
+
+
+def cleanup_login():
+    """删除测试账号及其会话与审计行（先子后父：web_session 引用 app_user）。"""
+    with conn() as c:
+        c.execute("""DELETE FROM mt.web_session WHERE user_id IN
+                       (SELECT user_id FROM mt.app_user WHERE email = %s)""", (TEST_EMAIL,))
+        c.execute("DELETE FROM mt.app_user WHERE email = %s", (TEST_EMAIL,))
+        # 审计行保留意义不大，且会让 access_test 的日志计数漂移；本次自产的自己清掉
+        c.execute("DELETE FROM mt.access_log WHERE actor = %s", (TEST_EMAIL,))
+        c.commit()
+
+
 def get(path, expect=200):
     """返回 (状态码, 文本)。4xx 也照常返回，方便断言。"""
+    req = urllib.request.Request(ROOT + path)
+    if COOKIE:
+        req.add_header("Cookie", COOKIE)
     try:
-        with urllib.request.urlopen(ROOT + path, timeout=60) as r:
+        with urllib.request.urlopen(req, timeout=60) as r:
             return r.status, r.read().decode("utf-8")
     except urllib.error.HTTPError as e:
         return e.code, e.read().decode("utf-8")
@@ -68,6 +122,26 @@ def main():
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), portal.Handler)
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
+
+    # 先登录：门户现在跑在受限角色上，匿名只能读 T0（这是**正确**行为，见 login() 注释）
+    try:
+        cleanup_login()
+    except Exception:                                    # noqa: BLE001
+        pass
+    ck = login()
+    check(bool(ck), "测试账号登录成功并拿到会话 cookie（%s…）" % ck[:12])
+
+    # 【T0】匿名必须被挡：这是"限制访问"的最小证据，而且必须**不泄露数据**
+    _saved, globals()["COOKIE"] = COOKIE, None
+    st_anon, body_anon = get("/talent")
+    check(st_anon == 403, "匿名访问 /talent → 403（实得 %d）" % st_anon)
+    check("权限不足" in body_anon, "匿名看到的是「权限不足」页，而不是 500 或空白")
+    check("per_mock_0001" not in body_anon and "per_real_" not in body_anon,
+          "匿名页面里没有任何真实人才行（拒绝是真的，不是页面上藏了一下）")
+    st_anon_home, body_anon_home = get("/")
+    check(st_anon_home == 200, "匿名访问首页 → 200 公开落地页（不能给匿名者一堵 403 墙）")
+    check("公开" in body_anon_home, "匿名首页明确标注哪些数字是公开的")
+    globals()["COOKIE"] = _saved
 
     try:
         # ===============================================================
@@ -562,6 +636,9 @@ def main():
     finally:
         srv.shutdown()
         srv.server_close()
+        # teardown 的覆盖面必须等于构造的覆盖面（本项目踩过：--reset 只删了部分前缀，
+        # 每跑一次回归净增 1 个人）。这里建了账号+会话+审计行，就必须三样都收掉。
+        cleanup_login()
 
     return H.report(width=74, list_fails=True)
 
