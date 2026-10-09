@@ -687,7 +687,12 @@ def main():
         # 断言必须是**关于页面本身的**，否则同类问题还会再犯。
         pages = ["/", "/viz", "/viz/build", "/quality", "/talent", "/tree", "/match",
                  "/real", "/schema", "/t/", "/e/", "/search", "/analyze", "/sql",
-                 "/lineage", "/extend", "/occupations", "/dev"]
+                 "/lineage", "/extend", "/occupations", "/dev",
+                 # /audit 曾经不在这个清单里，于是它的一个真 bug（`"".join(a, b)`
+                 # 传了两个参数）长期没被发现 —— 因为**匿名访问在查询阶段就被拦下，
+                 # 根本走不到那行**，只有登录用户才会触发。教训：页面巡检必须覆盖
+                 # "登录后才有意义"的页面，否则它们的渲染路径永远没有测试经过。
+                 "/audit"]
         bad_js, bad_rt = [], []
         for p in pages:
             st, body = get(p)

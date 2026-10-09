@@ -4084,30 +4084,37 @@ def public_overview(c) -> str:
     但**不能把读不到当成 0**：那会把"权限不足"显示成"库里没有数据"——
     正是本项目一直在防的那种误读。所以读不到就明说。
     """
+    # 数量一律走**聚合闸门** mt.public_counts()（迁移 031）：它只返回"每张表多少行"，
+    # 不返回任何列值，所以**匿名不需要任何列权限**就能拿到数量。
+    #
+    # 为什么不用 `SELECT count(*) FROM mt.person`（第一版就是这么写的，实测翻车）：
+    # PostgreSQL 没有"只准数不准读"的权限粒度 —— 匿名能 count 某张表，纯粹是因为
+    # 那张表**恰好还有一列是 T0**。030 把 person_id/subject_code 收进 T1 之后，
+    # person 表对匿名就一列可读都没有了，`count(*)` 直接被拒 ——
+    # **"数量公开"这条需求被安全加固顺手打掉了**。把聚合做成独立闸门，
+    # 两条需求才不会互相牵制。
     items = [
-        ("人才档案", "SELECT count(*) FROM mt.person"),
-        ("岗位", "SELECT count(*) FROM mt.job_posting"),
-        ("职业（含层级）", "SELECT count(*) FROM mt.occupation"),
-        ("码表 / 码值", "SELECT (SELECT count(*) FROM mt.code_table)::text || ' / ' || "
-                        "(SELECT count(*) FROM mt.code_value)::text"),
-        ("已登记字段", "SELECT count(*) FROM mt.field_catalog"),
-        ("画像维度", "SELECT count(*) FROM mt.dimension"),
+        ("人才档案", "person"),
+        ("岗位", "job_posting"),
+        ("职业（含层级）", "occupation"),
+        ("码表", "code_table"),
+        ("码值", "code_value"),
+        ("已登记字段", "field_catalog"),
+        ("画像维度", "dimension"),
     ]
     cards, denied = [], []
-    for label, sqltext in items:
+    for label, tbl in items:
         # 必须用 try_read（SAVEPOINT 隔离）：普通 try/except 只捕获异常，
         # 但 PostgreSQL 里**语句失败会让整个事务进入 aborted 状态**，
         # 于是第一个读不到的指标会把后面所有指标一起打死 ——
         # 表现成"匿名首页 403 且理由指向一个毫不相关的表"。
         # 这是本项目第三次踩同一个坑（ops/health.py、字段页各一次），所以这里也写明。
-        rows = try_read(c, sqltext)
+        rows = try_read(c, "SELECT n_rows FROM mt.public_counts() WHERE table_name = %s",
+                        (tbl,))
         if rows is None:
             denied.append(label)
             continue
         v = list(rows[0].values())[0] if rows else None
-        # 有的指标本身就是字符串（例如"码表 / 码值"拼出来的 "78 / 584"），
-        # 而 `"{:,}"` 只能作用于数字 —— 对字符串会抛 ValueError。
-        # 用 isinstance 判断，而不是指望所有指标都是整数。
         shown = "{:,}".format(v) if isinstance(v, int) else str(v)
         cards.append(metric(shown, label, "公开"))
     html = '<div class="cards">%s</div>' % "".join(cards)
@@ -4269,8 +4276,8 @@ def view_audit(c, qs, session=None) -> bytes:
 <p class="muted"><b>可信度的边界要说清楚</b>：<code>actor</code> 来自应用声明的会话身份，
 应用理论上可以说谎；<code>actor_role</code> 来自 PostgreSQL 的 <code>current_setting('role')</code>，
 即**数据库认定的**调用者角色，不可伪造。两者都记，不一致时一眼能看出来。</p></div>
-""" % ("".join(metric(f"{total:,}", "日志条数"),
-               metric(len(actors), "访问者数（按 角色 分组）")),
+""" % ("".join([metric(f"{total:,}", "日志条数"),
+               metric(len(actors), "访问者数（按 角色 分组）")]),
        render_rows("access_log", list(actors[0].keys()) if actors else
                    ["actor", "actor_role", "n", "last_at"], actors) if actors
        else '<p class="muted">（0 行：还没有任何访问被记录）</p>',

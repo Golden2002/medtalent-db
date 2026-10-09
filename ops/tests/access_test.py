@@ -99,8 +99,21 @@ def main():
                                  ORDER BY column_name LIMIT 1""", (tier,)).fetchone()
 
         ok, rows = try_read("mt_t0", "SELECT count(*) AS n FROM mt.person")
-        check(ok and rows[0]["n"] > 0, "T0 能算总人数（不用读任何受限列）：%s"
-              % (rows[0]["n"] if ok else "-"))
+        # ⚠ 这条断言原来写的是"T0 能 count person"，它编码的是**旧行为**：
+        # 当时 person 表恰好还有一列是 T0，于是 count(*) 顺带能过 ——
+        # 那是**副作用，不是被设计出来的能力**。030 把标识列收进 T1 之后，
+        # person 对匿名一列可读都没有，`count(*)` 直接被拒。
+        # 正确的形态是**聚合走独立闸门**（迁移 031）：数量与列权限解耦，
+        # 将来再收紧某列也不会顺手打掉数量。
+        ok2, rows2 = try_read("mt_t0",
+                              "SELECT n_rows AS n FROM mt.public_counts() "
+                              "WHERE table_name='person'")
+        check(ok2 and rows2 and rows2[0]["n"] > 0,
+              "T0 经**聚合闸门** public_counts() 拿到总人数：%s"
+              % (rows2[0]["n"] if ok2 and rows2 else "-"))
+        check(not ok,
+              "T0 直接 count(*) mt.person 被拒（该表对匿名无一列可读）—— "
+              "所以数量必须走闸门，不能靠「恰好还有一列公开」的副作用")
         c0 = one_col("T0")
         if c0:
             ok, _ = try_read("mt_t0", "SELECT %s FROM mt.person ORDER BY 1 LIMIT 2"
