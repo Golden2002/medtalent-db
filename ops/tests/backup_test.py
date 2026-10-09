@@ -159,19 +159,33 @@ def main():
         return {"backup_id": bid, "started_at": dt.datetime.combine(
             today - dt.timedelta(days=days_ago), dt.time(2, 0))}
 
-    sample = [mk(i, "bk_d%02d" % i) for i in range(0, 40)]
+    def day_of(b):
+        """从 backup_id 里取天数。用 split 而不是 `b[-2:]`：
+        以前写 `int(b[-2:])`，一旦 id 变成三位数（例如 bk_d220）就会被读成第 0 天，
+        把周层断言悄悄算错。"""
+        return int(b["backup_id"].split("_d")[1])
+
+    # 样本里额外放一份**确定超出月度层**的（keep_monthly×31 = 186 天）。
+    sample = [mk(i, "bk_d%02d" % i) for i in range(0, 40)] + [mk(220, "bk_d220")]
     keep, drop = bk.plan_prune(pol, sample)
     keep_ids = {b["backup_id"] for b in keep}
     check("bk_d00" in keep_ids, "今天的备份保留")
     check("bk_d05" in keep_ids, "5 天前（日层）保留")
     # 周层每周只留一份：7–27 天区间内应有若干份被保留（而不是每天都留）
-    weekly_kept = [b for b in keep_ids if 7 <= int(b[-2:]) < 28]
+    weekly_kept = [b for b in keep_ids if 7 <= day_of({"backup_id": b}) < 28]
     check(len(weekly_kept) >= 2,
           "周层保留了 %d 份（7–27 天区间，每周一份）：%s"
           % (len(weekly_kept), sorted(weekly_kept)))
-    check(len([b for b in keep_ids if 7 <= int(b[-2:]) < 28]) < 21,
-          "周层未按天全留（否则策略失效）")
-    check("bk_d39" not in keep_ids, "39 天前（超出月层 6×31 天）被清理")
+    check(len(weekly_kept) < 21, "周层未按天全留（否则策略失效）")
+    # ⚠ 这条断言原来写的是「39 天前被清理」，**它只在部分日期成立**：
+    #    月度层的判据是 `age < keep_monthly*31`（186 天），39 天落进月度分支；
+    #    而"某个月的备份保不保留"取决于**该月是否已有更新的副本**。
+    #    实测（2026-10-09）：39 天前 = 8 月 31 日，样本里没有别的 8 月备份，
+    #    于是它作为"8 月的月度副本"被合法保留 —— 断言因此红。
+    #    这是**日期依赖的测试缺陷**（不是备份逻辑的问题，也与本轮改动无关），
+    #    修法是用一个确定超出月度窗口的天数，让结论不再取决于今天是几号。
+    check("bk_d220" not in keep_ids,
+          "220 天前（确定超出月层 6×31=186 天）被清理")
     check(len(keep) < len(sample), "确有清理（保留 %d / 共 %d）" % (len(keep), len(sample)))
     check(len(keep) >= pol["min_copies"], "至少保留 min_copies=%d 份" % pol["min_copies"])
 

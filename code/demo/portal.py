@@ -140,7 +140,11 @@ DOMAIN_TABLES = {
                    #   app_user     —— 登录用户及其等级（口令只存 bcrypt 哈希）
                    #   web_session  —— 服务端会话；等级由库里的行决定，不放在 cookie 里
                    # 它们是"记录访问用户"的载体，同属治理域。
-                   "app_user", "web_session"],
+                   "app_user", "web_session",
+                   # 列级剖析快照（schema/sql/027_column_profile.sql 创建）：
+                   # 它是**数据质量**的产物（空值率/基数/Top-K），不是业务数据，
+                   # 所以归治理域而不是人才/岗位域。目录页只读它，计算由 ops/profile.py 离线做。
+                   "column_profile"],
     "小程序接入": ["external_identity", "response_session", "answer", "experience_episode",
                    "experience_task", "crosswalk", "sync_event"],
     "备份与发布": ["backup_policy", "backup_run", "restore_run", "dataset_release"],
@@ -335,6 +339,16 @@ def _required_tier_for(path: str) -> str:
     return _TIER_HINT.get(path, "T1")
 
 
+# 等级序数：与数据库里的 mt.access_rank 保持一致（T0<T1<T2<T3<X）。
+# 这里在 Python 侧留一份只用于**渲染判断**（决定显示"权限不足"还是"未剖析"）；
+# 真正的权限判断在数据库，不依赖这个表。
+_TIER_RANK = {"T0": 0, "T1": 1, "T2": 2, "T3": 3, "X": 99}
+
+
+def _tier_rank(t: str) -> int:
+    return _TIER_RANK.get(t or "", -1)
+
+
 def q(c, sqltext, p=None):
     with c.cursor() as cur:
         cur.execute(sqltext, p)
@@ -344,6 +358,31 @@ def q(c, sqltext, p=None):
 def q1(c, sqltext, p=None):
     r = q(c, sqltext, p)
     return list(r[0].values())[0] if r else None
+
+
+def try_read(c, sqltext, p=None):
+    """在 SAVEPOINT 里"试探性地读一条"：失败则把事务恢复到可用状态并返回 None。
+
+    **为什么必须用 SAVEPOINT**（这个坑本项目踩过两次，第二次就在这里）：
+    PostgreSQL 里一条语句失败会让**整个事务**进入 aborted 状态，之后任何语句都报
+    `InFailedSqlTransaction` —— 也就是说"我试探着读一下，读不到就算了"这个写法，
+    会把后面所有正常的查询一起打死，表现成整页 500 且错误信息与真正的权限问题无关。
+    用 SAVEPOINT 把失败圈在一小段里，才能安全地做"能读就读、读不到降级"。
+
+    用途很明确：**可降级的读**（例如目录页的剖析统计对低等级不可读）。
+    真正的数据读取仍用 q()，让权限错误照常抛出、由 InsufficientPrivilege 处理器
+    渲染成「权限不足」页 —— 降级只用在"少一列信息也能用"的地方。
+    """
+    try:
+        c.execute("SAVEPOINT mt_probe")
+        with c.cursor() as cur:
+            cur.execute(sqltext, p)
+            rows = cur.fetchall()
+        c.execute("RELEASE SAVEPOINT mt_probe")
+        return rows
+    except psycopg.Error:
+        c.execute("ROLLBACK TO SAVEPOINT mt_probe")
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -1063,6 +1102,350 @@ def view_home(c, qs) -> bytes:
 # ---------------------------------------------------------------------------
 # ② 表与视图清单
 # ---------------------------------------------------------------------------
+def _profile_map(c):
+    """一次读入列级剖析快照（能读就返回，读不到返回空 + 原因）。
+
+    为什么吞掉权限错误而不是让页面 403：目录页的**主体是表清单与数量**
+    （那部分是公开的），剖析统计只是它的一列信息。
+    让"少一列统计"升级成"整页打不开"，是把可降级的东西做成了硬依赖。
+    但**必须把原因带到界面上** —— 否则用户会把"没有统计"读成"这列没数据"。
+    """
+    rows = try_read(c, """SELECT table_name, column_name, n_rows, n_not_null, n_distinct,
+                                 null_frac, is_enum_like, tier, computed_at, elapsed_ms,
+                                 min_value, max_value, avg_len, top_values, top_note
+                            FROM column_profile""")
+    if rows is None:
+        return {}, "读取 column_profile 被拒绝（该表含列级 Top-K 取值，只对 T3 开放）"
+    return {(r["table_name"], r["column_name"]): r for r in rows}, ""
+
+
+def _tier_map(c):
+    """表 → 各等级列数分布。权限分布要摆在目录里：
+    用户必须一眼看出"这张表里有多少字段是受限的"，否则他会以为看到的是全部。"""
+    rows = try_read(c, """SELECT table_name,
+                                 count(*) FILTER (WHERE min_tier='T0') AS t0,
+                                 count(*) FILTER (WHERE min_tier='T1') AS t1,
+                                 count(*) FILTER (WHERE min_tier='T2') AS t2,
+                                 count(*) FILTER (WHERE min_tier='T3') AS t3,
+                                 count(*) FILTER (WHERE min_tier='X')  AS denied,
+                                 count(*) AS total
+                            FROM column_policy GROUP BY table_name""")
+    return {r["table_name"]: r for r in (rows or [])}
+
+
+def _coverage_map(c):
+    rows = try_read(c, "SELECT * FROM v_column_profile_coverage")
+    return {r["table_name"]: r for r in (rows or [])}
+
+
+TIER_PILL = {"T0": "p-t", "T1": "p-n", "T2": "p-v", "T3": "p-x", "X": "p-x"}
+
+
+def _tier_bar(r) -> str:
+    """权限分布：用文字 + 颜色，不只靠颜色（可访问性）。"""
+    if not r:
+        return '<span class="muted">—</span>'
+    parts = []
+    for key, name in (("t0", "T0"), ("t1", "T1"), ("t2", "T2"), ("t3", "T3")):
+        if r[key]:
+            parts.append('<span class="pill %s" title="%s：%d 列">%s %d</span>'
+                         % (TIER_PILL[name], name, r[key], name, r[key]))
+    if r["denied"]:
+        parts.append('<span class="pill p-x">X %d</span>' % r["denied"])
+    return " ".join(parts)
+
+
+def view_catalog(c, qs) -> bytes:
+    """数据资产目录。用户原话「最重要的…看到字段名，数量，能够分类统计，能够检索」。
+
+    这一页要同时回答五件事，且**每件都标出它的可靠性**：
+      1. 有哪些表、每张表多少行、多少列（行数是精确 count(*)）
+      2. 每张表的**权限分布**（多少字段公开、多少受限）
+      3. 每张表的**可分类列数**（基数 2–200：能直接 group by 的列）
+      4. 哪些列**整列为空**（结构建了但数据从没到过 —— 只给行数会掩盖这件事）
+      5. 剖析的**覆盖率与时间**（没算过就说没算过，绝不当成 0）
+    """
+    m = meta()
+    prof, prof_err = _profile_map(c)
+    tiers = _tier_map(c)
+    cov = _coverage_map(c)
+
+    qtext = (qs.get("q", [""])[0] or "").strip()
+    dom_filter = (qs.get("dom", [""])[0] or "").strip()
+    tier_filter = (qs.get("tier", [""])[0] or "").strip().upper()
+    sort = (qs.get("sort", ["rows"])[0] or "rows")
+    dirn = (qs.get("dir", ["desc"])[0] or "desc")
+
+    tables = [r for r in m["rels"] if r["kind"] == "table"]
+
+    # 元数据检索：表名 / 列名 / 表说明 / 字段字典标题
+    if qtext:
+        needle = qtext.lower()
+        hit_tables = set()
+        for r in tables:
+            if needle in r["name"].lower():
+                hit_tables.add(r["name"])
+            if needle in (r.get("comment") or "").lower():
+                hit_tables.add(r["name"])
+            for col in m["cols"].get(r["name"], []):
+                if needle in col["column_name"].lower():
+                    hit_tables.add(r["name"])
+                    break
+        # 字段字典（中文标题）—— 这是"用中文找字段"的唯一入口
+        try:
+            for r in q(c, """SELECT e.table_name, f.title, f.field_id
+                               FROM field_catalog f
+                               JOIN entity_catalog e ON e.entity_id = f.entity_id
+                              WHERE lower(f.title) LIKE %s OR lower(f.field_id) LIKE %s""",
+                       ("%" + needle + "%", "%" + needle + "%")):
+                hit_tables.add(r["table_name"])
+        except psycopg.Error:
+            pass
+        tables = [r for r in tables if r["name"] in hit_tables]
+
+    if dom_filter:
+        tables = [r for r in tables if r["domain"] == dom_filter]
+    if tier_filter in ("T0", "T1", "T2", "T3"):
+        key = tier_filter.lower()
+        tables = [r for r in tables if tiers.get(r["name"], {}).get(key)]
+
+    # 组装一行需要的全部数字
+    recs = []
+    for r in tables:
+        n = r["name"]
+        cv = cov.get(n) or {}
+        recs.append({
+            "name": n, "domain": r["domain"], "rows": r["rows"], "n_cols": r["n_cols"],
+            "profiled": cv.get("n_profiled") or 0,
+            "enum_like": cv.get("n_enum_like") or 0,
+            "all_null": cv.get("n_all_null") or 0,
+            "last": cv.get("last_computed"),
+            "tiers": tiers.get(n),
+            "n_cons": len(m["cons"].get(n, [])), "n_idx": len(m["idx"].get(n, [])),
+            "n_fk_out": len(m["fk_out"].get(n, [])) if "fk_out" in m else None,
+        })
+
+    keys = {"name": lambda x: x["name"], "rows": lambda x: x["rows"],
+            "cols": lambda x: x["n_cols"],
+            "profiled": lambda x: x["profiled"] / max(x["n_cols"], 1),
+            "enum": lambda x: x["enum_like"], "empty": lambda x: x["all_null"]}
+    recs.sort(key=keys.get(sort, keys["rows"]), reverse=(dirn != "asc"))
+
+    def sorthdr(label, key, cls="n"):
+        cur = " ↓" if (sort == key and dirn == "desc") else (" ↑" if sort == key else "")
+        nd = "asc" if (sort == key and dirn == "desc") else "desc"
+        return ('<th class="%s"><a href="%s">%s%s</a></th>'
+                % (cls, esc(qs_encode(qs, sort=key, dir=nd)), esc(label), cur))
+
+    rows_html = "".join(
+        '<tr><td><a href="/t/%s"><code>%s</code></a></td>'
+        '<td>%s</td><td class="n">%s</td><td class="n">%d</td>'
+        '<td class="n">%d<small class="muted">/%d</small></td>'
+        '<td class="n">%d</td><td class="n">%s</td><td>%s</td>'
+        '<td class="muted">%s</td></tr>'
+        % (x["name"], esc(x["name"]), esc(x["domain"]), f"{x['rows']:,}", x["n_cols"],
+           x["profiled"], x["n_cols"], x["enum_like"],
+           ('<span class="warnpill">%d</span>' % x["all_null"]) if x["all_null"] else "0",
+           _tier_bar(x["tiers"]),
+           esc(str(x["last"])[:16]) if x["last"] else "未剖析")
+        for x in recs)
+
+    head = ('<tr><th>表</th><th>域</th>' + sorthdr("行数", "rows") + sorthdr("列", "cols")
+            + sorthdr("已剖析", "profiled") + sorthdr("可分类列", "enum")
+            + sorthdr("全空列", "empty") + '<th>权限分布</th><th>剖析时间</th></tr>')
+
+    # KPI 带
+    total_cols = sum(x["n_cols"] for x in recs)
+    total_prof = sum(x["profiled"] for x in recs)
+    total_enum = sum(x["enum_like"] for x in recs)
+    total_null = sum(x["all_null"] for x in recs)
+    empty_tables = [x["name"] for x in recs if x["rows"] == 0]
+    kpi = "".join([
+        metric(f"{len(recs):,}", "表", "当前筛选下"),
+        metric(f"{sum(x['rows'] for x in recs):,}", "行（精确 count(*)）", "所有列都可统计"),
+        metric(f"{total_cols:,}", "列", "字段名即来自这里"),
+        metric(f"{total_prof:,} / {total_cols:,}", "已剖析列", "空值率·基数·Top-K"),
+        metric(f"{total_enum:,}", "可分类列", "基数 2–200，可直接分组"),
+        metric(f"{total_null:,}", "整列为空", "结构建了但数据没到过"),
+    ])
+
+    chips = "".join(
+        '<a class="chip%s" href="%s">%s</a>'
+        % (" on" if d == dom_filter else "", esc(qs_encode(qs, dom=d, page=None)) if d else
+           esc(qs_encode(qs, dom=None, page=None)), esc(d or "全部"))
+        for d in [""] + [d for d, _ in DOMAINS])
+
+    warn = ('<div class="note warn">本页的剖析统计当前读不到：<code>%s</code>。'
+            '「已剖析 / 可分类 / 整列为空」三列因此不可信 —— 显示为 0 是**读不到**，'
+            '不是**真的是 0**。要么用 T3 登录，要么运行 <code>python ops\\profile.py</code>。'
+            '</div>' % esc(prof_err)) if prof_err else ""
+
+    empty_note = ('<div class="note info">有 <b>%d</b> 张表是 0 行：%s。'
+                  '它们仍留在表里（结构已建、数据未到），而不是被隐藏 —— '
+                  '隐藏零行表会让人以为"这些领域不存在"。</div>'
+                  % (len(empty_tables), esc("、".join(empty_tables[:12])))) if empty_tables else ""
+
+    body = """
+<div class="sub">数据资产目录：<b>字段名</b>来自 <code>information_schema</code>，
+<b>数量</b>是精确 <code>count(*)</code>／<code>count(列)</code>／<code>count(DISTINCT 列)</code> 三个不同含义，
+<b>分类统计</b>的前提是「这列基数够小」（可分类列 = 基数 2–200）。
+剖析是<b>快照</b>，不是实时值，每张表都标出了计算时间。</div>
+%s%s%s
+<div class="cards">%s</div>
+<div class="card"><h2>检索与筛选</h2>
+<form method="get" action="/catalog"><div class="row">
+  <div style="flex:3 1 320px"><label>按表名 / 列名 / 中文标题检索</label>
+    <input name="q" value="%s" placeholder="例如：学历、degree、健康"></div>
+  <div style="flex:0 0 120px"><button type="submit">检索</button></div>
+  <div style="flex:0 0 120px"><a class="btnlink" href="/catalog">清空</a></div>
+</div></form>
+<div class="chips">%s</div>
+<p class="muted">这是<b>元数据检索</b>（表名、列名、字段字典中文标题），不是值检索 ——
+两者的代价差几个数量级。<a href="/search">按值检索在这里</a>。</p></div>
+<div class="card"><h2>表清单 <span class="muted">· 点表名进入结构 + 真实数据</span></h2>
+<div class="tablewin"><table>%s<tbody>%s</tbody></table></div>
+<p class="muted">「已剖析」分母是该表的列数；未剖析的表显示"未剖析"而不是 0。
+「可分类列」= 去重值个数在 2–200 之间的列，它们可以直接 <code>GROUP BY</code>；
+基数为 1 的常量列没有分组意义，基数过大的自由文本需要先区间化或码表化。</p></div>
+""" % (warn, empty_note, "", kpi, esc(qtext), chips, head, rows_html)
+    body += page_analysis(c, "/catalog")
+    return page("数据目录", body, subtitle="字段名 · 数量 · 分类统计 · 检索",
+                session=current_session())
+
+
+def view_field(c, table, col, qs) -> bytes:
+    """字段剖析页：一列的全部可核事实。
+
+    为什么值得单独一页：用户"分类统计"时撞的墙几乎都在这四件事上 ——
+    这列有多少值、有没有空、能不能分组、最快的取值是什么。
+    把它们摊在一页上，他就不用猜。
+    """
+    table = require_table(table)
+    if not require_column(table, col):
+        raise PortalError(404, "表 %s 没有列 %s" % (table, col))
+    m = meta()
+    rows = q(c, """SELECT * FROM column_profile
+                    WHERE table_name=%s AND column_name=%s""", (table, col)) if \
+        _can_read_profile(c) else []
+    if not rows:
+        # 可能是 T0–T2（读不到整表剖析），退回"公开列统计"视图
+        rows = try_read(c, """SELECT * FROM v_column_profile_public
+                               WHERE table_name=%s AND column_name=%s""", (table, col)) or []
+    p = rows[0] if rows else None
+    if not p:
+        # 两种"没有"必须分开：**这列真的没剖析过** vs **剖析存在但你的等级看不到**。
+        # 混为一谈会让用户以为"这列没数据"——本项目一直在防的误读，
+        # 而第一版这里就写错了：T0 打开 T1 列（person.subject_code）得到的是
+        # "还没有剖析结果"，其实剖析结果好好地躺在表里，只是对他不可见。
+        pol = q(c, """SELECT min_tier, source, note FROM column_policy
+                       WHERE table_name=%s AND column_name=%s""", (table, col))
+        need = pol[0]["min_tier"] if pol else "T1"
+        if _tier_rank(need) > _tier_rank(current_session().tier):
+            return view_no_permission(c, qs, current_session(), need=need,
+                                      target="%s.%s 的列级统计" % (table, col),
+                                      db_error="该列的访问等级 %s 高于当前会话等级 %s"
+                                               % (need, current_session().tier))
+        raise PortalError(404, "列 %s.%s 还没有剖析结果（该列确实没算过，不是权限问题）。"
+                               "在命令行跑：python ops\\profile.py --tables %s"
+                          % (table, col, table))
+
+    policy = q(c, """SELECT min_tier, source, note FROM column_policy
+                      WHERE table_name=%s AND column_name=%s""", (table, col))
+    tier = policy[0]["min_tier"] if policy else "?"
+    fld = q(c, """SELECT f.field_id, f.title, f.description, f.value_type, f.code_table_id,
+                         f.is_required, f.is_private
+                    FROM field_catalog f JOIN entity_catalog e ON e.entity_id=f.entity_id
+                   WHERE e.table_name=%s AND lower(regexp_replace(f.field_id,
+                         '^F_[A-Za-z0-9]+_','')) = lower(%s)""", (table, col))
+
+    # Top-K：把码翻译成中文标签（本库纪律是存码不存标签，直接显示码对外行没有意义）
+    top_html = '<p class="muted">（无 Top-K：%s）</p>' % esc(p.get("top_note") or "未计算")
+    if p.get("top_values"):
+        tv = p["top_values"]
+        if isinstance(tv, str):
+            tv = json.loads(tv)
+        labels = {}
+        if fld and fld[0].get("code_table_id"):
+            try:
+                labels = {r["code"]: r["label"] for r in q(
+                    c, "SELECT code, label FROM code_value WHERE code_table_id=%s",
+                    (fld[0]["code_table_id"],))}
+            except psycopg.Error:
+                labels = {}
+        total = p["n_not_null"] or 1
+        cum = 0
+        trs = []
+        for i, t in enumerate(tv, 1):
+            cum += t["n"]
+            trs.append('<tr><td class="n">%d</td><td><code>%s</code></td><td>%s</td>'
+                       '<td class="n">%s</td><td class="n">%.1f%%</td><td class="n">%.1f%%</td></tr>'
+                       % (i, esc(str(t["v"])), esc(labels.get(str(t["v"]), "—")),
+                          f"{t['n']:,}", 100.0 * t["n"] / total, 100.0 * cum / total))
+        top_html = ('<table><thead><tr><th class="n">#</th><th>值</th><th>中文标签</th>'
+                    '<th class="n">计数</th><th class="n">占比</th><th class="n">累计</th></tr>'
+                    '</thead><tbody>%s</tbody></table>'
+                    '<p class="muted">%s。中文标签来自该列对应的码表 —— '
+                    '本库纪律是「存码不存标签」，不翻译的话外行看到的是 <code>T1</code> '
+                    '这种码而不是"注册用户"。</p>' % ("".join(trs), esc(p["top_note"] or "")))
+
+    nullpct = float(p["null_frac"] or 0) * 100
+    body = """
+<div class="sub"><code>%s.%s</code> · %s · 访问等级 <span class="pill %s">%s</span>
+%s</div>
+%s
+<div class="cards">
+%s%s%s%s%s%s
+</div>
+<div class="card"><h2>Top-K 取值</h2>%s</div>
+<div class="card"><h2>这一列的登记信息</h2>%s</div>
+<div class="card"><h2>本次剖析怎么算的（可核）</h2>
+<pre class="sqlbox">SELECT count(*) AS 行数,
+       count(%s) AS 非空数,
+       count(DISTINCT %s) AS 去重值个数
+  FROM mt.%s;</pre>
+<p class="muted">剖析时间是 <b>%s</b>，本列耗时 <b>%s ms</b>。
+这是<b>快照</b>：数据变了它不会自动更新，需要重跑 <code>python ops\\profile.py --tables %s</code>。</p></div>
+""" % (
+        esc(table), esc(col), esc(p.get("data_type") or ""), TIER_PILL.get(tier, "p-n"),
+        esc(tier), esc(("· 字典：" + fld[0]["title"]) if fld else "· 该列未登记字段字典"),
+        '必要提示' if True else "",
+        metric(f"{p['n_rows']:,}" if p.get("n_rows") is not None else "—", "行数", "表的总行数"),
+        metric(f"{p['n_not_null']:,}" if p.get("n_not_null") is not None else "—",
+               "非空数", "count(列)"),
+        metric(f"{p['n_distinct']:,}" if p.get("n_distinct") is not None else "未算",
+               "去重值个数", "能否分组的关键"),
+        metric("%.1f%%" % nullpct, "空值率", "精确值，不是采样"),
+        metric("是" if p.get("is_enum_like") else "否", "可分类",
+               "基数 2–200 才可直接 GROUP BY"),
+        metric(esc(str(p.get("min_value"))[:18] if p.get("min_value") is not None else "—"),
+               "最小值 / 最大值",
+               esc(str(p.get("max_value"))[:18] if p.get("max_value") is not None else "—")),
+        top_html,
+        ('<table><tbody>'
+         '<tr><th>访问等级</th><td><span class="pill %s">%s</span> —— %s</td></tr>'
+         '<tr><th>等级依据</th><td><code>%s</code>：%s</td></tr>%s</tbody></table>'
+         % (TIER_PILL.get(tier, "p-n"), esc(tier), esc((policy[0]["note"] if policy else "")),
+            esc(policy[0]["source"] if policy else "?"),
+            esc((policy[0]["note"] if policy else "")),
+            "".join("<tr><th>%s</th><td>%s</td></tr>" % (esc(k), esc(v)) for k, v in
+                    (("字段 ID", fld[0]["field_id"]), ("中文标题", fld[0]["title"]),
+                     ("值类型", fld[0]["value_type"]), ("码表", fld[0]["code_table_id"]),
+                     ("是否必填", "是" if fld[0]["is_required"] else "否"),
+                     ("是否私有", "是" if fld[0]["is_private"] else "否")) if v)
+            if fld else "<tr><th>字段字典</th><td>未登记</td></tr>")
+         if True else ""),
+        esc(col), esc(col), esc(table), esc(str(p.get("computed_at"))[:19]),
+        f"{p.get('elapsed_ms') or 0:,}", esc(table))
+    return page("字段 %s.%s" % (table, col), body,
+                subtitle="一列的全部可核事实", here="数据目录",
+                crumbs=[("/catalog", "数据目录"), ("/t/" + table, table)],
+                session=current_session())
+
+
+def _can_read_profile(c) -> bool:
+    return try_read(c, "SELECT 1 FROM column_profile LIMIT 1") is not None
+
+
 def view_schema(c, qs) -> bytes:
     m = meta()
     groups = []
@@ -4298,6 +4681,13 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, view_home(c, qs))
                 if path == "/schema":
                     return self._send(200, view_schema(c, qs))
+                if path == "/catalog":
+                    log_visit(sess, "view", "catalog")
+                    return self._send(200, view_catalog(c, qs))
+                mm = re.match(r"^/field/([A-Za-z0-9_]+)/([A-Za-z0-9_]+)$", path)
+                if mm:
+                    log_visit(sess, "view", "field", detail={"t": mm.group(1), "c": mm.group(2)})
+                    return self._send(200, view_field(c, mm.group(1), mm.group(2), qs))
                 if path == "/search":
                     return self._send(200, view_search(c, qs))
                 if path == "/analyze":

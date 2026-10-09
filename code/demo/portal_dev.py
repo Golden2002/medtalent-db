@@ -44,6 +44,11 @@ for p in (os.path.join(BASE, "code"), os.path.join(BASE, "code", "demo")):
 import psycopg  # noqa: E402
 from psycopg.rows import dict_row  # noqa: E402
 
+# 开发者模式（本进程，:8083）用**特权连接** P.admin_db(readonly=False)：
+#   · 它是可写的运维工具：要 CREATE TABLE / 加维度 / 跑迁移，等级角色没有 DDL 权限；
+#   · 只读门户 :8082 才是面向用户的进程，它用受限角色 mt_portal + SET LOCAL ROLE。
+# 因此本进程**绝不允许暴露到公网**（docs/19 的部署纪律），也仍在 ops/health.py
+# 的 I4.1 待办里（写路径需要各自的受限写角色，不能在只读角色上顺手放开）。
 import portal as P  # noqa: E402
 from _portal_shared import PortalError  # noqa: E402  ← 同一个异常类对象，见该模块说明
 
@@ -780,7 +785,7 @@ class DevHandler(BaseHTTPRequestHandler):
                     '开发者模式是<b>另一个进程</b>，因为它能写库——'
                     '分开才能证明门户在任何配置下都写不进去。</div>',
                     nav=DEV_NAV, subtitle="信任边界"))
-            with P.db() as c:
+            with P.admin_db(readonly=False) as c:
                 if path == "/":
                     return self._send(200, view_home(c, qs))
                 if path in ("/sql", "/model", "/tools"):
@@ -805,7 +810,7 @@ class DevHandler(BaseHTTPRequestHandler):
         path = u.path.rstrip("/") or "/"
         qs = self._form()
         try:
-            with P.db() as c:
+            with P.admin_db(readonly=False) as c:
                 return self._dispatch(c, path, qs, write=True)
         except PortalError as e:
             return self._send(e.status, P.page(
@@ -847,7 +852,7 @@ def cmd_check():
           % ("PASS" if not n_bad else "FAIL", len(cases)))
 
     run_script("CREATE TABLE IF NOT EXISTS _dev_check_tmp(x int);", commit=False)
-    with P.db() as c:
+    with P.admin_db(readonly=False) as c:
         exists = P.q1(c, "SELECT count(*) FROM information_schema.tables "
                          "WHERE table_schema='mt' AND table_name='_dev_check_tmp'")
     if exists:
@@ -856,17 +861,17 @@ def cmd_check():
 
     run_script("CREATE TABLE IF NOT EXISTS _dev_check_tmp(x int);\n"
                "INSERT INTO _dev_check_tmp VALUES (1);", commit=True)
-    with P.db() as c:
+    with P.admin_db(readonly=False) as c:
         n = P.q1(c, "SELECT count(*) FROM mt._dev_check_tmp")
     run_script("DROP TABLE IF EXISTS _dev_check_tmp;", commit=True)
-    with P.db() as c:
+    with P.admin_db(readonly=False) as c:
         gone = P.q1(c, "SELECT count(*) FROM information_schema.tables "
                        "WHERE table_schema='mt' AND table_name='_dev_check_tmp'")
     if n != 1 or gone:
         fails.append("提交模式异常（插入 %s 行，清理后残留 %s）" % (n, gone))
     print("  [%s] 提交模式落地并已清理" % ("PASS" if (n == 1 and not gone) else "FAIL"))
 
-    with P.db() as c:
+    with P.admin_db(readonly=False) as c:
         for fn, args in ((view_home, (c, {})), (view_sql, (c, {})),
                          (view_model, (c, {})), (view_tools, (c, {})),
                          (view_audit, (c, {})), (view_migrate, (c, {}))):

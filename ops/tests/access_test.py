@@ -265,6 +265,40 @@ def main():
                             "'EXECUTE') AS x", (role,)).fetchone()["x"]
             check(can, "%s 能调用 log_access（唯一允许的写入路径）" % role)
 
+        # ===============================================================
+        print("\n【A10】对账不能让「表级授权」静默消失（这类缺陷已出现四次）")
+        # 这一条守的是一个**反复出现**的缺陷模式：
+        #   `apply_column_grants()` 是"先收回全部、再只按 column_policy 重授"。
+        #   任何**不在 column_policy 里**的表，都会在每次对账时被永久剥光。
+        # 实测事故链（完整档回归）：
+        #   迁移 027 新建 column_profile 但没刷新策略 → 策略里 0 行 →
+        #   access_test 的 A6 调用 apply_column_grants() → 该表授权被清空 →
+        #   portal_test 从 172/172 掉到 159/172、viz_test 直接 permission denied。
+        #   而单独跑这些套件都是通过的 —— "单独跑通过、序列里失败"极难定位。
+        # 同类前三次：018（列权限 942→180）、019（序列权限）、020（审计写入）。
+        # 所以：**必须断言"对账之后，表级授权对象仍然可读"**。
+        c.execute("SELECT mt.apply_column_grants()")
+        c.commit()
+        for tbl, role, want in (("mt.column_profile", "mt_t3", True),
+                                ("mt.column_profile", "mt_t0", False)):
+            got = c.execute("SELECT has_table_privilege(%s, %s, 'SELECT') AS x",
+                            (role, tbl)).fetchone()["x"]
+            check(got == want,
+                  "对账后 %s 对 %s 的可读性 = %s（实得 %s）"
+                  % (role, tbl, want, got))
+        # 策略必须覆盖每一列：缺一列就是下一次事故的种子
+        missing = c.execute("""
+            SELECT count(*) AS n
+              FROM information_schema.columns ic
+              JOIN pg_class cl ON cl.relname = ic.table_name
+              JOIN pg_namespace ns ON ns.oid = cl.relnamespace AND ns.nspname='mt'
+             WHERE ic.table_schema='mt' AND cl.relkind='r'
+               AND NOT EXISTS (SELECT 1 FROM mt.column_policy cp
+                                WHERE cp.table_name=ic.table_name
+                                  AND cp.column_name=ic.column_name)""").fetchone()["n"]
+        check(missing == 0,
+              "column_policy 覆盖全部物理列（缺 %d 列会让对账静默剥光它们）" % missing)
+
     return H.report(width=74, list_fails=True)
 
 

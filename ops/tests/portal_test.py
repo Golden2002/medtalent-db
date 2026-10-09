@@ -587,6 +587,72 @@ def main():
               % bd2.count("F_PSN_"))
 
         # ===============================================================
+        # ===============================================================
+        print("\n【T18】数据目录与字段剖析（需求③：字段名 / 数量 / 分类统计 / 检索）")
+        st, body = get("/catalog")
+        check(st == 200, "/catalog 返回 200（实得 %d）" % st)
+        # 剖析必须**真的物化过**：否则目录页的"已剖析 / 可分类 / 整列为空"三列全是 0，
+        # 而页面照常渲染 —— 那种"绿着的空目录"比报错更难发现。
+        n_prof = q1("SELECT count(*) FROM mt.column_profile")
+        check(n_prof > 500,
+              "列级剖析已物化（%d 列）—— 目录页的数字有依据，不是空的" % n_prof)
+        # "数量"必须拆成三个不同含义，这是本节最核心的口径要求
+        check("行（精确 count(*)" in body,
+              "目录页明确说数量是精确 count(*)，而不是估算")
+        check("count(DISTINCT" in body or "去重值个数" in body,
+              "目录页区分「行数 / 非空数 / 去重值个数」三个不同含义——"
+              "只给行数会让人把 690 行当成 690 条有值记录")
+        check("可分类列" in body,
+              "目录页给出「可分类列」（基数 2–200），因为分类统计的前提是知道哪些列能分组")
+        check("权限分布" in body, "目录页显示每张表的权限分布（多少字段公开、多少受限）")
+        # 剖析覆盖率：没算过必须说"未剖析"，不能显示成 0
+        st, body_prof = get("/catalog")
+        check("未剖析" in body_prof or "剖析时间" in body_prof,
+              "目录页对未剖析的表标注「未剖析」而不是 0（把「没算过」显示成「没有」是误读）")
+        # 元数据检索
+        st, body_q = get("/catalog?q=" + urllib.parse.quote("学历"))
+        check(st == 200 and len(body_q) < len(body),
+              "按中文标题检索能筛掉大部分表（%d → %d 字节）" % (len(body), len(body_q)))
+        # 排序与筛选
+        for qs_, want in (("sort=enum&dir=desc", "按可分类列排序"),
+                          ("sort=rows&dir=asc", "按行数升序"),
+                          ("tier=T3", "按权限等级筛选"),
+                          ("dom=" + urllib.parse.quote("治理与合规"), "按业务域筛选")):
+            st, _b = get("/catalog?" + qs_)
+            check(st == 200, "目录页 %s 可用" % want)
+        # 值检索与元数据检索必须分开
+        check("按值检索" in body and "/search" in body,
+              "目录页把「元数据检索」与「按值检索」明确区分并互相指路（代价差几个数量级）")
+
+        # 字段页：一列的全部可核事实
+        st, body_f = get("/field/person/person_id")
+        check(st == 200, "/field/person/person_id 返回 200（实得 %d）" % st)
+        check("去重值个数" in body_f, "字段页给出「去重值个数」——它决定这列能不能分组")
+        check("空值率" in body_f, "字段页给出精确空值率（不是 pg_stats 采样）")
+        check("访问等级" in body_f, "字段页给出该列的访问等级与等级依据")
+        check("count(DISTINCT" in body_f, "字段页打印本次剖析用的 SQL，供人工复核")
+        # Top-K 必须带中文标签（本库纪律是存码不存标签，不翻译外行看到的是一屏码）
+        top1 = q1("""SELECT table_name || '.' || column_name AS x FROM mt.column_profile
+                      WHERE top_values IS NOT NULL AND n_distinct > 2
+                      ORDER BY elapsed_ms DESC LIMIT 1""")
+        if top1:
+            t_, c_ = top1.split(".")
+            st, body_t = get("/field/%s/%s" % (t_, c_))
+            check(st == 200 and "中文标签" in body_t,
+                  "字段页的 Top-K 表带「中文标签」列（%s）" % top1)
+        # 多抽几列验证"一个 handler + 路径参数"能覆盖全部列，而不是手写模板
+        sample = q1("""SELECT string_agg(x, ',' ORDER BY x) FROM (
+                         SELECT table_name || '/' || column_name AS x FROM mt.column_profile
+                          WHERE is_enum_like ORDER BY table_name, column_name LIMIT 8) s""") or ""
+        bad = []
+        for pair in [p for p in sample.split(",") if p]:
+            t_, c_ = pair.split("/")
+            r = get("/field/%s/%s" % (t_, c_))
+            if r[0] not in (200, 403):
+                bad.append("%s→%d" % (pair, r[0]))
+        check(not bad, "抽 8 个字段页逐个渲染，没有 500（异常：%s）" % ("、".join(bad) or "无"))
+
+        # ===============================================================
         print("\n【T17】两条「宣称」必须变成可断言的性质（不是文案）")
         # 起因：docs/17 的调研发现两处"说的和做的不一致"——
         #   ① 页面宣称"零 JS"，但 /viz/build 的表单上有 onchange="this.form.submit()"，
