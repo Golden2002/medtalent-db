@@ -153,7 +153,15 @@ DOMAIN_TABLES = {
                    # 导出禁令的显式落点（schema/sql/032_export_control.sql 创建）：
                    # 动作级策略（禁止导出）→ 物理列。与 column_policy 分工：
                    # 前者管"能不能带走"，后者管"能不能看"。
-                   "export_denied"],
+                   "export_denied",
+                   # 年龄段口径（schema/sql/036_age_band.sql 创建）：
+                   #   age_band_asis —— 年龄段计算的**基准年**（单行表）。
+                   #   刻意不用 now()：派生字段必须说明时间基准，否则会被当成实时值。
+                   "age_band_asis",
+                   # 公开视图注册表（schema/sql/038_public_view_registry.sql 创建）：
+                   # 登记"对匿名开放"的视图及其理由。视图以属主权限执行，
+                   # 所以"哪些视图能公开"必须显式登记，不能靠函数里的字面清单（会漏）。
+                   "public_view_registry"],
     "小程序接入": ["external_identity", "response_session", "answer", "experience_episode",
                    "experience_task", "crosswalk", "sync_event"],
     "备份与发布": ["backup_policy", "backup_run", "restore_run", "dataset_release"],
@@ -4181,6 +4189,26 @@ def public_overview(c) -> str:
     if denied:
         html += ('<div class="note warn">以下数字需要登录后查看：%s'
                  '（不是"库里没有"，是当前等级读不到）</div>' % esc("、".join(denied)))
+    # 年龄段分布：这是"年龄可以公开"的**具体落地形式**（037 用户决策）。
+    # 刻意展示**分布**而不是逐人年龄：逐人年龄要带主体标识才能对上人，
+    # 而主体标识已按披露控制收进 T1（030）。分布是统计属性，不指向个体。
+    rows = try_read(c, "SELECT band_label, n_persons, band FROM mt.v_age_band_public "
+                       "ORDER BY band")
+    if rows:
+        total = sum(r["n_persons"] for r in rows) or 1
+        bars = "".join(
+            '<tr><td>%s</td><td class="n">%s</td><td class="n">%.1f%%</td></tr>'
+            % (esc(r["band_label"] or r["band"]), f"{r['n_persons']:,}",
+               100.0 * r["n_persons"] / total)
+            for r in rows)
+        html += ('<div class="card"><h2>年龄段分布 <span class="muted">· 公开（T0）</span></h2>'
+                 '<table><thead><tr><th>年龄段</th><th class="n">人数</th>'
+                 '<th class="n">占比</th></tr></thead><tbody>%s</tbody></table>'
+                 '<p class="muted">这里公开的是<b>年龄段</b>（统计属性）；'
+                 '<b>精确出生年份</b>是个人信息，需要 T2（员工）及以上 —— '
+                 '两者是不同的东西，"年龄可以公开"不等于"出生年月可以公开"。'
+                 '另外年龄段是<b>按基准年计算的快照</b>（见 <code>mt.age_band_asis</code>），'
+                 '会随时间过期，需定期重算。</p></div>' % bars)
     return html
 
 

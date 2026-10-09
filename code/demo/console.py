@@ -45,7 +45,17 @@ import exchange as ex  # noqa: E402
 import projection as pj  # noqa: E402
 
 sys.stdout.reconfigure(encoding="utf-8")
-DSN = ex.DSN
+
+# 控制台自己的连接身份 —— **不要写成 `DSN = ex.DSN`**（原来是那样，已修）。
+# 为什么踩过：`exchange.py` 的 DSN 从 postgres 改成最小权限角色 mt_bridge 之后，
+# 控制台**跟着改了身份**，于是它的 `reset_live()`（要 DELETE field_value）直接
+# permission denied —— 一个文件的安全改动把另一个无关进程弄坏了。
+# 根因是"DSN 常量被别的模块导入"：这让"这个进程用什么身份连库"变得说不清楚，
+# 而 I4.1 这条指标恰恰要逐个进程回答这个问题。
+# 约定：**每个服务入口声明自己的连接串**（带自己的 application_name）。
+DSN = ("host=127.0.0.1 port=55432 dbname=medtalent user=postgres "
+       "client_encoding=UTF8 options='-c search_path=mt,public' "
+       "application_name=medtalent_console")
 ENTITY = "person"
 FORM_ENTITIES = ("person", "person_demographics")
 LIVE_PREFIX = "per_live_"

@@ -77,6 +77,10 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def code_dir():
+    return os.path.join(BASE, "code")
+
+
 def _fetch_with(path, cookie):
     """带会话 cookie 取页面/CSV，返回 (状态, 文本, 响应头字典)。"""
     req = urllib.request.Request(ROOT + path)
@@ -228,6 +232,54 @@ def main():
         # 只读这个性质本身也要在暴露面上成立
         check("READ ONLY" in inspect.getsource(portal.db),
               "请求路径仍在 READ ONLY 事务里（写不进去是被数据库拒绝的，不是靠自觉）")
+        # 【D2】每个服务入口必须**声明自己的连接身份**，不许导入别的模块的 DSN。
+        # 为什么断言这个（实测教训）：`console.py` 原来写的是 `DSN = ex.DSN`，
+        # 于是把 exchange.py 的 DSN 改成最小权限角色时，**控制台跟着换了身份**，
+        # 它的 DELETE 立刻 permission denied —— 一个文件的安全改动弄坏了另一个无关进程。
+        # 而且"这个进程用什么身份连库"变得说不清楚，而 I4.1 恰恰要逐个进程回答它。
+        import re as _re
+        shared = []
+        for root, _dirs, files in os.walk(code_dir()):
+            if "__pycache__" in root:
+                continue
+            for fn in files:
+                if not fn.endswith(".py"):
+                    continue
+                p = os.path.join(root, fn)
+                with open(p, encoding="utf-8") as fh:
+                    txt = fh.read()
+                # 形如 `DSN = <模块>.DSN` 的赋值
+                for m in _re.finditer(r"^\s*DSN\s*=\s*(\w+)\.DSN\s*$", txt, _re.M):
+                    shared.append("%s → %s.DSN" % (os.path.relpath(p, BASE), m.group(1)))
+        check(not shared,
+              "没有模块导入别人的 DSN（各自声明连接身份）；违规：%s"
+              % ("、".join(shared) or "无"))
+
+        # ===============================================================
+        print("\n【F】年龄口径：年龄段公开、出生年 T2（用户决策 037）")
+        ok, _ = as_t0("SELECT age_band FROM mt.person_demographics LIMIT 1")
+        check(ok, "匿名能读 person_demographics.age_band（年龄段 = 统计属性，公开）")
+        ok, _ = as_t0("SELECT birth_year FROM mt.person_demographics LIMIT 1")
+        check(not ok, "匿名读不到 person_demographics.birth_year（出生年 = 个人信息，T2）")
+        ok, _ = as_t0("SELECT birth_year FROM mt.person_demographics LIMIT 1", role="mt_t2")
+        check(ok, "T2 员工能读 birth_year（收得刚好，没伤及正当使用）")
+        ok, rows = as_t0("SELECT count(*) AS n FROM mt.v_age_band_public")
+        check(ok and rows and rows > 0,
+              "匿名能读**年龄段分布**视图（%s 个年龄段）—— 这是「年龄公开」的落地形式" % rows)
+        # 分布视图**不含主体标识**：否则它就成了绕过披露控制的旁路
+        with psycopg.connect(portal.PORTAL_DSN, row_factory=dict_row, autocommit=True) as c:
+            cols = [r["column_name"] for r in c.execute("""
+                SELECT column_name FROM information_schema.columns
+                 WHERE table_schema='mt' AND table_name='v_age_band_public'""")]
+        check(not any(x in cols for x in ("person_id", "subject_code")),
+              "年龄段分布视图不含主体标识（列：%s）—— 否则它是披露控制的旁路" % "、".join(cols))
+        # 页面层：匿名落地页必须**看得见**年龄段，且**看不到**具体出生年
+        st, body = fetch("/")
+        check(st == 200 and "年龄段分布" in body,
+              "匿名落地页展示年龄段分布（让「年龄公开」真的可见，而不只是数据库里写着）")
+        years = re.findall(r"\b(19[5-9]\d|20[0-2]\d)\b", body)
+        check(not years, "匿名落地页里没有出现任何具体出生年（出现的：%s）"
+              % (sorted(set(years))[:6] or "无"))
 
         # ===============================================================
         print("\n【E】导出控制：动作级禁令必须真的拦住「带走」，但不影响「看」")

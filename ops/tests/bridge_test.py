@@ -36,6 +36,15 @@ import projection as pj  # noqa: E402
 
 sys.stdout.reconfigure(encoding="utf-8")
 DSN = ex.DSN
+# 运维连接：**清理测试数据要用它，不能用 bridge 自己的连接**。
+# 为什么必须分开（这是迁移 033 之后才暴露的）：
+#   bridge 现在跑在最小权限角色 mt_bridge 上 —— 它**故意没有** answer/consent_record
+#   等表的 DELETE 权限（"删人/删答卷"必须是显式的运维动作，不能让摄入路径顺手做）。
+#   而测试的 cleanup() 要删 12 张表的数据，那是**运维动作**。
+#   让测试用 bridge 的身份去清库，等于要求 bridge 具备它不该有的权限 ——
+#   那样"最小权限"就被测试的需要给反推掉了。
+#   所以：摄入路径用 bridge 身份（被测对象），清理与全表断言用运维身份。
+ADMIN_DSN = ex.DSN.replace("user=mt_bridge", "user=postgres")
 SRC = "bridge_test_" + secrets.token_hex(4)     # 独立来源，跑完即清
 ANON = "anon_" + SRC
 PORT = 8096
@@ -48,6 +57,12 @@ check, q1 = H.check, H.q1
 
 
 def db():
+    """运维连接（清理与需要广读的断言）。"""
+    return H.connect(ADMIN_DSN)
+
+
+def bridge_db():
+    """被测对象自己的连接（最小权限角色）。"""
     return H.connect(DSN)
 
 

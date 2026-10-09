@@ -43,7 +43,7 @@ from psycopg.rows import dict_row  # noqa: E402
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-DSN = ("host=127.0.0.1 port=55432 dbname=medtalent user=postgres "
+DSN = ("host=127.0.0.1 port=55432 dbname=medtalent user=mt_bridge "
        "client_encoding=UTF8 options='-c search_path=mt,public' "
        "application_name=bridge_exchange")
 SCHEMA_VERSION = "1.0.0"
