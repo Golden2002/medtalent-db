@@ -56,7 +56,8 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 PORT = 8083
 TOOL_TIMEOUT = 900
-DEV_NAV = [("/", "概览"), ("/sql", "SQL 控制台"), ("/model", "动态建模"),
+DEV_NAV = [("/", "概览"), ("/mockreg", "mock 注册窗口"), ("/sql", "SQL 控制台"),
+           ("/model", "动态建模"),
            ("/tools", "运维工具"), ("/audit", "审计流水"), ("/migrate", "迁移与结构"),
            ("/portal", "← 只读门户")]
 
@@ -795,7 +796,7 @@ class DevHandler(BaseHTTPRequestHandler):
             with P.admin_db(readonly=False) as c:
                 if path == "/":
                     return self._send(200, view_home(c, qs))
-                if path in ("/sql", "/model", "/tools"):
+                if path in ("/sql", "/model", "/tools", "/mockreg"):
                     # GET 只渲染表单（或把 SQL 填进去），绝不执行 —— 防预取/爬虫误触发写库
                     return self._dispatch(c, path, qs, write=False)
                 if path == "/audit":

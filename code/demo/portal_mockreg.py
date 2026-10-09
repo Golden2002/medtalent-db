@@ -87,8 +87,57 @@ def sel(name, rows, selected="", blank="（不填）"):
 
 
 # ---------------------------------------------------------------------------
-# 独立复核（L3）：另开连接的精确计数 + 孤儿检测
+# 硬清理的删除计划（按**实测的外键关系**写，不凭印象列清单）
 # ---------------------------------------------------------------------------
+# 为什么不能"列一串表名然后逐个删"（第一版就是这么写的，实测两次翻车）：
+#   · `answer` **没有 person_id 列**（它经 session_id 关联）→ 报 column does not exist；
+#   · `experience_task` 是**孙表**（引用 experience_episode）→ 先删父表会违反外键。
+# 实测得到的事实（见 ops/fixtures/_fk_map.sql）：
+#   · 指向 person 的直接子表 **29 张**，外键列统一叫 `person_id`；
+#   · 孙表 **5 张**（下面 GRANDCHILDREN）；
+#   · **没有外键**的表 5 张：answer / experience_task / assertion / consent_record / field_value
+#     —— 其中 consent_record 与 field_value 直接挂 person_id/subject_id，但**没有外键保护**，
+#     所以它们必须显式删；不删就留孤儿，而且数据库不会报错（这正是"假删"的典型形态）。
+GRANDCHILDREN = [
+    # (孙表, 孙表上的外键列, 它引用的父表)
+    ("answer", "session_id", "response_session"),
+    ("experience_task", "episode_id", "experience_episode"),
+    ("assertion", "evidence_id", "evidence"),
+    ("first_occurrence", "evidence_id", "evidence"),
+    ("skill_assertion", "evidence_id", "evidence"),
+]
+NO_FK_TO_PERSON = [
+    # (表, 指向 person 的列) —— 没有外键，必须显式删
+    ("consent_record", "person_id"),
+    ("field_value", "subject_id"),
+]
+
+
+def _pk_of(c, table):
+    return P.q1(c, """
+        SELECT a.attname FROM pg_index i
+          JOIN pg_class cl ON cl.oid = i.indrelid
+          JOIN pg_namespace n ON n.oid = cl.relnamespace
+          JOIN pg_attribute a ON a.attrelid = cl.oid AND a.attnum = ANY(i.indkey)
+         WHERE n.nspname='mt' AND cl.relname=%s AND i.indisprimary
+         LIMIT 1""", (table,))
+
+
+def direct_children(c):
+    """动态发现指向 person 的直接子表**与外键列**。
+
+    为什么动态而不是写死 29 个表名：写死的清单会随迁移漂移 ——
+    新增一张子表就漏删一张，而且**不会报错**（留孤儿）。动态发现让新增子表自动被覆盖。
+    """
+    return P.q(c, """
+        SELECT cl.relname AS t, a.attname AS col
+          FROM pg_constraint con
+          JOIN pg_class cl ON cl.oid = con.conrelid
+          JOIN pg_namespace n ON n.oid = cl.relnamespace
+          JOIN pg_class cl2 ON cl2.oid = con.confrelid
+          JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = con.conkey[1]
+         WHERE con.contype='f' AND n.nspname='mt' AND cl2.relname='person'
+           AND array_length(con.conkey, 1) = 1""")
 COUNTED = ["person", "external_identity", "tombstone", "talent_deletion_request",
            "field_value", "consent_record", "experience_episode", "response_session", "answer"]
 
@@ -159,12 +208,24 @@ def build_package(c, qs):
     facts = []
     stage, degree = one("stage"), one("degree")
     city = one("city")
+    major = one("major")
     if stage:
         facts.append({"fieldId": "current_stage", "status": "answered",
                       "valueCodes": [stage]})
     if degree:
         facts.append({"fieldId": "education.degree_level", "instanceId": "education/edu_1",
                       "status": "answered", "valueCodes": [degree]})
+    if major:
+        # ⚠ 专业必须是**选项码**，不能是自由文本。
+        # 契约的 answer 表只有 option_ids（数组），没有文本列，
+        # 且有 CHECK：`status='answered'` 就必须有至少一个选项码。
+        # 第一版发了 `valueText`，结果被数据库约束当场拒绝：
+        #   new row for relation "answer" violates check constraint
+        #   "chk_answer_answered_has_option"
+        # 这不是 bug 而是契约的边界：**本库的答卷只存码**，所以表单也必须给字典选择
+        # （CT_MAJOR，21 个码值）。自由文本要进库得另开机制，不能顺手塞进答卷。
+        facts.append({"fieldId": "education.major", "instanceId": "education/edu_1",
+                      "status": "answered", "valueCodes": [major]})
     if city:
         facts.append({"fieldId": "current_city", "status": "answered", "valueCodes": [city]})
     if not facts:
@@ -216,9 +277,7 @@ def build_package(c, qs):
         },
     }
     if one("major"):
-        pkg["facts"].append({"fieldId": "education.major_name",
-                             "instanceId": "education/edu_1", "status": "answered",
-                             "valueText": one("major")})
+        pass          # 专业已在 facts 里按选项码发（见上），这里不再追加文本事实
     return pkg, ext, ver
 
 
@@ -226,11 +285,43 @@ def build_package(c, qs):
 # 页面
 # ---------------------------------------------------------------------------
 def _readback(c, person_id):
-    """L2：把落库结果读回来（用门户自己的 profile_json 口径，不另写一份查询）。"""
-    try:
-        return P.q1(c, "SELECT mt.profile_json('person', %s)", (person_id,))
-    except psycopg.Error as e:
-        return {"error": str(e).splitlines()[0]}
+    """L2：把落库结果读回来 —— 但要用**写入的那一层**。
+
+    ⚠ 这里踩过一个真实的口径错误：第一版用 `mt.profile_json('person', pid)` 读回，
+    结果对 bridge 写入的人**返回 NULL**（实测 `jsonb_typeof(...)` 为 NULL）。
+    原因不是数据没进去，而是**本库有两条写路径、落在不同的层**：
+      · 动态建模路径（:8080 表单站 / :8083 建模页）→ 写 `field_value` 扩展值表，
+        `profile_json` 读的就是这一层；
+      · **小程序 bridge 路径** → 写**规范化表**（answer / experience_episode /
+        consent_record / skill_assertion），`profile_json` 看不到它。
+    用"另一层的读法"去验证"这一层的写入"，只会得到"没写进去"的假象。
+    所以 L2 必须直接读规范化表 —— 与 bridge 写入的那一层一致。
+    """
+    out = {"person": None, "answers": [], "experience": [], "consents": [],
+           "skills": [], "preferences": []}
+    with psycopg.connect(P.DSN, row_factory=dict_row) as c:
+        out["person"] = c.execute(
+            """SELECT person_id, subject_code, enroll_channel, verify_status, status
+                 FROM mt.person WHERE person_id=%s""", (person_id,)).fetchone()
+        out["answers"] = c.execute("""
+            SELECT a.question_id, a.instance_id, a.status, a.option_ids
+              FROM mt.answer a JOIN mt.response_session s ON s.session_id = a.session_id
+             WHERE s.person_id=%s ORDER BY a.ordinal""", (person_id,)).fetchall()
+        out["experience"] = c.execute("""
+            SELECT instance_id, episode_type, organization, role_title, start_ym, end_ym
+              FROM mt.experience_episode WHERE person_id=%s""", (person_id,)).fetchall()
+        out["consents"] = c.execute("""
+            SELECT purpose, granted_at IS NOT NULL AS granted, revoked_at IS NOT NULL AS revoked
+              FROM mt.consent_record WHERE person_id=%s ORDER BY granted_at""",
+            (person_id,)).fetchall()
+        out["skills"] = c.execute(
+            "SELECT level, verify_status, claim_type FROM mt.skill_assertion WHERE person_id=%s",
+            (person_id,)).fetchall()
+        out["preferences"] = c.execute(
+            "SELECT pref_type, value_code FROM mt.preference WHERE person_id=%s",
+            (person_id,)).fetchall()
+    return {k: (dict(v) if isinstance(v, dict) else [dict(x) for x in v])
+            for k, v in out.items()}
 
 
 def _evidence_block(pkg, res, before, after, orph, person_id, c):
@@ -271,6 +362,7 @@ def _evidence_block(pkg, res, before, after, orph, person_id, c):
 def view(c, qs, msg="", kind="info", result=None):
     deg = opts(c, "CT_DEGREE_LEVEL")
     city = opts(c, "CT_CITY", limit=24)
+    maj = opts(c, "CT_MAJOR")
     occ = occupation_opts(c)
     with psycopg.connect(P.DSN, row_factory=dict_row) as cc:
         regs = cc.execute("""SELECT ei.external_person_id, ei.person_id, ei.status,
@@ -312,8 +404,8 @@ def view(c, qs, msg="", kind="info", result=None):
   <div style="flex:1 1 120px"><label>提交版本</label>
     <input name="version" placeholder="留空=自动+1"></div>
   <div style="flex:2 1 220px"><label>当前学历层次</label>%s</div>
-  <div style="flex:2 1 220px"><label>专业名称</label>
-    <input name="major" placeholder="如：临床医学"></div>
+  <div style="flex:2 1 220px"><label>专业 <span class="muted">（选项来自码表 CT_MAJOR）</span></label>
+    %s</div>
   <div style="flex:2 1 220px"><label>当前城市</label>%s</div>
 </div>
 <div class="card" style="margin:12px 0 0"><h2>② 一段经历 <span class="muted">· 可留空</span></h2>
@@ -355,7 +447,7 @@ def view(c, qs, msg="", kind="info", result=None):
 实测 <code>'per_mockreg_x' LIKE 'per_mock_%%'</code> 为 <b>true</b>（<code>_</code> 是单字符通配符），
 用 LIKE 清理会连带删掉别人的数据。</p></div>
 """ % (('<div class="note %s">%s</div>' % (kind, P.esc(msg))) if msg else "",
-       EXT_PREFIX, sel("degree", deg), sel("city", city),
+       EXT_PREFIX, sel("degree", deg), sel("major", maj), sel("city", city),
        "".join('<option value="%s">%s · %s</option>'
                % (P.esc(o["code"]), P.esc(o["code"]), P.esc(o["label_zh"])) for o in occ),
        result or "", SRC, reg_html)
@@ -514,35 +606,35 @@ def _do_hardclean(qs):
             ((SRC, ext) if ext else (SRC,)))]
         if not pids:
             return _plain("硬清理（D-C）", "没有可清理的本来源数据（source_system=%s）" % SRC, "info")
-        # 子表按外键顺序删；person 的 29 张子表全是 NO ACTION（实测），所以必须严格按序
-        kids = P.q(c, """
-            SELECT cl.relname AS t, a.attname AS col
-              FROM pg_constraint con
-              JOIN pg_class cl ON cl.oid = con.conrelid
-              JOIN pg_namespace n ON n.oid = cl.relnamespace
-              JOIN pg_class cl2 ON cl2.oid = con.confrelid
-              JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = con.conkey[1]
-             WHERE con.contype='f' AND n.nspname='mt' AND cl2.relname='person'""")
+        kids = direct_children(c)
+        pk_of = {parent: _pk_of(c, parent) for _, _, parent in GRANDCHILDREN}
         n_del = {}
+
+        def bump(table, n):
+            if n:
+                n_del[table] = n_del.get(table, 0) + n
+
         for p in pids:
+            # ① 先删孙表（引用的是子表，删子表之前必须清掉）
+            for child, col, parent in GRANDCHILDREN:
+                pk = pk_of.get(parent)
+                if not pk:
+                    continue
+                bump(child, c.execute(
+                    "DELETE FROM mt.%s WHERE %s IN "
+                    "(SELECT %s FROM mt.%s WHERE person_id = %%s)" % (child, col, pk, parent),
+                    (p,)).rowcount)
+            # ② 没有外键的表：数据库不会替你挡，必须显式删
+            for table, col in NO_FK_TO_PERSON:
+                bump(table, c.execute(
+                    "DELETE FROM mt.%s WHERE %s = %%s" % (table, col), (p,)).rowcount)
+            # ③ 直接子表：动态发现，按真实外键列删（新增子表自动被覆盖）
             for k in kids:
-                r = c.execute('DELETE FROM mt.%s WHERE %s = %%s' % (k["t"], k["col"]),
-                              (p,)).rowcount
-                if r:
-                    n_del[k["t"]] = n_del.get(k["t"], 0) + r
-            # 无外键的那根裸 TEXT 必须单独删（否则留孤儿）
-            r = c.execute("DELETE FROM mt.field_value WHERE subject_id=%s", (p,)).rowcount
-            if r:
-                n_del["field_value"] = n_del.get("field_value", 0) + r
-            for t in ("experience_episode", "consent_record", "tombstone",
-                      "talent_deletion_request", "response_session", "answer",
-                      "external_identity"):
-                r = c.execute("DELETE FROM mt.%s WHERE person_id=%%s" % t, (p,)).rowcount
-                if r:
-                    n_del[t] = n_del.get(t, 0) + r
-            r = c.execute("DELETE FROM mt.person WHERE person_id=%s", (p,)).rowcount
-            if r:
-                n_del["person"] = n_del.get("person", 0) + r
+                bump(k["t"], c.execute(
+                    "DELETE FROM mt.%s WHERE %s = %%s" % (k["t"], k["col"]), (p,)).rowcount)
+            # ④ 最后删 person 本身
+            bump("person", c.execute("DELETE FROM mt.person WHERE person_id=%s",
+                                     (p,)).rowcount)
         c.commit()
     after = snapshot()
     orph = orphan_check()

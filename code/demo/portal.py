@@ -1364,10 +1364,13 @@ def view_field(c, table, col, qs) -> bytes:
                        WHERE table_name=%s AND column_name=%s""", (table, col))
         need = pol[0]["min_tier"] if pol else "T1"
         if _tier_rank(need) > _tier_rank(current_session().tier):
-            return view_no_permission(c, qs, current_session(), need=need,
-                                      target="%s.%s 的列级统计" % (table, col),
-                                      db_error="该列的访问等级 %s 高于当前会话等级 %s"
-                                               % (need, current_session().tier))
+            # 抛 NeedsTier 而不是 return：让 do_GET 用 **403** 发出（见该异常类的说明）
+            raise NeedsTier(
+                view_no_permission(c, qs, current_session(), need=need,
+                                   target="%s.%s 的列级统计" % (table, col),
+                                   db_error="该列的访问等级 %s 高于当前会话等级 %s"
+                                            % (need, current_session().tier)),
+                need)
         raise PortalError(404, "列 %s.%s 还没有剖析结果（该列确实没算过，不是权限问题）。"
                                "在命令行跑：python ops\\profile.py --tables %s"
                           % (table, col, table))
@@ -4182,6 +4185,22 @@ def _can_read_tiers(c) -> bool:
         return False
 
 
+class NeedsTier(Exception):
+    """需要更高等级：携带**已渲染好的**权限不足页，由 do_GET 用 403 发出。
+
+    为什么要这个中间异常（实测缺陷）：`view_audit` / `view_field` 是在渲染过程中
+    发现权限不够的，它们能渲染出正确的页面，但**决定不了 HTTP 状态码**（那在 `_send`）。
+    直接 return 页面的话，do_GET 会按 200 发出 —— 实测 `/audit` 对匿名返回
+    **200 + 权限不足页**。状态码错了，监控、代理、爬虫、以及"这个页面是否可用"的
+    任何自动判断都会读错。权限不足必须是 403。
+    """
+
+    def __init__(self, body, need):
+        super().__init__("需要 %s" % need)
+        self.body = body
+        self.need = need
+
+
 def view_no_permission(c, qs, session=None, need="T1", target="", db_error="") -> bytes:
     """权限不足页。**权限不足必须是一个正常状态，不是 500。**
 
@@ -4231,8 +4250,12 @@ def view_audit(c, qs, session=None) -> bytes:
         actors = q(c, """SELECT actor, actor_role, count(*) AS n, max(at) AS last_at
                            FROM access_log GROUP BY 1,2 ORDER BY 3 DESC LIMIT 20""")
     except psycopg.Error as e:
-        # access_log 本体是 T2：低等级看不到是**预期**的，不是故障
-        return view_no_permission(c, qs, session, need="T2", target="mt.access_log")
+        # access_log 本体是 T2：低等级看不到是**预期**的，不是故障。
+        # 抛 NeedsTier 让 do_GET 用 403 发出（第一版直接 return，结果是
+        # "200 + 权限不足页" —— 状态码与内容矛盾，自动判断都会读错）。
+        raise NeedsTier(
+            view_no_permission(c, qs, session, need="T2", target="mt.access_log"),
+            "T2")
     body = """
 <div class="sub">每一条都是数据库收到的一次读取请求。这个页面本身被访问时也会写一条 ——
 审计表不审计自己就等于留了个洞。</div>
@@ -4834,6 +4857,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(e.status, page("出错了", '<div class="note err">%s</div>'
                                              '<p><a href="/">回到总览</a></p>' % esc(e.message),
                                              session=sess))
+        except NeedsTier as e:
+            # 页面在渲染过程中发现权限不够：用它渲染好的页面，但状态码必须是 403
+            self._audit_detail = {"need": e.need}
+            return self._send(403, e.body)
         except psycopg.errors.InsufficientPrivilege as e:
             # **权限不足是正常状态，不是 500。** 让数据库的拒绝变成一句人话。
             need = _required_tier_for(path)

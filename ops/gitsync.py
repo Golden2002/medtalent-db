@@ -91,6 +91,35 @@ def token_of():
     return t
 
 
+def local_tree_map(commit):
+    """本地 HEAD 的 (路径 → (mode, blob_sha))。
+
+    `git ls-tree -r` 给出的 blob sha 与 GitHub 自己算的**是同一个 SHA-1**
+    （都是对同一份内容做同样的哈希），所以可以直接复用这些 sha 建树 ——
+    **一个 blob 都不用上传**。这一点让 API 推送从"逐文件上传"变成"只发元数据"。
+    """
+    out = {}
+    raw = sh("git", "ls-tree", "-r", "-z", "--full-tree", commit)
+    for item in raw.split("\0"):
+        if not item:
+            continue
+        meta, path = item.split("\t", 1)
+        mode, _typ, sha = meta.split()
+        out[path] = (mode, sha)
+    return out
+
+
+def remote_tree_map(tree_sha):
+    st, d = api("GET", "/repos/%s/git/trees/%s?recursive=1" % (REPO, tree_sha), TOKEN[0])
+    if st != 200:
+        raise SystemExit("[X] 取远端树失败：HTTP %d %s" % (st, d))
+    return {e["path"]: (e["mode"], e["sha"]) for e in d.get("tree", [])
+            if e["type"] == "blob"}
+
+
+TOKEN = [None]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--branch", default="main")
@@ -99,10 +128,11 @@ def main():
     a = ap.parse_args()
 
     tok = token_of()
+    TOKEN[0] = tok
     repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     os.chdir(repo)
 
-    # 1) 远端当前提交（api.github.com 通，所以这一步在我们这里反而比 git fetch 可靠）
+    # 1) 远端当前提交
     st, ref = api("GET", "/repos/%s/git/ref/heads/%s" % (REPO, a.branch), tok)
     if st != 200:
         print("[X] 取远端分支失败（HTTP %d）：%s" % (st, ref))
@@ -114,65 +144,75 @@ def main():
         return 1
     remote_tree = rc["tree"]["sha"]
 
-    # 2) 确认远端是本地 HEAD 的祖先（安全闸）
+    # 2) **按树比对**，而不是按提交比对。
+    #    为什么改（上一轮的实测教训）：`git merge-base --is-ancestor <远端> <本地>`
+    #    要求远端提交**在本地对象库里**。而 API 推送产生的提交本地没有（也 fetch 不到，
+    #    因为 github.com 走不通），于是下一次 sync 直接报
+    #    "Not a valid commit name" —— 安全闸把自己锁死了。
+    #    按树比对只需要两边的**文件清单**，不依赖本地是否有远端提交对象。
     local_sha = sh("git", "rev-parse", a.commit)
-    anc = subprocess.run(["git", "merge-base", "--is-ancestor", remote_sha, local_sha]).returncode
-    if anc != 0:
-        print("[X] 拒绝执行：远端 %s（%s）**不是**本地 %s 的祖先。"
-              % (a.branch, remote_sha[:10], local_sha[:10]))
-        print("    直接改 ref 会丢掉远端已有的提交。请先 `git pull`，或用 git push。")
-        return 3
     if remote_sha == local_sha:
         print("[=] 远端已经是本地这个提交，无需推送")
         return 0
+    lmap = local_tree_map(local_sha)
+    rmap = remote_tree_map(remote_tree)
 
-    # 3) 本地相对远端改了什么
-    raw = sh("git", "diff", "--name-status", "-z", remote_sha, local_sha)
-    parts = [p for p in raw.split("\0") if p]
-    changes = []
-    i = 0
-    while i < len(parts):
-        code = parts[i]
-        if code.startswith("R") or code.startswith("C"):
-            changes.append((code[0], parts[i + 1], parts[i + 2]))
-            i += 3
-        else:
-            changes.append((code[0], parts[i + 1], None))
-            i += 2
+    # 3) 安全闸：远端**有而本地没有**的文件，意味着远端有我们不知道的工作，
+    #    直接改 ref 会把它们删掉。这种情况必须拒绝，让人先弄清楚发生了什么。
+    remote_only = sorted(set(rmap) - set(lmap))
+    if remote_only:
+        print("[X] 拒绝执行：远端有 %d 个本地没有的文件，直接推送会删掉它们：" % len(remote_only))
+        for p in remote_only[:20]:
+            print("      %s" % p)
+        print("    这通常说明远端有别人的提交。请恢复 github.com 连通后 git fetch 再处理。")
+        return 3
+
+    changes = []                                   # (状态, 路径)
+    for path, (mode, sha) in sorted(lmap.items()):
+        if path not in rmap:
+            changes.append(("A", path))
+        elif rmap[path] != (mode, sha):
+            changes.append(("M", path))
+    for path in sorted(set(rmap) - set(lmap)):
+        changes.append(("D", path))                # 到不了这里（上面已拒绝），留着以防逻辑变动
 
     msg = sh("git", "log", "-1", "--format=%B", local_sha)
     author = sh("git", "log", "-1", "--format=%an <%ae>", local_sha)
 
-    print("远端 %s = %s" % (a.branch, remote_sha[:10]))
-    print("本地 %s = %s（%d 个文件有变化）" % (a.commit, local_sha[:10], len(changes)))
-    for c, p, _ in changes[:40]:
+    print("远端 %s = %s（树 %s）" % (a.branch, remote_sha[:10], remote_tree[:10]))
+    print("本地 %s = %s；文件 %d 个，**有变化 %d 个**" % (a.commit, local_sha[:10],
+                                                        len(lmap), len(changes)))
+    for c, p in changes[:40]:
         print("   %s  %s" % (c, p))
     if len(changes) > 40:
         print("   …还有 %d 个" % (len(changes) - 40))
+    if not changes:
+        print("\n[=] 两边内容一致（只是提交 SHA 不同），无需推送")
+        return 0
     if a.dry_run:
         print("\n[dry-run] 未做任何修改。")
         return 0
 
-    # 4) 建 blob + 构造树（base_tree 指向远端树，所以没变的文件自动保持）
+    # 4) 建树：**改过的文件必须上传 blob**。
+    #    实测教训：我一开始想"复用本地 blob sha"（同一份内容 git 与 GitHub 算出同一个
+    #    SHA-1，看起来能省掉上传），结果建树报
+    #        tree.sha 8b73ed… is not a valid blob
+    #    因为**新内容的对象在 GitHub 那边还不存在** —— SHA 相同不代表对象已在对方库里。
+    #    没改的文件不必传（它们在 base_tree 里已经有了）。
     entries = []
-    for code, path, newpath in changes:
+    for code, path in changes:
         if code == "D":
             entries.append({"path": path, "mode": "100644", "type": "blob", "sha": None})
             continue
-        full = newpath or path
-        with open(full, "rb") as fh:
+        with open(path, "rb") as fh:
             content = fh.read()
         st, b = api("POST", "/repos/%s/git/blobs" % REPO, tok,
                     {"content": base64.b64encode(content).decode("ascii"),
                      "encoding": "base64"})
         if st not in (200, 201):
-            print("[X] 建 blob 失败 %s：HTTP %d %s" % (full, st, b))
+            print("[X] 建 blob 失败 %s：HTTP %d %s" % (path, st, b))
             return 1
-        mode = "100755" if os.access(full, os.X_OK) else "100644"
-        entries.append({"path": full, "mode": mode, "type": "blob", "sha": b["sha"]})
-        if code == "R" and newpath:
-            entries.append({"path": path, "mode": "100644", "type": "blob", "sha": None})
-
+        entries.append({"path": path, "mode": lmap[path][0], "type": "blob", "sha": b["sha"]})
     st, tree = api("POST", "/repos/%s/git/trees" % REPO, tok,
                    {"base_tree": remote_tree, "tree": entries})
     if st not in (200, 201):
@@ -194,8 +234,17 @@ def main():
         return 1
     print("\n[✓] 已通过 REST API 推送：%s → %s" % (a.branch, commit["sha"][:10]))
     print("    提交页：https://github.com/%s/commit/%s" % (REPO, commit["sha"]))
-    print("    提示：本地 git 与远端已同步内容，但本地的 reflog 不知道这次推送；"
-          "下次能用 git push 时它仍然会正常工作。")
+    print("""
+[!] 这次推送把本地提交**合并成远端 1 个提交**，两边**内容相同但提交 SHA 分叉**。
+    本工具已能处理分叉（按树比对，不再依赖本地是否有远端提交对象），
+    但 `git push` 仍会被判为非快进。等 github.com 通了，对账方式：
+        git fetch origin %s
+        git reset --hard origin/%s        # 内容一致，不会丢任何工作""" % (a.branch, a.branch))
+    try:
+        with open(".git/gitsync_last_remote", "w", encoding="utf-8") as fh:
+            fh.write(commit["sha"])
+    except OSError:
+        pass
     return 0
 
 
