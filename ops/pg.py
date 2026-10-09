@@ -87,10 +87,9 @@ def cmd_config(a):
         sys.exit(1)
     with open(conf, encoding="utf-8") as fh:
         text = fh.read()
-    if "# === medtalent overrides ===" in text:
-        print("[=] 配置已写入")
-        return
-    extra = """
+    wrote = False
+    if "# === medtalent overrides ===" not in text:
+        extra = """
 # === medtalent overrides ===
 port = %s
 listen_addresses = '%s'
@@ -102,9 +101,52 @@ log_timezone = 'Asia/Shanghai'
 timezone = 'Asia/Shanghai'
 lc_messages = 'C'
 """ % (PORT, HOST)
-    with open(conf, "a", encoding="utf-8") as fh:
-        fh.write(extra)
-    print("[✓] 已写入 port=%s listen=%s" % (PORT, HOST))
+        with open(conf, "a", encoding="utf-8") as fh:
+            fh.write(extra)
+        wrote = True
+        print("[✓] 已写入 port=%s listen=%s" % (PORT, HOST))
+
+    # === 审计：数据库层的连接日志 ===
+    # 为什么要有这一层（需求原文：「数据是重要资产，因此需要记录访问用户」）：
+    #   · 应用层审计（mt.access_log）记的是"谁看了哪个页面/哪个对象"，
+    #     但它的可信度有一半依赖应用**如实声明**身份；
+    #   · 数据库层连接日志记的是"**哪个数据库账号**从哪连上的、什么时候断开、连了多久" ——
+    #     这个由服务器自己写，应用改不了，是应用层审计的**交叉验证**：
+    #     若应用层说"只有 T0 匿名访问"，而连接日志里出现了 mt_portal 之外的账号，就能发现。
+    # log_statement 保持 none：逐条记 SQL 会泄露查询里的值（含个人信息）且拖慢性能。
+    # 需要临时排查时再单独打开，不要常开。
+    if "# === medtalent audit logging ===" not in text:
+        audit = """
+# === medtalent audit logging ===
+log_connections = on
+log_disconnections = on
+# %m 时间 %p 进程 %q 会话内不重复 %u 数据库账号 %d 库名 %a application_name %r 来源
+# 注意这里**不能写成 %%**：本字符串没有走 % 格式化，而 PostgreSQL 里 `%%` 表示
+# 一个字面百分号 —— 写成 %%m 的结果是前缀里躺着 "%m" 而不是时间（实测踩过）。
+log_line_prefix = '%m [%p] user=%u db=%d app=%a from %r '
+log_statement = 'none'
+log_min_duration_statement = 3000
+log_checkpoints = on
+log_lock_waits = on
+"""
+        with open(conf, "a", encoding="utf-8") as fh:
+            fh.write(audit)
+        wrote = True
+        print("[✓] 已写入数据库层连接日志（log_connections / log_disconnections / "
+              "log_line_prefix 含 user/app/from）")
+
+    if not wrote:
+        print("[=] 配置已写入")
+        return
+    # 这些都是 SIGHUP 级参数，reload 即可生效，不需要重启
+    r = subprocess.run([exe("psql"), "-h", HOST, "-p", PORT, "-U", SUPERUSER,
+                        "-d", "postgres", "-tAc", "SELECT pg_reload_conf()"],
+                       capture_output=True, text=True, encoding="utf-8")
+    if r.returncode == 0:
+        print("[✓] 已 reload 配置（无需重启）")
+    else:
+        print("[!] reload 失败（配置已写入，重启后生效）：%s"
+              % (r.stderr or "").strip()[:120])
 
 
 def cmd_start(a):

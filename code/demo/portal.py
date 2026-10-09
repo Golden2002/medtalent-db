@@ -63,7 +63,8 @@ from _portal_shared import PortalError  # noqa: E402  ← 与 portal_viz/portal_
 sys.stdout.reconfigure(encoding="utf-8")
 
 DSN = ("host=127.0.0.1 port=55432 dbname=medtalent user=postgres "
-       "client_encoding=UTF8 options='-c search_path=mt,public'")
+       "client_encoding=UTF8 options='-c search_path=mt,public' "
+       "application_name=medtalent_admin")
 
 # ---------------------------------------------------------------------------
 # 门户自己的连接串：**不是超级用户**
@@ -79,7 +80,11 @@ DSN = ("host=127.0.0.1 port=55432 dbname=medtalent user=postgres "
 # 于是"忘记设等级"的结果是**读不到数据**，而不是读到全部数据 —— 这个默认方向才安全。
 PORTAL_DSN = ("host=127.0.0.1 port=55432 dbname=medtalent user=mt_portal "
               "client_encoding=UTF8 connect_timeout=5 "
-              "options='-c search_path=mt,public'")
+              "options='-c search_path=mt,public' "
+              # application_name 会进数据库的连接日志：这样 DB 层能看出
+              # "这次连接来自只读门户"还是"来自备份/开发者模式" ——
+              # 应用层审计说自己只以 T0 读过数据时，DB 日志可以对它做交叉验证。
+              "application_name=portal_8082")
 
 TIERS = ("T0", "T1", "T2", "T3")        # 白名单：等级绝不采信用户输入的原文
 SESSION_COOKIE = "mt_session"
@@ -292,16 +297,34 @@ def log_visit(session: Session, action: str, target: str, tier: str = None,
     所以审计走自己的短连接：页面只读这条纪律不被破坏（`change_log` 仍不增长），
     同时"谁读过什么"真的被记下来。
 
+    ⚠ **独立连接上必须自己把身份设回去**（这里踩过一次真 bug）：
+    `mt.actor` 是**会话变量**，`current_setting('role')` 也属于会话。
+    只读连接上设过的那些值，在审计连接上**不存在**。第一版就是这么漏的 ——
+    结果 346 条日志里 `actor` 全是 `anonymous`、`actor_role` 全是 `mt_portal`，
+    看起来"日志在记"，实际**没记到是谁**。
+    所以这里显式：`set_config('mt.actor', …)` + `SET LOCAL ROLE mt_tN`。
+    顺带的好处是 `actor_role` 变成**数据库认定的等级角色**（`mt_t1` 等），
+    而不只是登录角色 —— 这一列才有"权限审计"的意义。
+
     写不进去也不能让页面崩：审计失败只是少一条记录，而页面 500 是可用性事故。
     但**必须打印到 stderr**，否则"审计静默失效"会变成一个查不出来的洞。
     """
-    if not session or session.is_anonymous and action == "view":
-        pass                                     # 匿名访问也要记（这正是要记的）
+    session = session or ANON
+    tier = (tier or session.tier or "T0")
+    role = "mt_" + tier.lower() if tier.lower() in ("t0", "t1", "t2", "t3") else None
     try:
         with psycopg.connect(PORTAL_DSN, row_factory=dict_row, autocommit=True) as c:
+            # 身份：应用声明的"谁"
+            c.execute("SELECT set_config('mt.actor', %s, false)", (session.actor,))
+            c.execute("SELECT set_config('mt.tier', %s, false)", (tier,))
+            # 等级角色：让 actor_role 变成数据库认定的角色（不是 login 角色）
+            if role:
+                c.execute("SET ROLE " + role)
             c.execute("SELECT mt.log_access(%s, %s, %s, %s, %s, %s)",
-                      (action, target, tier or (session.tier if session else "T0"),
-                       rows, purpose, json.dumps(detail or {}, ensure_ascii=False)))
+                      (action, target, tier, rows, purpose,
+                       json.dumps(detail or {}, ensure_ascii=False)))
+            if role:
+                c.execute("RESET ROLE")
     except psycopg.Error as e:
         print("[!] 审计写入失败（不影响页面）：%s" % str(e).splitlines()[0], file=sys.stderr)
 
@@ -4069,15 +4092,21 @@ def public_overview(c) -> str:
     ]
     cards, denied = [], []
     for label, sqltext in items:
-        try:
-            v = q1(c, sqltext)
-            # 有的指标本身就是字符串（例如"码表 / 码值"拼出来的 "78 / 584"），
-            # 而 `"{:,}"` 只能作用于数字 —— 对字符串会抛 ValueError。
-            # 用 isinstance 判断，而不是指望所有指标都是整数。
-            shown = "{:,}".format(v) if isinstance(v, int) else str(v)
-            cards.append(metric(shown, label, "公开"))
-        except psycopg.Error:
+        # 必须用 try_read（SAVEPOINT 隔离）：普通 try/except 只捕获异常，
+        # 但 PostgreSQL 里**语句失败会让整个事务进入 aborted 状态**，
+        # 于是第一个读不到的指标会把后面所有指标一起打死 ——
+        # 表现成"匿名首页 403 且理由指向一个毫不相关的表"。
+        # 这是本项目第三次踩同一个坑（ops/health.py、字段页各一次），所以这里也写明。
+        rows = try_read(c, sqltext)
+        if rows is None:
             denied.append(label)
+            continue
+        v = list(rows[0].values())[0] if rows else None
+        # 有的指标本身就是字符串（例如"码表 / 码值"拼出来的 "78 / 584"），
+        # 而 `"{:,}"` 只能作用于数字 —— 对字符串会抛 ValueError。
+        # 用 isinstance 判断，而不是指望所有指标都是整数。
+        shown = "{:,}".format(v) if isinstance(v, int) else str(v)
+        cards.append(metric(shown, label, "公开"))
     html = '<div class="cards">%s</div>' % "".join(cards)
     if denied:
         html += ('<div class="note warn">以下数字需要登录后查看：%s'
@@ -4635,6 +4664,29 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def _send(self, status, body: bytes, ctype="text/html; charset=utf-8", extra=None):
+        # ------------------------------------------------------------------
+        # 审计在这里统一记 —— **唯一的输出点**，所以覆盖全部路由（含 404/405/403）。
+        # 为什么不在每个路由里各写一次（第一版就是这么写的）：那样只有"记得加"的页面
+        # 才有日志，实测漏掉了 /talent、/search、/analyze 等一大批页面 ——
+        # 表现是"审计在跑、也有效率"，但**覆盖面是残缺的**，而残缺的审计比没有更危险：
+        # 你会以为"没记录=没发生"。和 `db()` 是唯一的权限注入点同一个道理：
+        # 安全性质必须挂在**单点**上，而不是靠每个路由自觉。
+        # 登录成功/失败由 do_POST 自己记（它需要区分 login 与 login_failed，语义更细）。
+        # ------------------------------------------------------------------
+        sess = getattr(self, "_sess", None)
+        path = getattr(self, "_path", None)
+        if sess is not None and path and not path.startswith("/login") \
+                and not path.startswith("/logout"):
+            if status == 403:
+                action = "denied"
+            elif status >= 400:
+                action = "error"
+            else:
+                action = "view"
+            # 具体的拒绝原因（缺哪个等级、数据库原话）由处理器放进 _audit_detail
+            detail = {"status": status}
+            detail.update(getattr(self, "_audit_detail", None) or {})
+            log_visit(sess, action, path, detail=detail)
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
@@ -4653,6 +4705,12 @@ class Handler(BaseHTTPRequestHandler):
         path = u.path.rstrip("/") or "/"
         sess = self._cookie_session()
         set_current_session(sess)
+        # 供 _send 统一记审计用（见 _send 里的说明）
+        self._sess = sess
+        self._path = path
+        # 每次请求都清空：HTTP/1.1 keep-alive 下同一个 handler 实例会处理多个请求，
+        # 不清空会把上一次 403 的"缺哪个等级"带进这一次 200 的日志里
+        self._audit_detail = None
         try:
             with db(sess) as c:
                 # 登录/登出：它们不需要数据权限，所以放在最前面
@@ -4666,10 +4724,8 @@ class Handler(BaseHTTPRequestHandler):
                         "Set-Cookie": "%s=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"
                                       % SESSION_COOKIE})
                 if path == "/audit":
-                    log_visit(sess, "view", "audit")
                     return self._send(200, view_audit(c, qs, sess))
                 if path == "/":
-                    log_visit(sess, "view", "home")
                     # 匿名访客看到的是**公开落地页**（T0 概览 + 登录入口），
                     # 而不是整页失败或一堵 403 墙。
                     # 首页要画职业/岗位的聚合图，那些数据是 T1 —— 所以对匿名访客
@@ -4682,11 +4738,9 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/schema":
                     return self._send(200, view_schema(c, qs))
                 if path == "/catalog":
-                    log_visit(sess, "view", "catalog")
                     return self._send(200, view_catalog(c, qs))
                 mm = re.match(r"^/field/([A-Za-z0-9_]+)/([A-Za-z0-9_]+)$", path)
                 if mm:
-                    log_visit(sess, "view", "field", detail={"t": mm.group(1), "c": mm.group(2)})
                     return self._send(200, view_field(c, mm.group(1), mm.group(2), qs))
                 if path == "/search":
                     return self._send(200, view_search(c, qs))
@@ -4786,8 +4840,9 @@ class Handler(BaseHTTPRequestHandler):
             # 把数据库给的原话也带上：它会**点名**是哪个对象被拒（例如
             # "permission denied for view v_dimension_registry"），
             # 这比"你需要 T1"有用得多 —— 运维据此就知道该给哪个等级授哪张表。
-            log_visit(sess, "denied", path, tier=sess.tier,
-                      detail={"need": need, "db_error": str(e).splitlines()[0][:200]})
+            # 原因交给 _send 统一记（覆盖面单点化，细节不丢）
+            self._audit_detail = {"need": need,
+                                  "db_error": str(e).splitlines()[0][:200]}
             return self._send(403, view_no_permission(
                 None, qs, sess, need=need, target=path,
                 db_error=str(e).splitlines()[0]))

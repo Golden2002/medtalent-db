@@ -44,7 +44,8 @@ from psycopg.rows import dict_row  # noqa: E402
 sys.stdout.reconfigure(encoding="utf-8")
 
 DSN = ("host=127.0.0.1 port=55432 dbname=medtalent user=postgres "
-       "client_encoding=UTF8 options='-c search_path=mt,public'")
+       "client_encoding=UTF8 options='-c search_path=mt,public' "
+       "application_name=bridge_exchange")
 SCHEMA_VERSION = "1.0.0"
 
 # R1：禁止出现的键（任意层级、大小写不敏感）。memberKey 虽不是密码，仍是可关联身份标识。
@@ -191,6 +192,14 @@ def ingest(pkg: dict, conn=None) -> dict:
                              .hexdigest()[:20], src, ext_pid, person_id))
 
             # R6：授权门
+            # 契约原文要求"未授权报 CONSENT_REQUIRED"。原来的实现只拦**已存在且被撤回**的
+            # 记录，于是有一个真实的空洞：**首次提交、包里声明"不授权"、却带着分析事实**
+            # 会一路写进去，之后才补一条 revoked 的同意记录 —— 顺序反了。
+            # 严格化的判据（两条都要满足才放行）：
+            #   ① 撤回优先：库里只要有 CP1 记录且已撤回 → 一律拒绝（即使包里声明同意）；
+            #   ② 授权来源：包内声明 personalAnalysis=True，或库里存在有效的 CP1 记录。
+            # 两条都不满足 ⇒ 没有授权依据 ⇒ 不得写入分析产物。
+            # 这一条同时让"mock 注册窗口的 consent 步骤"变成**真的门**，而不是装饰。
             has_analysis = bool(pkg.get("facts") or pkg.get("skillClaims"))
             if has_analysis:
                 cur.execute("""SELECT granted_at, revoked_at FROM consent_record
@@ -200,6 +209,12 @@ def ingest(pkg: dict, conn=None) -> dict:
                 if cons and cons["revoked_at"] is not None:
                     raise ExchangeError("CONSENT_REQUIRED",
                                         "个人分析授权已撤回，不得再写入分析产物")
+                pkg_granted = (pkg.get("consents") or {}).get("personalAnalysis") is True
+                if not pkg_granted and cons is None:
+                    raise ExchangeError(
+                        "CONSENT_REQUIRED",
+                        "包里带了分析事实，但既未随包声明个人分析授权（consents.personalAnalysis），"
+                        "库中也没有有效的 CP1 授权记录 —— 不得写入分析产物")
 
             # 写答卷（R8：事实一律先原样留存）
             session_id = "rs_" + hashlib.sha1(

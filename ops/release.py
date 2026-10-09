@@ -56,7 +56,22 @@ def main():
 
     token = os.environ.get("GITHUB_TOKEN")
     if not token:
+        # 兜底：从**用户级环境变量**里取。
+        # 为什么需要兜底：Windows 的用户级环境变量只对**新启动**的进程生效，
+        # 而由别的父进程（终端、IDE、本工具链）拉起的子进程会继承父进程那份**旧**的环境块
+        # —— 于是"我明明 setx 了，脚本却说没设置"。ops/env.py 的 load_into_environ()
+        # 直接读注册表，绕开这个继承问题（实测：用户级有值、进程环境里没有）。
+        try:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            from env import load_into_environ
+            load_into_environ()
+            token = os.environ.get("GITHUB_TOKEN")
+        except Exception:                                 # noqa: BLE001
+            pass
+    if not token:
         print("[!] 未设置 GITHUB_TOKEN（只从环境变量读，绝不写进命令行）")
+        print("    配置方式： python ops\\env.py set GITHUB_TOKEN --from-file <含 token 的文件>")
+        print("    检查方式： python ops\\env.py status")
         return 2
     with open(a.notes_file, encoding="utf-8") as fh:
         notes = fh.read()

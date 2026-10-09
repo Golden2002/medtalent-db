@@ -770,6 +770,13 @@ class DevHandler(BaseHTTPRequestHandler):
                 out, kind = run_tool(qs["run"][0], qs)
                 return self._send(200, view_tools(c, qs, out, "", kind))
             return self._send(200, view_tools(c, qs))
+        if path == "/mockreg":
+            # mock 小程序注册窗口：**真实写库**，走 bridge 而不是直写 person。
+            # GET 只渲染表单；POST 才执行（防预取/爬虫误触发写库，与 /sql 同一纪律）。
+            import portal_mockreg as MR
+            if write and qs.get("act", [""])[0]:
+                return self._send(200, MR.handle(c, qs))
+            return self._send(200, MR.view(c, qs))
         raise PortalError(404, "没有这个页面：%s" % path)
 
     def do_GET(self):

@@ -653,6 +653,30 @@ def main():
         check(not bad, "抽 8 个字段页逐个渲染，没有 500（异常：%s）" % ("、".join(bad) or "无"))
 
         # ===============================================================
+        # ===============================================================
+        print("\n【T19】审计必须记到「是谁」——不是只记「有人来过」")
+        # 起因（实测 bug）：`mt.actor` 与 `current_setting('role')` 都是**会话变量**，
+        # 而审计用的是**独立连接**（只读事务拒绝 INSERT）。第一版没在那条连接上
+        # 重新设置身份与角色，于是 346 条日志里 `actor` 全是 anonymous、
+        # `actor_role` 全是 mt_portal —— 看起来"日志在记"，实际**没记到是谁**。
+        # 这一条断言必须走**真实 HTTP**：只有跨进程、跨连接才能暴露这个问题。
+        with conn() as c:
+            n0 = c.execute("SELECT coalesce(max(access_id),0) AS n FROM mt.access_log").fetchone()["n"]
+        st, _b = get("/talent")
+        with conn() as c:
+            rows = c.execute("""SELECT actor, actor_role, action, target, access_tier
+                                  FROM mt.access_log WHERE access_id > %s
+                                 ORDER BY access_id""", (n0,)).fetchall()
+        actors = {r["actor"] for r in rows}
+        roles = {r["actor_role"] for r in rows}
+        check(TEST_EMAIL in actors,
+              "登录后的访问记的是**真实用户**（%s），而不是 anonymous（实测 actor=%s）"
+              % (TEST_EMAIL, "、".join(sorted(actors)) or "无"))
+        check(all(r.startswith("mt_t") for r in roles) and roles,
+              "actor_role 是**数据库认定的等级角色**（实测 %s），不是 login 角色 mt_portal"
+              % ("、".join(sorted(roles)) or "无"))
+
+        # ===============================================================
         print("\n【T17】两条「宣称」必须变成可断言的性质（不是文案）")
         # 起因：docs/17 的调研发现两处"说的和做的不一致"——
         #   ① 页面宣称"零 JS"，但 /viz/build 的表单上有 onchange="this.form.submit()"，
