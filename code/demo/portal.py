@@ -109,7 +109,13 @@ DOMAIN_TABLES = {
                    "subject_request", "talent_deletion_request", "tombstone", "change_log",
                    # 迁移台账（ops/pg.py 创建）：记录每个迁移文件的 sha256 与应用时间，
                    # 使"只跑未应用的迁移"成为可能。运维元数据，归治理域比新开一组贴切。
-                   "schema_migration"],
+                   "schema_migration",
+                   # 访问控制层（schema/sql/017_access_control.sql 创建）：
+                   #   access_tier    —— 等级阶梯（T0 公开 … T3 管理员，X 禁止）
+                   #   column_policy  —— 字段级最低可读等级，由 refresh_column_policy() 推导
+                   # 这两张表是"每个字段权限不同"这条需求的载体，属治理域。
+                   # （ops/health.py 的 I1.2 指标就是靠这里发现它们漏登记的 —— 这正是指标的作用。）
+                   "access_tier", "column_policy"],
     "小程序接入": ["external_identity", "response_session", "answer", "experience_episode",
                    "experience_task", "crosswalk", "sync_event"],
     "备份与发布": ["backup_policy", "backup_run", "restore_run", "dataset_release"],

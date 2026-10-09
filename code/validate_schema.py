@@ -144,6 +144,7 @@ def main(root):
         return 1
 
     defined = {}        # 对象名 -> 文件
+    replaced = {}       # 被 OR REPLACE 覆盖过的对象 -> [(文件, 行)]
     defined_domains = {}
     order = []          # 按文件、语句顺序记录定义
     referenced = []     # (target, file, lineno)
@@ -200,8 +201,19 @@ def main(root):
                 mm = rx.search(stripped)
                 if mm:
                     key = "%s:%s" % (label, mm.group(1))
-                    if key in defined:
-                        errors.append("%s:%d: %s 重复定义" % (fname, line, key))
+                    # 区分两种写法（这一条是实测撞出来的）：
+                    #   · `CREATE FUNCTION foo`       重复 → **错误**：apply 时会报 already exists
+                    #   · `CREATE OR REPLACE FUNCTION foo` 重复 → **正常**：
+                    #     这正是"不改已应用的迁移、用新迁移替换函数"的正当机制。
+                    #     第一版把两者一律判错，于是修一个函数的 bug 就无路可走
+                    #     （改老迁移被台账拒绝、改名又会污染函数空间）。
+                    replace = re.search(r"CREATE\s+OR\s+REPLACE", stripped, re.I) is not None
+                    if key in defined and not replace:
+                        errors.append("%s:%d: %s 重复定义（且未用 OR REPLACE，"
+                                      "apply 时会报 already exists；上一次定义在 %s）"
+                                      % (fname, line, key, defined[key]))
+                    elif key in defined and replace:
+                        replaced.setdefault(key, []).append((fname, line))
                     defined[key] = fname
 
             mm = CREATE_DOMAIN.search(stripped)
@@ -254,6 +266,12 @@ def main(root):
         print("  [ERROR] " + e)
     for w in warnings:
         print("  [WARN ] " + w)
+    if replaced:
+        # 函数被 OR REPLACE 覆盖**不是错误**（那正是"不改已应用的迁移、用新迁移替换函数"的机制），
+        # 但它是"这个函数改过几版"的事实，值得打印出来供人核对最终生效的是哪一版。
+        print("被 OR REPLACE 覆盖过的函数 %d 个（正常，非错误）：" % len(replaced))
+        for key, hist in sorted(replaced.items()):
+            print("  [INFO] %s：最新定义在 %s" % (key, defined.get(key, "?")))
     print("=" * 68)
     if not errors:
         print("提示：静态校验通过 ≠ 可在真库执行。T01 必须在 PostgreSQL 16 上实跑一次。")
