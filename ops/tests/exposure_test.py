@@ -47,6 +47,10 @@ check = H.check
 PORT = 8103
 ROOT = "http://127.0.0.1:%d" % PORT
 
+# 运维连接（清理、以及"验证门户读不到的东西确实存在"这类反向断言）
+_ADMIN_DSN = ("host=127.0.0.1 port=55432 dbname=medtalent user=postgres connect_timeout=5 "
+              "options='-c search_path=mt,public'")
+
 # 公开页：匿名**应该**能看（都是聚合、字典、结构，不含个人数据）
 PUBLIC = ["/", "/catalog", "/schema", "/search", "/analyze", "/viz", "/sql", "/login"]
 # 受限页：必须 403（含个人数据或内部运营数据）
@@ -133,6 +137,9 @@ def _cleanup_t3():
                              WHERE email='exposure_test@local.test')""")
             c.execute("DELETE FROM mt.app_user WHERE email='exposure_test@local.test'")
             c.execute("DELETE FROM mt.access_log WHERE actor='exposure_test@local.test'")
+            # 限流探测留下的记录：**必须清掉**，否则它会污染限流状态
+            # （虽然邮箱是随机的，但"测试留下的登录痕迹"本身就是不该长期存在的数据）
+            c.execute("DELETE FROM mt.login_attempt WHERE email LIKE 'throttle_probe_%@local.test'")
     except Exception:                                     # noqa: BLE001
         pass
 
@@ -254,6 +261,49 @@ def main():
         check(not shared,
               "没有模块导入别人的 DSN（各自声明连接身份）；违规：%s"
               % ("、".join(shared) or "无"))
+
+        # ===============================================================
+        print("\n【G】登录限流：公开的登录入口必须防在线爆破（迁移 039）")
+        probe = "throttle_probe_%s@local.test" % os.urandom(3).hex()
+        codes = []
+        for i in range(7):
+            req = urllib.request.Request(ROOT + "/login")
+            req.data = urllib.parse.urlencode({"email": probe,
+                                               "password": "wrong-%d" % i}).encode()
+            req.method = "POST"
+            try:
+                with urllib.request.build_opener(_NoRedirect()).open(req, timeout=30) as r:
+                    codes.append(r.status)
+            except urllib.error.HTTPError as e:
+                codes.append(e.code)
+        check(429 not in codes[:4], "前几次错误口令不会被过早锁定（实得 %s）" % codes[:4])
+        check(429 in codes, "连续错误口令最终触发锁定（HTTP 429，实得 %s）" % codes)
+        # 锁定后即使换口令也必须被拒 —— 证明锁定期内**不比对口令**
+        req = urllib.request.Request(ROOT + "/login")
+        req.data = urllib.parse.urlencode({"email": probe, "password": "x"}).encode()
+        req.method = "POST"
+        try:
+            with urllib.request.build_opener(_NoRedirect()).open(req, timeout=30) as r:
+                last = r.status
+        except urllib.error.HTTPError as e:
+            last = e.code
+        check(last == 429, "锁定后用任意口令仍被拒（HTTP %s）—— 不给计时侧信道" % last)
+        # 数据层：门户读不到尝试流水（那是个人信息），但读得到锁定状态
+        ok, _ = as_t0("SELECT * FROM mt.login_attempt LIMIT 1")
+        check(not ok, "匿名读不到 login_attempt（登录痕迹属个人信息）")
+        with psycopg.connect(portal.PORTAL_DSN, row_factory=dict_row, autocommit=True) as c:
+            can = c.execute("SELECT has_table_privilege('mt_portal','mt.login_attempt',"
+                            "'SELECT') AS x").fetchone()["x"]
+            can_view = c.execute("SELECT has_table_privilege('mt_portal','mt.v_login_lockout',"
+                                 "'SELECT') AS x").fetchone()["x"]
+        # 计数必须用**运维连接** —— 门户角色读不到 login_attempt（这正是上面断言要证明的），
+        # 用门户连接去 count 会直接 permission denied（第一版就是这么写的，实测报错）
+        with psycopg.connect(_ADMIN_DSN, row_factory=dict_row, autocommit=True) as c:
+            n = c.execute("SELECT count(*) AS n FROM mt.login_attempt WHERE email=%s",
+                          (probe,)).fetchone()["n"]
+        check(not can, "门户角色读不到 login_attempt（只存邮箱与时间，不存口令/IP）")
+        check(can_view, "门户读得到 v_login_lockout（否则登录页没法告诉用户被锁了）")
+        check(n >= 5, "限流尝试已留痕（%d 条）—— 但只存邮箱与时间" % n)
 
         # ===============================================================
         print("\n【F】年龄口径：年龄段公开、出生年 T2（用户决策 037）")

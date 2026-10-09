@@ -36,6 +36,8 @@ code/demo/portal.py —— 数据库门户（信息展示 / 检索 / 基础分�
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import argparse
 import csv
 import html
@@ -161,7 +163,15 @@ DOMAIN_TABLES = {
                    # 公开视图注册表（schema/sql/038_public_view_registry.sql 创建）：
                    # 登记"对匿名开放"的视图及其理由。视图以属主权限执行，
                    # 所以"哪些视图能公开"必须显式登记，不能靠函数里的字面清单（会漏）。
-                   "public_view_registry"],
+                   "public_view_registry",
+                   # 登录限流（schema/sql/039_login_throttle.sql 创建）：
+                   #   login_attempt —— 登录尝试流水（只存邮箱与时间，用于失败限流）
+                   #   login_policy  —— 限流参数（阈值/窗口/保留期）
+                   # 它们是"记录访问用户"的组成部分，同属治理域。
+                   "login_attempt", "login_policy",
+                   # 计数闸门的排除登记（schema/sql/041_count_gateway_exclusions.sql 创建）：
+                   # 登记"行数也不公开"的表及理由（如登录流水）。策略元数据，属治理域。
+                   "public_count_excluded"],
     "小程序接入": ["external_identity", "response_session", "answer", "experience_episode",
                    "experience_task", "crosswalk", "sync_event"],
     "备份与发布": ["backup_policy", "backup_run", "restore_run", "dataset_release"],
@@ -4568,12 +4578,19 @@ def view_quality(c, qs) -> bytes:
     null_rows.sort(key=lambda x: (-x["空值率%"], x["表"], x["列"]))
     worst = null_rows[:25]
 
-    # 空表清单：**逐表精确 count(*)**。曾经这里是拿 `pg_class.reltuples = 0` 判的，
-    # 而 reltuples 是估算值 —— 本文件另外 3 处出现 reltuples 全都是在说"不要用它"，
-    # README 的设计纪律第 6 条也明令禁止。在一个自称"可核的数字"的页面上
-    # 给出估算口径的 SQL，是自己打自己的脸（由 docs/17 的调研查出）。
-    empty = [t for t in sorted(meta()["by_name"])
-             if q1(c, 'SELECT count(*) AS n FROM mt."%s"' % t.replace('"', '""')) == 0]
+    # 空表清单：**逐表精确计数，但走聚合闸门 mt.public_counts()**。
+    # 曾经这里是对每张表用**会话连接**跑 `count(*)`，而 039 的 `login_attempt`
+    # 刻意对应用角色零授权 —— 于是**一张表的收紧把整页打成 403**，
+    # 而且提示自相矛盾（"需要 T2，你当前是 T3"）。实测踩到。
+    # 正解就是 031 已经建立的闸门：它以属主身份计数，不需要任何列权限，
+    # 一次调用拿到全部精确行数（N 次查询变 1 次），且"数量公开"与"列受限"不再互相牵制。
+    # 闸门自带排除清单（041 的 public_count_excluded：登录流水等行数也属运维信息）。
+    try:
+        counts = {r["table_name"]: r["n_rows"] for r in q(c, "SELECT * FROM mt.public_counts()")}
+        empty = [t for t in sorted(meta()["by_name"]) if counts.get(t, 0) == 0]
+    except psycopg.Error:
+        # 闸门本身也读不到时（理论上不该发生）明确说明，而不是把整页打成空白
+        counts, empty = {}, []
 
     # 完整性不变量（与 ops/tests/regression_guards.sql 的 11–13 号同口径）
     inv = [
@@ -5032,7 +5049,25 @@ class Handler(BaseHTTPRequestHandler):
                                         % esc(str(e).splitlines()[0]), session=sess))
         if r["reason"] != "ok" or not r["session_id"]:
             log_visit(sess, "login_failed", "web", detail={"email_domain":
-                      email.split("@")[-1] if "@" in email else ""})
+                      email.split("@")[-1] if "@" in email else "",
+                      "reason": r["reason"]})
+            # 锁定与"口令错"必须**分别提示**：
+            #   · 锁定时告诉用户"多久后可以再试"，否则他会以为口令忘了；
+            #   · 但锁定提示**不泄露该邮箱是否存在**（限流是按邮箱计的，
+            #     存在与否都会走到这里，所以不构成账号枚举）。
+            if r["reason"] == "too_many_attempts":
+                until = r.get("locked_until")
+                wait = ""
+                if until is not None:
+                    try:
+                        mins = max(1, int((until - datetime.now(timezone.utc)).total_seconds() // 60) + 1)
+                        wait = "，约 %d 分钟后可再试" % mins
+                    except Exception:                     # noqa: BLE001
+                        wait = ""
+                return self._send(429, view_login(None, {}, sess,
+                                  err="尝试次数过多，该邮箱已被临时锁定%s。"
+                                      "（这是防止口令被在线暴力猜解；"
+                                      "如果这是你自己的账号，稍后再试即可）" % wait))
             return self._send(200, view_login(None, {}, sess,
                                               err="邮箱或口令不正确。"
                                                   "（系统刻意不区分这两种情况，"
