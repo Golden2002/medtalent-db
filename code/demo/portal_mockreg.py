@@ -591,6 +591,44 @@ def _dereg_body(ext):
        r["deleted_through_version"], r["deleted_through_version"], P.esc(r["rid"]))
 
 
+def hardclean_persons(c, pids):
+    """按外键顺序删掉这些 person 及其全部子女数据；返回 {表: 删除行数}。
+
+    **抽成公共函数**（供 mock 窗口与 ops/import_persons.py 共用）：
+    清理是"构造的镜像" —— 谁建了数据，谁就得能清掉，而且清理覆盖面必须等于构造覆盖面。
+    两处各写一份必然会分叉（一处补了新表、另一处忘了），所以这里只留一份实现。
+
+    删的顺序不能随意（PostgreSQL 的外键不会替你排序）：
+      ① 孙表（引用子表）→ ② 无外键但指向 person 的表 → ③ 动态发现的直接子表 → ④ person 本身
+    """
+    kids = direct_children(c)
+    pk_of = {parent: _pk_of(c, parent) for _, _, parent in GRANDCHILDREN}
+    n_del = {}
+
+    def bump(table, n):
+        if n:
+            n_del[table] = n_del.get(table, 0) + n
+
+    for p in pids:
+        for child, col, parent in GRANDCHILDREN:
+            pk = pk_of.get(parent)
+            if not pk:
+                continue
+            bump(child, c.execute(
+                "DELETE FROM mt.%s WHERE %s IN "
+                "(SELECT %s FROM mt.%s WHERE person_id = %%s)" % (child, col, pk, parent),
+                (p,)).rowcount)
+        for table, col in NO_FK_TO_PERSON:
+            bump(table, c.execute(
+                "DELETE FROM mt.%s WHERE %s = %%s" % (table, col), (p,)).rowcount)
+        for k in kids:
+            bump(k["t"], c.execute(
+                "DELETE FROM mt.%s WHERE %s = %%s" % (k["t"], k["col"]), (p,)).rowcount)
+        bump("person", c.execute("DELETE FROM mt.person WHERE person_id=%s",
+                                 (p,)).rowcount)
+    return n_del
+
+
 def _do_hardclean(qs):
     """D-C 硬清理：**仅测试/运维**，范围严格限定在本来源。"""
     ext = (qs.get("ext_id", [""])[0] or "").strip()
@@ -614,27 +652,7 @@ def _do_hardclean(qs):
             if n:
                 n_del[table] = n_del.get(table, 0) + n
 
-        for p in pids:
-            # ① 先删孙表（引用的是子表，删子表之前必须清掉）
-            for child, col, parent in GRANDCHILDREN:
-                pk = pk_of.get(parent)
-                if not pk:
-                    continue
-                bump(child, c.execute(
-                    "DELETE FROM mt.%s WHERE %s IN "
-                    "(SELECT %s FROM mt.%s WHERE person_id = %%s)" % (child, col, pk, parent),
-                    (p,)).rowcount)
-            # ② 没有外键的表：数据库不会替你挡，必须显式删
-            for table, col in NO_FK_TO_PERSON:
-                bump(table, c.execute(
-                    "DELETE FROM mt.%s WHERE %s = %%s" % (table, col), (p,)).rowcount)
-            # ③ 直接子表：动态发现，按真实外键列删（新增子表自动被覆盖）
-            for k in kids:
-                bump(k["t"], c.execute(
-                    "DELETE FROM mt.%s WHERE %s = %%s" % (k["t"], k["col"]), (p,)).rowcount)
-            # ④ 最后删 person 本身
-            bump("person", c.execute("DELETE FROM mt.person WHERE person_id=%s",
-                                     (p,)).rowcount)
+        n_del = hardclean_persons(c, pids)
         c.commit()
     after = snapshot()
     orph = orphan_check()
