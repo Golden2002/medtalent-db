@@ -499,6 +499,31 @@ def main():
                      capture_output=True, text=True, encoding="utf-8", cwd=BASE)
         check(r2.returncode != 0 and "max-rows" in ((r2.stdout or "") + (r2.stderr or "")),
               "执行器拒绝「不给上限就删」—— 删除审计必须由人给出具体数字")
+
+        # I-12 加密 PII 的机制**真的可用**（独立审查 P3：person_pii 0 行，机制从未被验证）
+        #      核查发现比"未验证"更严重：没有任何代码写它、也没有密钥管理 ——
+        #      一张存在但没人写、也没密钥的表，比没有这张表更危险（它会让人以为 PII 已加密）。
+        #      这里跑一次端到端验证：写入→确认落库是密文→解密还原→错钥匙读不出→清理。
+        r3 = _sp.run([sys.executable, os.path.join(BASE, "ops", "pii.py"), "verify"],
+                     capture_output=True, text=True, encoding="utf-8", cwd=BASE)
+        pii_out = (r3.stdout or "") + (r3.stderr or "")
+        check(r3.returncode == 0 and "验证通过" in pii_out,
+              "PII 加密机制端到端验证通过（密文落库/可解密/错钥匙读不出/证件号单向）")
+        check("密文里是否含明文：否" in pii_out,
+              "落库的字节里**不含明文**（这是「加密了」唯一可信的证据 —— 看字节，不是看函数名）")
+        check("残留 0" in pii_out,
+              "验证数据自建自清（person_pii 与 person 都零残留）")
+        # 权限：T3 可读、T0 不可读（列级授权对加密表同样成立）
+        with psycopg.connect(_ADMIN_DSN, row_factory=dict_row, autocommit=True) as c:
+            t3 = c.execute("SELECT has_column_privilege('mt_t3','mt.person_pii',"
+                           "'full_name_enc','SELECT') AS x").fetchone()["x"]
+            t0 = c.execute("SELECT has_column_privilege('mt_t0','mt.person_pii',"
+                           "'full_name_enc','SELECT') AS x").fetchone()["x"]
+            # 导出禁令必须覆盖 PII 列（能看 ≠ 能带走）
+            ban = c.execute("SELECT count(*) AS n FROM mt.export_denied "
+                            "WHERE table_name='person_pii'").fetchone()["n"]
+        check(t3 and not t0, "加密列对 T3 可读、对匿名不可读（列级授权在加密表上同样生效）")
+        check(ban >= 5, "PII 的 %d 个加密列都在导出禁令里（能看 ≠ 能带走）" % ban)
         # I-7 密码强度：新口令必须是 cost ≥ 12（原来 pgcrypto 默认 6）
         with psycopg.connect(_ADMIN_DSN, row_factory=dict_row, autocommit=True) as c:
             weak = c.execute("""SELECT count(*) AS n FROM mt.app_user

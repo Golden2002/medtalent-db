@@ -445,8 +445,29 @@ def d4_security(c):
         "pg_class.relrowsecurity；行级隔离目前靠外键与角色分层实现，RLS 尚未启用")
 
     # I4.8 明文个人身份信息：person_pii 是否用了加密列
-    add("D4", "I4.8", "person_pii 行数（加密存储）", q1(c, "SELECT count(*) FROM mt.person_pii"),
-        "-", "INFO", "SELECT count(*) FROM mt.person_pii（列名 *_enc 表示密文）")
+    # I4.8 加密 PII 的**机制可用性**（不只是行数）
+    # 独立审查指出 person_pii 0 行、机制"从未被真实数据验证过"；
+    # 核查发现比"未验证"更严重：**没有代码写它、也没有密钥管理** ——
+    # 一张存在但没人写、也没密钥的表，比没有这张表更危险（会让人以为 PII 已加密）。
+    # 现在机制由 ops/pii.py 实现，并由暴露面套件每次回归跑一次端到端验证。
+    # 这条指标只报**可核的三件事**：有没有 pgcrypto、密钥配没配、表里有多少行。
+    # 注意**不回显密钥**，只报"有没有"。
+    has_pgcrypto = bool(q1(c, "SELECT count(*) FROM pg_proc p JOIN pg_namespace n "
+                              "ON n.oid=p.pronamespace WHERE n.nspname='mt' "
+                              "AND p.proname='pgp_sym_encrypt'"))
+    n_pii = q1(c, "SELECT count(*) FROM mt.person_pii")
+    import env as _env
+    _env.load_into_environ()
+    has_pii_key = bool(os.environ.get("MEDTALENT_PII_KEY"))
+    add("D4", "I4.8", "加密 PII：pgcrypto / 密钥 / 表内行数",
+        "pgcrypto=%s 密钥=%s 行数=%s" % ("有" if has_pgcrypto else "无",
+                                        "已配" if has_pii_key else "未配", n_pii),
+        "-", "INFO",
+        "pg_proc 里是否有 pgp_sym_encrypt；MEDTALENT_PII_KEY 是否配置（**不回显值**）；"
+        "person_pii 行数。机制本身由 ops/pii.py verify 端到端验证，"
+        "并由 exposure_test 每次回归跑一次（密文落库/可解密/错钥匙读不出/证件号单向）",
+        note="行数长期为 0 是正常的（尚无真实 PII 入库）；关键是机制已验证可用。"
+             "密钥**不存库**：密钥与密文放一起等于没加密。")
 
 
 def d5_maintainability(c):

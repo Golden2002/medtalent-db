@@ -43,7 +43,39 @@ KNOWN = {
     "CLOUDFLARE_ACCOUNT_ID": "Cloudflare 账号 ID（不是密文，但配对使用）",
     "CLOUDFLARE_TUNNEL_TOKEN": "已建隧道的运行令牌（cloudflared tunnel run --token-file）",
     "MEDTALENT_DSN": "覆盖默认数据库连接串（可选）",
+    "MEDTALENT_PII_KEY": "个人身份信息（person_pii）的加密密钥。**不存库**："
+                         "密钥与密文放一起等于没加密（见 ops/pii.py 的密钥纪律）",
 }
+
+
+def _list_reg():
+    """枚举注册表里**以 MEDTALENT_ / 本项目前缀命名**的所有值。
+
+    为什么需要它（这是实测撞出来的缺陷）：`load_into_environ()` 原来只遍历
+    **硬编码的 `KNOWN`**，于是新加的凭据用 `set` 存进了注册表，
+    `load` 却**读不到** —— "看起来配好了，其实读不到"，
+    正是本项目反复对抗的那类问题（001 的 RLS、021 的角色、048 的口径…）。
+    修法是让"能 set 的名字"与"能 load 的名字"**由同一份事实决定**：
+    set 什么名字，load 就能取什么名字。
+    """
+    if not winreg:
+        return {}
+    out = {}
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_PATH) as k:
+            i = 0
+            while True:
+                try:
+                    name, val, _t = winreg.EnumValue(k, i)
+                except OSError:
+                    break
+                i += 1
+                if name in KNOWN or name.startswith(("MEDTALENT_", "CLOUDFLARE_",
+                                                     "GITHUB_")):
+                    out[name] = val
+    except OSError:
+        pass
+    return out
 
 
 def _broadcast():
@@ -166,8 +198,14 @@ def cmd_load(a):
 
 
 def load_into_environ():
-    """给其它脚本调用：确保凭据在 os.environ 里可用。"""
-    for name in KNOWN:
+    """给其它脚本调用：确保凭据在 os.environ 里可用。
+
+    **不只是 `KNOWN`**：也枚举注册表里所有本项目前缀的名字 ——
+    否则新加的凭据（例如 MEDTALENT_PII_KEY）用 set 存了却 load 不到，
+    表现成"配置好了但工具说没有密钥"。
+    """
+    names = set(KNOWN) | set(_list_reg())
+    for name in names:
         if not os.environ.get(name) and winreg:
             v = _read_reg(name)
             if v:
