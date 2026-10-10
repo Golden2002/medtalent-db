@@ -261,6 +261,31 @@ def main():
         check(not shared,
               "没有模块导入别人的 DSN（各自声明连接身份）；违规：%s"
               % ("、".join(shared) or "无"))
+        # 【D3】用户决策「公网只读、管理只在本机」——必须**真的写不进去**，
+        # 而不是"我们没提供写入口"。证据分两层：
+        #   ① HTTP 方法层：门户不接受 POST（405）；
+        #   ② **数据库层**：GET 一条 INSERT/DELETE/UPDATE/DDL 被只读事务拒绝，
+        #      并且事后库里没有任何探测行 —— 后者才是"没写进去"的证据
+        #      （只看页面提示可能是渲染出来的文案）。
+        import urllib.parse as _up
+        for label, stmt in (
+                ("INSERT", "INSERT INTO mt.person (person_id) VALUES ('per_probe_exposure')"),
+                ("DELETE", "DELETE FROM mt.person WHERE person_id='per_nobody'"),
+                ("UPDATE", "UPDATE mt.person SET status='active'"),
+                ("DDL", "CREATE TABLE mt.probe_table (x int)")):
+            st, body = fetch("/sql?" + _up.urlencode({"q": stmt}))
+            check(st < 500 and ("只读" in body or "READ ONLY" in body
+                                or "权限不足" in body or "必须以 SELECT" in body
+                                or "不允许" in body),
+                  "门户拒绝 %s（数据库层的只读/权限在拦）" % label)
+        with psycopg.connect(_ADMIN_DSN, row_factory=dict_row, autocommit=True) as c:
+            n = c.execute("SELECT count(*) AS n FROM mt.person "
+                          "WHERE person_id LIKE 'per_probe%'").fetchone()["n"]
+            t = c.execute("SELECT count(*) AS n FROM information_schema.tables "
+                          "WHERE table_schema='mt' AND table_name='probe_table'").fetchone()["n"]
+        check(n == 0 and t == 0,
+              "四个写尝试**没有留下任何痕迹**（探测行 %d、probe_table %d）—— "
+              "这是「公网只读」的实证，不是文案" % (n, t))
 
         # ===============================================================
         print("\n【G】登录限流：公开的登录入口必须防在线爆破（迁移 039）")
