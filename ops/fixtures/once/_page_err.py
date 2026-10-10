@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """用管理员会话取任意页面的真实错误（默认 /tree）。"""
+import io
 import os
 import re
 import sys
@@ -19,13 +20,30 @@ for d in (r"D:\wechat_summary", os.path.join(os.getcwd(), ".tools", "credentials
         break
 
 
+def _load_admin_email():
+    """从凭据文件读管理员邮箱 —— **不要硬编码在这里**。
+
+    这一行原来写的是明文邮箱，被 ops/secrets_scan.py 抓出来：
+    它把"我们确实当凭据保存的东西"作为判据，于是登录邮箱也算凭据。
+    凭据文件在仓库外/被 gitignore，仓库里只留读取逻辑。
+    """
+    for d in (r"D:\wechat_summary", os.path.join(os.path.dirname(
+                  os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                  ".tools", "credentials")):
+        p = os.path.join(d, "medtalent_admin_email.txt")
+        if os.path.isfile(p):
+            with io.open(p, encoding="utf-8") as fh:
+                return fh.read().strip().split("=", 1)[-1].strip()
+    raise SystemExit("[X] 找不到 medtalent_admin_email.txt —— 本脚本不再硬编码邮箱")
+
+
 class NR(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *a):
         return None
 
 
 req = urllib.request.Request(BASE + "/login")
-req.data = urllib.parse.urlencode({"email": "1293869083@qq.com", "password": PW}).encode()
+req.data = urllib.parse.urlencode({"email": _load_admin_email(), "password": PW}).encode()
 req.method = "POST"
 try:
     with urllib.request.build_opener(NR()).open(req, timeout=30) as r:
