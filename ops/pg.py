@@ -326,6 +326,27 @@ def cmd_apply(a):
               "改已应用的迁移会让别人的库和你的库结构不一致。" % name)
         print("    如果你确实要改结构，请**新增**一个迁移文件。")
 
+    if changed and not getattr(a, "allow_drift", False):
+        # **拦截，不只是告警**（独立审查 P2-1）。
+        # 原实现只打印一句警告、退出码仍是 0 —— 于是"库与定义已经分叉"这件事
+        # 可以长期存在而不被任何人发现，而它比任何单条缺陷都危险：
+        # 别人的库和你的库结构不同，却都显示"迁移已全部应用"。
+        # 要接受这次改动必须显式说出口（--allow-drift），并且会**重新登记哈希**。
+        print()
+        print("[X] 拒绝继续：%d 个已应用的迁移被改过（内容哈希不符）。" % len(changed))
+        print("    这意味着 schema/sql/ 里的文件与「这台机器上实际执行过的」不是同一份。")
+        print("    · 想新增结构改动 → 新建一个迁移文件（推荐）")
+        print("    · 确认这次改动是修笔误、且库里结构已核对无误 → `--allow-drift`")
+        print("      （会重新登记哈希，等于承认「以当前文件为准」）")
+        sys.exit(4)
+
+    if changed:
+        for name in changed:
+            print("[=] --allow-drift：接受 %s 的改动并重新登记哈希" % name)
+            _ledger_record(name, _file_sha(os.path.join(PROJECT, "schema", "sql", name)),
+                           "drift-accepted")
+        ledger = _applied_ledger() or {}
+
     if not todo:
         print("[✓] 没有待应用的迁移（台账已登记 %d 个）" % len(ledger))
         return
@@ -381,6 +402,8 @@ def main():
         sub.add_parser(n).set_defaults(func=f)
     pa = sub.add_parser("apply")
     pa.add_argument("--force", action="store_true")
+    pa.add_argument("--allow-drift", action="store_true",
+                    help="接受「已应用的迁移被改过」并重新登记哈希（默认拦截：exit 4）")
     pa.set_defaults(func=cmd_apply)
     pr = sub.add_parser("reset")
     pr.add_argument("--yes", action="store_true")

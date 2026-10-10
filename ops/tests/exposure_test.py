@@ -300,6 +300,88 @@ def main():
               "这是「公网只读」的实证，不是文案" % (n, t))
 
         # ===============================================================
+        print("\n【J】口径一致性：闸门、/schema、/catalog 必须同一个答案")
+        # 背景（独立审查 P1-1）：041 给聚合闸门加了排除，但公开的 /schema 用 meta()
+        # 照样把 change_log 的真实行数显示给匿名 —— **同一问题两套实现、两个答案**，
+        # 而且两边看起来都对。048 把判据统一到 mt.v_count_visibility。
+        with psycopg.connect(_ADMIN_DSN, row_factory=dict_row, autocommit=True) as c:
+            hidden = [r["table_name"] for r in c.execute(
+                "SELECT table_name FROM mt.v_count_visibility WHERE NOT count_is_public")]
+            gate = [r["table_name"] for r in c.execute("SELECT * FROM mt.public_counts()")]
+        check(bool(hidden), "登记了「行数不公开」的表（%d 张：%s）"
+              % (len(hidden), "、".join(hidden)))
+        check(not (set(hidden) & set(gate)),
+              "聚合闸门**确实不再返回**这些表的行数（一致的第一个答案）")
+
+        # 页面层：两个公开页都要按同一判据隐藏（结构精确匹配，避免"列数"被误当行数——
+        # 我第一版就是用松散的子串匹配，把 n_cols=9 误判成行数泄露）
+        cell_pat = re.compile(
+            r'<code>([a-z_]+)</code></a></td><td class="n">(\d+)</td>'
+            r'<td class="n">(.*?)</td>', re.S)
+        for page_path in ("/schema", "/catalog"):
+            st, body = fetch(page_path)
+            cells = {m.group(1): re.sub(r"<[^>]+>", "", m.group(3)).strip()
+                     for m in cell_pat.finditer(body)}
+            leaked = [t for t in hidden
+                      if cells.get(t) and cells[t].replace(",", "").isdigit()]
+            check(st == 200 and not leaked,
+                  "匿名 %s 不显示活动表的真实行数（泄露的：%s）"
+                  % (page_path, "、".join(leaked) or "无"))
+        # 数据表的行数必须**仍然公开**（需求原文"数量可以公开"不能被误伤）。
+        # 只在 /schema 上做这条断言：它的行模板是「表|列|行数|…」，
+        # 而 /catalog 是「表|域|行数|…」（中间多一列），
+        # 用同一个正则匹配两个页面会把 /catalog 的 null 当成失败 —— 断言要贴着实际结构写。
+        st_s, body_s = fetch("/schema")
+        cells_s = {m.group(1): re.sub(r"<[^>]+>", "", m.group(3)).strip()
+                   for m in cell_pat.finditer(body_s)}
+        check(cells_s.get("person", "").replace(",", "").isdigit(),
+              "数据表行数仍然公开（/schema 上 person=%s）—— 「数量可以公开」没被误伤"
+              % cells_s.get("person"))
+        # /catalog 也必须有 person 这一行（只是列位置不同）：确认它没被整页隐藏
+        st_c, body_c = fetch("/catalog")
+        check("person" in body_c and "不公开" in body_c,
+              "/catalog 同时包含公开行（person）与隐藏行（活动表）")
+        # 同一判据的反面：登录后（T2+）必须看得到真实数字，否则"收过头了"
+        t3ck = _login_t3()
+        if t3ck:
+            st, body = _fetch_with("/schema", t3ck)[:2]
+            cells = {m.group(1): re.sub(r"<[^>]+>", "", m.group(3)).strip()
+                     for m in cell_pat.finditer(body)}
+            shown = [t for t in hidden
+                     if cells.get(t, "").replace(",", "").isdigit()]
+            check(len(shown) == len(hidden),
+                  "T3 登录后看得到全部 %d 张活动表的真实行数（收得刚好，没伤运维）"
+                  % len(hidden))
+
+        # 错误信息按身份分流（P2-6）：匿名只给追踪号，登录后给数据库原话
+        fake = "permission denied for function occupation_asof"
+        anon_block = portal.db_error_block(portal.ANON, fake)
+        auth_block = portal.db_error_block(
+            portal.Session(actor="x@y.z", tier="T3", session_id="s", ok=True), fake)
+        check(fake not in anon_block and "追踪号" in anon_block,
+              "匿名页不给数据库原话，只给追踪号（内部表名/函数名不外泄）")
+        check(fake in auth_block and "追踪号" in auth_block,
+              "登录后给数据库原话 + 追踪号（运维可诊断，这是刻意保留的能力）")
+        check(portal.target_label(portal.ANON, "mt.access_log") != "mt.access_log",
+              "匿名页的「被拒绝的对象」不暴露内部表名")
+
+        # 参数化：db.call 用 Identifier 拼函数名（P2-4）。含引号的"函数名"必须被当作
+        # 标识符处理（→ 不存在），而不是拼进 SQL 里形成注入。
+        import sys as _sys
+        _sys.path.insert(0, os.path.join(BASE, "code"))
+        import db as _db
+        try:
+            _db.call("access_rank'; DROP TABLE mt.person; --", ["T2"])
+            bad_call = True
+        except Exception:                                  # noqa: BLE001
+            bad_call = False
+        check(not bad_call, "db.call 把函数名当标识符处理，注入式输入被拒（P2-4）")
+        with psycopg.connect(_ADMIN_DSN, row_factory=dict_row, autocommit=True) as c:
+            alive = c.execute("SELECT count(*) AS n FROM information_schema.tables "
+                              "WHERE table_schema='mt' AND table_name='person'").fetchone()["n"]
+        check(alive == 1, "mt.person 仍然存在（注入尝试没有生效）")
+
+        # ===============================================================
         print("\n【I】权限不变式（独立审查发现的 P0/P1 都在这里变成断言）")
         with psycopg.connect(_ADMIN_DSN, row_factory=dict_row, autocommit=True) as c:
             # I-1 主体标识：**全部表**都不许对匿名开放（P0-1）

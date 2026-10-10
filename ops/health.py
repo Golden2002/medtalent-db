@@ -462,6 +462,30 @@ def d5_maintainability(c):
         ok=(n_files == n_ledger),
         note="不等通常意味着：有迁移文件未登记，或有迁移被改过（漂移）")
 
+    # I5.3 **迁移漂移**（独立审查 P2-1）：已应用的迁移文件被改过 = 库与定义分叉。
+    # 为什么是 MUST：这比任何单条缺陷都危险 ——
+    # 别人的库和你的库结构不同，却都显示"迁移已全部应用"。
+    # 原来 `ops/pg.py apply` 只打印一句警告、退出码仍是 0，于是它可以长期存在。
+    # 现在两处都拦：apply 默认 exit 4（可 --allow-drift 显式接受），门禁这里也判 MUST。
+    import hashlib
+    sql_dir = os.path.join(BASE, "schema", "sql")
+    ledger_map = {r["filename"]: r["sha256"]
+                  for r in c.execute("SELECT filename, sha256 FROM mt.schema_migration")}
+    drifted = []
+    for fn in sorted(os.listdir(sql_dir)):
+        if not fn.endswith(".sql"):
+            continue
+        with open(os.path.join(sql_dir, fn), "rb") as fh:
+            sha = hashlib.sha256(fh.read()).hexdigest()
+        if fn in ledger_map and ledger_map[fn] and ledger_map[fn] != sha:
+            drifted.append(fn)
+    add("D5", "I5.5", "已应用迁移被改过的个数", len(drifted), "0", "MUST",
+        "对每个 schema/sql/*.sql 重算 sha256，与 mt.schema_migration 比对",
+        ok=(not drifted),
+        note=("漂移的迁移：%s。改已应用的迁移会让别人的库与你的库结构分叉。"
+              "确实要改就新增一个迁移文件；接受既有改动用 `python ops\\pg.py apply --allow-drift`"
+              % ("、".join(drifted) if drifted else "无")))
+
     # I5.2 字典即代码：码值在库与 CSV 之间是否一致
     # **真跑一次校验器并解析结果**，而不是写一句"由某脚本保证"——
     # "只登记契约不实现测量"正是本文件开头批评的做法（第一版这里就是这么写的，
@@ -538,10 +562,17 @@ def d7_cost(c):
     add("D7", "I7.3", "死元组数（需 autovacuum 关注）",
         q1(c, "SELECT coalesce(sum(n_dead_tup),0) FROM pg_stat_user_tables"), "-", "INFO",
         "pg_stat_user_tables.n_dead_tup 求和")
-    add("D7", "I7.4", "从未被 ANALYZE 过的表数",
-        q1(c, "SELECT count(*) FROM pg_stat_user_tables WHERE last_analyze IS NULL "
-               "AND last_autoanalyze IS NULL"), "-", "INFO",
-        "没有统计信息 → 查询计划可能很差")
+    # I7.4 统计信息覆盖率。**从 INFO 提为 SHOULD**（独立审查 P3-4）：
+    # 实测有 50 张表从未被 ANALYZE —— 它们多是静态小表，永远达不到 autovacuum 的分析阈值，
+    # 于是永远没有统计信息，查询计划一直靠默认假设。INFO 让这件事被看见却没人管，
+    # 所以给一个可判定的目标。
+    n_never = q1(c, "SELECT count(*) FROM pg_stat_user_tables WHERE last_analyze IS NULL "
+                    "AND last_autoanalyze IS NULL")
+    add("D7", "I7.4", "从未被 ANALYZE 过的表数", n_never, "≤5", "SHOULD",
+        "pg_stat_user_tables 里 last_analyze 与 last_autoanalyze 都为空",
+        ok=(n_never is not None and n_never <= 5),
+        note="批量加载后手动跑一次 `python ops\\pg.py psql -c \"ANALYZE\"` 即可归零；"
+             "静态小表不会自己触发 autovacuum 分析")
     add("D7", "I7.5", "当前连接数 / 上限",
         "%s/%s" % (q1(c, "SELECT count(*) FROM pg_stat_activity"),
                    q1(c, "SELECT setting FROM pg_settings WHERE name='max_connections'")),

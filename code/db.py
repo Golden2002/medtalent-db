@@ -16,6 +16,7 @@ import os
 from typing import Any, Iterable, Sequence
 
 import psycopg
+from psycopg import sql
 from psycopg.rows import dict_row
 
 DSN = os.environ.get(
@@ -71,10 +72,20 @@ def execute(sql: str, params: Sequence[Any] | None = None) -> int:
 
 
 def call(func: str, params: Iterable[Any] = ()) -> Any:
-    """调用 mt schema 下的函数，返回其返回值。"""
-    placeholders = ",".join(["%s"] * len(list(params)))
+    """调用 mt schema 下的函数，返回其返回值。
+
+    **函数名必须用 sql.Identifier 拼，不能 `%` 拼**（独立审查 P2-4）。
+    原实现是 `"SELECT mt.%s(%s)" % (func, placeholders)` —— 第一个 `%s` 是**裸拼**：
+    当前 `func` 都来自本仓的常量，所以不可直接注入；但这是"靠调用点自律"的隐式安全，
+    而 `func` 是**公开参数**，任何新调用点传进来一个用户可控的字符串就立刻变成注入。
+    参数占位符仍然动态生成（那是必要的，psycopg 没有"可变参数个数的绑定"写法），
+    但**数量**由 len(params) 决定、内容是绑定值，不构成注入面。
+    """
+    ps = list(params)
+    placeholders = sql.SQL(",").join([sql.Placeholder()] * len(ps))
+    stmt = sql.SQL("SELECT mt.{}({})").format(sql.Identifier(func), placeholders)
     with cursor() as cur:
-        cur.execute("SELECT mt.%s(%s)" % (func, placeholders), list(params))
+        cur.execute(stmt, ps)
         row = cur.fetchone()
         return list(row.values())[0] if row else None
 

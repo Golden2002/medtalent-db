@@ -45,6 +45,7 @@ import io
 import json
 import os
 import re
+import secrets
 import sys
 import threading
 import time
@@ -231,6 +232,9 @@ ANON = Session()
 
 # 导出禁令的进程内缓存（迁移 032）
 _EXPORT_CACHE = None
+_EXPORT_LOCK = threading.Lock()     # 防并发首请求各建一遍（见 export_policy）
+# 计数可见性缓存（迁移 048：判据唯一来源 mt.v_count_visibility）
+_COUNT_VIS_CACHE = None
 
 # 当前请求的会话：用线程局部存放，而不是把它穿进 20 多个 view 函数的签名。
 # 为什么线程局部在这里是安全的：`ThreadingHTTPServer` 一个请求一个线程，
@@ -1104,18 +1108,24 @@ def export_policy() -> dict:
     """
     global _EXPORT_CACHE
     if _EXPORT_CACHE is None:
-        by_table, by_name = {}, {}
-        try:
-            with admin_db() as c:
-                for r in q(c, "SELECT table_name, column_name, because FROM export_denied"):
-                    by_table[(r["table_name"], r["column_name"])] = r["because"]
-                    by_name.setdefault(r["column_name"], []).append(r["table_name"])
-                _EXPORT_CACHE = {"by_table": by_table, "by_name": by_name}
-        except psycopg.Error:
-            # 读不到就**不拦**？不 —— 禁令读不到时应该按"最严"处理是做不到的
-            # （不知道禁哪些列）。但也不能因为读不到就崩掉所有导出。
-            # 选择：缓存为空并**在日志里说清楚**，同时让 refresh 能重试。
-            _EXPORT_CACHE = {"by_table": {}, "by_name": {}, "error": True}
+        # 加锁（独立审查 P2-7）：`ThreadingHTTPServer` 下一请求一线程，
+        # 并发首请求会同时发现缓存为空、各自建一遍（结果一样，但白做几遍查询 +
+        # 建几次连接；过载时这正好发生在最不该浪费连接的时刻）。
+        # 赋值本身是原子的，所以**不会**读到半个字典 —— 锁解决的是重复劳动，不是撕裂。
+        with _EXPORT_LOCK:
+            if _EXPORT_CACHE is None:
+                by_table, by_name = {}, {}
+                try:
+                    with admin_db() as c:
+                        for r in q(c, "SELECT table_name, column_name, because FROM export_denied"):
+                            by_table[(r["table_name"], r["column_name"])] = r["because"]
+                            by_name.setdefault(r["column_name"], []).append(r["table_name"])
+                        _EXPORT_CACHE = {"by_table": by_table, "by_name": by_name}
+                except psycopg.Error:
+                    # 读不到就**不拦**？不 —— 禁令读不到时应该按"最严"处理是做不到的
+                    # （不知道禁哪些列）。但也不能因为读不到就崩掉所有导出。
+                    # 选择：缓存为空并**在日志里说清楚**，同时让 refresh 能重试。
+                    _EXPORT_CACHE = {"by_table": {}, "by_name": {}, "error": True}
     return _EXPORT_CACHE
 
 
@@ -1425,7 +1435,10 @@ def view_catalog(c, qs) -> bytes:
         '<td class="n">%d<small class="muted">/%d</small></td>'
         '<td class="n">%d</td><td class="n">%s</td><td>%s</td>'
         '<td class="muted">%s</td></tr>'
-        % (x["name"], esc(x["name"]), esc(x["domain"]), f"{x['rows']:,}", x["n_cols"],
+        % (x["name"], esc(x["name"]), esc(x["domain"]),
+           f"{x['rows']:,}" if count_visible(x["name"]) else
+           '<span class="muted" title="该表的行数属活动信息，不对匿名公开">不公开</span>',
+           x["n_cols"],
            x["profiled"], x["n_cols"], x["enum_like"],
            ('<span class="warnpill">%d</span>' % x["all_null"]) if x["all_null"] else "0",
            _tier_bar(x["tiers"]),
@@ -1493,6 +1506,42 @@ def view_catalog(c, qs) -> bytes:
     body += page_analysis(c, "/catalog")
     return page("数据目录", body, subtitle="字段名 · 数量 · 分类统计 · 检索",
                 session=current_session())
+
+
+def count_visibility():
+    """哪些表的**行数对匿名公开**。判据唯一来源：数据库的 `mt.v_count_visibility`
+    （由迁移 048 的 `public_count_excluded` 驱动）。
+
+    **为什么必须有这一个函数**（独立审查 P1-1）：041 给聚合闸门 `public_counts()`
+    加了排除，但公开的 `/schema` 页用 `meta()` 照样显示所有表的精确行数 ——
+    同一个问题**两套实现、两个答案**，而且两边看起来都对，最难发现。
+    现在闸门与页面**都读这一份判据**：一个口径一份实现。
+    """
+    global _COUNT_VIS_CACHE
+    if _COUNT_VIS_CACHE is None:
+        with _EXPORT_LOCK:
+            if _COUNT_VIS_CACHE is None:
+                try:
+                    with admin_db() as c:
+                        _COUNT_VIS_CACHE = {r["table_name"]: r["count_is_public"]
+                                            for r in q(c, "SELECT * FROM v_count_visibility")}
+                except psycopg.Error:
+                    # 读不到判据时**按保守处理**：不显示行数（宁可少显示，不要多显示）
+                    _COUNT_VIS_CACHE = {}
+    return _COUNT_VIS_CACHE
+
+
+def count_visible(table: str) -> bool:
+    """该表的行数是否可以展示给**当前会话**。
+
+    公开口径（048）：数据表行数公开（需求原文"数量可以公开"）；
+    身份/会话/登录/审计表属**活动信息**，只对 T2（员工）及以上显示。
+    """
+    vis = count_visibility()
+    public = vis.get(table, True)          # 判据里没有的表按公开（数据表默认公开）
+    if public:
+        return True
+    return _tier_rank(current_session().tier) >= _tier_rank("T2")
 
 
 def view_field(c, table, col, qs) -> bytes:
@@ -1644,11 +1693,22 @@ def view_schema(c, qs) -> bytes:
                        unclassified))
     views = [r for r in m["rels"] if r["kind"] != "table"]
 
+    def count_cell(name, n):
+        """行数单元格：与 `/catalog`、聚合闸门**同一判据**（迁移 048）。
+
+        为什么这里也要改：041 只给 `public_counts()` 加了排除，而 `/schema`
+        用 `meta()` 照样把 `change_log` 的 871,163 行显示给匿名 ——
+        于是同一个问题有两套实现、两个答案（`/catalog` 藏了、`/schema` 没藏）。
+        """
+        if count_visible(name):
+            return f"{n:,}"
+        return '<span class="muted" title="该表的行数属活动信息，不对匿名公开">不公开</span>'
+
     def table_block(rs, show_domain=False):
         return "".join(
             '<tr><td><a href="/t/%s"><code>%s</code></a></td><td class="n">%d</td>'
             '<td class="n">%s</td><td class="n">%d</td><td class="n">%d</td><td class="n">%d</td></tr>'
-            % (r["name"], esc(r["name"]), r["n_cols"], f"{r['rows']:,}",
+            % (r["name"], esc(r["name"]), r["n_cols"], count_cell(r["name"], r["rows"]),
                len(m["cons"].get(r["name"], [])), len(m["idx"].get(r["name"], [])),
                len(m["trg"].get(r["name"], [])))
             for r in rs)
@@ -1659,7 +1719,9 @@ def view_schema(c, qs) -> bytes:
         '<div class="card" id="%s"><h2>%s <span class="muted">· %d 张表 · %s 行</span></h2>'
         '<div class="sub">%s</div><table>%s%s</table></div>'
         % (urllib.parse.quote(d), esc(d), len(rs),
-           f"{sum(r['rows'] for r in rs):,}", esc(desc), head, table_block(rs))
+           f"{sum(r['rows'] for r in rs if count_visible(r['name'])):,}"
+           + ("（部分表的行数不公开）" if any(not count_visible(r["name"]) for r in rs) else ""),
+           esc(desc), head, table_block(rs))
         for d, desc, rs in groups)
 
     view_html = ('<div class="card"><h2>视图 <span class="muted">· %d 个 · 预置口径，不可写</span></h2>'
@@ -2544,10 +2606,18 @@ def is_numeric_value(v) -> bool:
     return type(v).__name__ == "Decimal"
 
 
-def mini_analysis(c, title, sqltext, maxlen=60, show_sql=True) -> str:
-    """跑一段分析 SQL 并渲染成卡片；卡片底部给出这段 SQL 本身。"""
+def mini_analysis(c, title, sqltext, maxlen=60, show_sql=True, params=None) -> str:
+    """跑一段分析 SQL 并渲染成卡片；卡片底部给出这段 SQL 本身。
+
+    `params` 是**绑定参数**（独立审查 P2-5）：原来只接受裸 SQL 字符串，于是
+    调用点只能自己把值 format 进去 —— `view_talent_one` 就写了
+    `... WHERE s.person_id = '{pid}' ...`.format(pid=pid)。
+    当前 `pid` 必须先存在于 person 表才走得到那里（前面参数化查过），所以不可直接注入；
+    但那是"靠前一个查询兜底"的**隐式安全**，任何一次重排代码就会破。
+    现在支持绑定参数，调用点不再有理由拼字符串。
+    """
     try:
-        rows = q(c, sqltext)
+        rows = q(c, sqltext, params)
     except psycopg.Error as e:
         return ('<div class="card"><h2>%s</h2><div class="note err">%s</div>%s</div>'
                 % (esc(title), esc(str(e).splitlines()[0]), sql_box(sqltext)))
@@ -3478,13 +3548,16 @@ def view_talent_one(c, pid, qs) -> bytes:
     body = body.replace('<div class="card"><h2>能力主张',
                         vec_block + '<div class="card"><h2>能力主张', 1)
     body += analysis_panel([
+        # 用**绑定参数**而不是把 pid 拼进 SQL（原来写的是 .format(pid=pid)）。
+        # 页面下方会把 SQL 原样展示给用户复核，所以显示成 %s 反而更诚实：
+        # 读者看到的是真正执行的参数化语句，而不是一个已经填好值的字符串。
         mini_analysis(c, "这个人的能力分布 vs 全库", """
             SELECT c.preferred_label AS "能力", s.level AS "熟练度",
                    s.transferability AS "可迁移性",
                    (SELECT count(*) FROM skill_assertion x
                      WHERE x.concept_id = s.concept_id) AS "全库具备人数"
               FROM skill_assertion s JOIN concept c ON c.concept_id = s.concept_id
-             WHERE s.person_id = '{pid}' ORDER BY 4 DESC LIMIT 15""".format(pid=pid)),
+             WHERE s.person_id = %s ORDER BY 4 DESC LIMIT 15""", params=(pid,)),
     ], "分析这份档案",
         "看这个人的能力里哪些是「稀缺」的——全库具备人数越少越稀缺。"
         "这比单纯列出能力更有用：能立刻看出他靠什么区别于其他人。")
@@ -3670,6 +3743,9 @@ SELECT * FROM v_competency_current WHERE occupation_id = '%s';
 SELECT * FROM occupation_migration WHERE old_id = '%s' OR new_id = '%s';"""
                % (oid, oid, oid, oid)))
     body += analysis_panel([
+        # 用**绑定参数**（原来是把值 format 进 SQL，并手写 `.replace("'", "''")` 转义）。
+        # 手写转义的问题不是"这次转错了"，而是**它依赖每个调用点都记得转义** ——
+        # 而 `oid` 来自 URL。绑定参数把这件事交给驱动，不需要任何人记得。
         mini_analysis(c, "同族里其他职业要、而这个职业没要的能力", """
             SELECT c.preferred_label AS "能力",
                    count(DISTINCT w.occupation_id) AS "同族中几个职业要它",
@@ -3677,12 +3753,12 @@ SELECT * FROM occupation_migration WHERE old_id = '%s' OR new_id = '%s';"""
               FROM job_competency_weight w
               JOIN occupation o2 ON o2.occupation_id = w.occupation_id
               JOIN concept c ON c.concept_id = w.concept_id
-             WHERE w.valid_to IS NULL AND o2.family = '{fam}'
+             WHERE w.valid_to IS NULL AND o2.family = %s
                AND w.concept_id NOT IN (
                    SELECT w2.concept_id FROM job_competency_weight w2
-                    WHERE w2.occupation_id = '{oid}' AND w2.valid_to IS NULL)
-             GROUP BY 1 ORDER BY 2 DESC, 3 DESC LIMIT 12""".format(
-            fam=(o["family"] or "").replace("'", "''"), oid=oid.replace("'", "''"))),
+                    WHERE w2.occupation_id = %s AND w2.valid_to IS NULL)
+             GROUP BY 1 ORDER BY 2 DESC, 3 DESC LIMIT 12""",
+            params=(o["family"] or "", oid)),
     ], "分析这个职业",
         "「同族有、这个职业没要」的能力，往往正是它区别于同族其他岗位的地方——"
         "这比单看它要什么更能说明问题。")
@@ -4421,10 +4497,48 @@ def view_no_permission(c, qs, session=None, need="T1", target="", db_error="") -
 <h3>为什么"看不到"和"没有"要分清楚</h3>
 <p>本页如果不说明，你会把"因为权限而读不到"误读成"库里没有这个数据"。
 这两种情况的处理方式完全不同，所以界面必须把它们区分开。</p></div>
-""" % (esc(need), esc(session.tier), esc(target),
-       ('<p class="muted">数据库原话：<code>%s</code></p>' % esc(db_error)) if db_error else "",
+""" % (esc(need), esc(session.tier), esc(target_label(session, target)),
+       db_error_block(session, db_error),
        esc(need))
     return page("权限不足", body, subtitle="列级授权拒绝了这次读取", session=session)
+
+
+def target_label(session, target: str) -> str:
+    """「被拒绝的对象」这一栏的显示名 —— 同样按身份分流。
+
+    路径类目标（`/audit`）对谁都能说；但有的调用点传的是**表名**
+    （例如 `mt.access_log`），那对匿名访客就是内部结构信息。
+    与 db_error_block 同一个原则：登录后给全，匿名只给不敏感的形态。
+    """
+    if not target:
+        return ""
+    if session is not None and getattr(session, "ok", False):
+        return target
+    return target if target.startswith("/") else "（该页需要更高等级的数据）"
+
+
+def db_error_block(session, db_error: str) -> str:
+    """把数据库原文**按身份分流**显示（独立审查 P2-6）。
+
+    为什么要分流，而不是简单地"一律不显示"：
+      · **已登录用户（尤其是运维/管理员）需要原文** —— 它点名是哪个对象被拒
+        （"permission denied for view v_dimension_public"），比"你需要 T1"有用得多；
+        本项目此前专门加过这一条，是为了让权限问题可诊断。
+      · 但**匿名访客在公网上不需要**知道库里的表名、列名、函数名 ——
+        那些名字本身就是内部结构信息（`occupation_asof`、`column_policy`…）。
+    所以：已登录 → 显示原文 + 追踪号；匿名 → 只给追踪号，原文进 stderr 与审计日志。
+    追踪号让"用户报的那条"能被运维直接对上，不需要把内部结构发到匿名页面上。
+    """
+    if not db_error:
+        return ""
+    tid = secrets.token_hex(3)
+    print("[db-error %s] %s" % (tid, db_error), file=sys.stderr)
+    if session is not None and getattr(session, "ok", False):
+        return ('<p class="muted">数据库原话 <code>%s</code>：%s</p>'
+                '<p class="muted">（本次追踪号 <code>%s</code>，同一条也写进了审计日志）</p>'
+                % (esc(tid), esc(db_error), esc(tid)))
+    return ('<p class="muted">详细原因已记入审计日志（追踪号 <code>%s</code>），'
+            '登录后可看到数据库原话。</p>' % esc(tid))
 
 
 def view_audit(c, qs, session=None) -> bytes:
@@ -5185,15 +5299,15 @@ class Handler(BaseHTTPRequestHandler):
                     '<div class="card"><p>当前并发请求超过了数据库连接上限，'
                     '系统主动拒绝了这一请求，<b>没有</b>执行任何查询。'
                     '这是过载保护，不是数据出错。</p>'
-                    '<p class="muted">数据库原话：%s</p>'
-                    '<p><a href="/">稍后重试</a></p></div>' % esc(msg[:200]),
+                    + db_error_block(sess, msg[:200])
+                    + '<p><a href="/">稍后重试</a></p></div>',
                     session=sess), extra={"Retry-After": "3"})
             self._audit_detail = {"db_error": msg[:200]}
             return self._send(503, page(
                 "数据库暂不可用",
                 '<div class="note err"><b>数据库暂时不可用。</b></div>'
-                '<div class="card"><p class="muted">%s</p>'
-                '<p><a href="/">重试</a></p></div>' % esc(msg[:200]),
+                '<div class="card">' + db_error_block(sess, msg[:200])
+                + '<p><a href="/">重试</a></p></div>',
                 session=sess), extra={"Retry-After": "5"})
         except psycopg.errors.InsufficientPrivilege as e:
             # **权限不足是正常状态，不是 500。** 让数据库的拒绝变成一句人话。
