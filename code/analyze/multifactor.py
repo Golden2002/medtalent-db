@@ -209,6 +209,175 @@ def merge_sparse_levels(rows, factors, min_n=SPARSE_MIN, y_key="y"):
     return out, report
 
 
+def _chi2_sf(x, k):
+    """卡方分布的上尾概率 P(χ²_k > x) —— 自己算，不引入 scipy。
+
+    为什么自己写：这个库前面已经定了"分析依赖只用 numpy"的原则
+    （这样"算的是什么"完全可解释）。卡方上尾 = 正则化上不完全伽马函数
+    Q(k/2, x/2)，用标准的级数（x < a+1）与连分式（否则）两种展开，
+    精度到 1e-12 量级，并与已知临界值对过（见 ops/tests/multifactor_test.py：
+    χ²=3.8415, k=1 → p≈0.05）。
+    """
+    if x <= 0:
+        return 1.0
+    a, xx = k / 2.0, x / 2.0
+    if xx < a + 1.0:                      # 级数展开算 P，再取 1-P
+        term = 1.0 / a
+        s = term
+        n = a
+        for _ in range(1000):
+            n += 1.0
+            term *= xx / n
+            s += term
+            if abs(term) < abs(s) * 1e-15:
+                break
+        return max(0.0, 1.0 - s * math.exp(-xx + a * math.log(xx) - math.lgamma(a)))
+    # 连分式（Lentz 法）算 Q
+    tiny = 1e-300
+    b = xx + 1.0 - a
+    c = 1.0 / tiny
+    d = 1.0 / b
+    h = d
+    for i in range(1, 1000):
+        an = -i * (i - a)
+        b += 2.0
+        d = an * d + b
+        if abs(d) < tiny:
+            d = tiny
+        c = b + an / c
+        if abs(c) < tiny:
+            c = tiny
+        d = 1.0 / d
+        de = d * c
+        h *= de
+        if abs(de - 1.0) < 1e-15:
+            break
+    return h * math.exp(-xx + a * math.log(xx) - math.lgamma(a))
+
+
+def _deviance(X, y, beta):
+    """当前 β 下的偏差（deviance = -2 log 似然，省略与 β 无关的常数项）。"""
+    eta = np.clip(X @ beta, -500, 500)
+    # log(1+e^η) 的稳定写法
+    ll = float(np.sum(y * eta - np.logaddexp(0.0, eta)))
+    return -2.0 * ll
+
+
+def prepare(rows, factors, merge=True, min_n=SPARSE_MIN, y_key="y"):
+    """**数据准备**：合并稀疏水平 → 若反而共线则排除稀疏个体。
+
+    抽成公共函数是**被实测逼出来的**：`analyze()` 走了这套处理，
+    而 `factor_contributions()` 直接调 build_design、没走 ——
+    于是同一批数据"能算粗 OR 与调整 OR"却"算不出因子贡献"（秩 11 < 14）。
+    **两处实现必然分叉**，所以只留一份。
+
+    返回 (rows, merges, excluded)。
+    """
+    merges = []
+    excluded = 0
+    if not merge:
+        return rows, merges, excluded
+    rows, merges = merge_sparse_levels(rows, factors, min_n, y_key)
+    # ⚠ 合并可能**制造共线**（实测撞到的陷阱）：
+    # 如果"在多个因子上都稀疏"的是**同一批人**，那么合并出来的
+    # 「其他（合并）」列在各个因子里**完全相同** → 设计矩阵真共线、无法估计。
+    # 例：年龄段稀疏的是 AG6+AG9、性别稀疏的是 F+M，而恰好都是同样那 3 个人。
+    # 这时"合并"不是解法，退回更朴素的办法：**排除这些稀疏个体**。
+    # 两条路都要如实报告（少了几个人、为什么），不能悄悄换口径。
+    _d = build_design(rows, factors, y_key)
+    if _d["X"].shape[1] - 1 > 0 and \
+            int(np.linalg.matrix_rank(_d["X"])) < _d["X"].shape[1]:
+        keep = []
+        for r in rows:
+            ok = True
+            for f in factors:
+                same = sum(1 for x in rows if _norm(x[f]) == _norm(r[f]))
+                if same < min_n:
+                    ok = False
+                    break
+            if ok:
+                keep.append(r)
+        excluded = len(rows) - len(keep)
+        if keep and excluded:
+            rows = keep
+            merges.append(("__rows__", [], excluded,
+                           "合并后仍共线（同一批人在多个因子上都稀疏）→ "
+                           "改为**排除 %d 个稀疏个体**，用 %d 人估计"
+                           % (excluded, len(rows))))
+    return rows, merges, excluded
+
+
+def factor_contributions(rows, factors, labels=None, y_key="y",
+                         merge=True, min_n=SPARSE_MIN):
+    """**每个因子对结果的贡献**（对数似然比检验，drop-one）。
+
+    用户要的就是这个："针对结果去分析因子的贡献"。
+
+    做法（标准且可解释）：
+      · 全模型（所有因子）的偏差 D_full；
+      · 去掉某一个因子后的偏差 D_without；
+      · **该因子的贡献 ΔD = D_without − D_full** —— 这就是似然比 χ² 统计量，
+        自由度 = 该因子占用的参数个数，可以直接查卡方得到 p 值；
+      · **贡献占比** = ΔD / (全部 ΔD 之和)（近似份额，用于排序）；
+      · 另给 **McFadden 伪 R²** = 1 − D_full / D_null（整体解释了多少）。
+
+    ⚠ 三条必须说清楚的限制：
+      ① 各因子的 ΔD **不是严格可加的**（去掉顺序会影响一点），
+         所以"占比"是**近似**的贡献份额，用来排序，不是精确分解；
+      ② 样本小时 ΔD 很不稳定（EPV 护栏同样适用）；
+      ③ ΔD 大只说明"这个因子与结果有关联"，**不是因果**。
+    """
+    labels = labels or {}
+    if not factors:
+        return {"error": "没有因子"}
+    rows, merges, excluded = prepare(rows, factors, merge, min_n, y_key)
+
+    def fit(cols):
+        d = build_design(rows, cols, y_key)
+        X, y = d["X"], d["y"]
+        if X.shape[1] - 1 == 0:
+            return None, None, d
+        b, se, ok, note = fit_logit(X, y)
+        return (b, X, d) if ok else (None, X, d)
+
+    bf, Xf, dfull = fit(factors)
+    if bf is None:
+        return {"error": "全模型拟合失败（样本太薄或共线），无法比较各因子的贡献",
+                "n": len(rows), "merges": merges, "excluded": excluded}
+    D_full = _deviance(Xf, dfull["y"], bf)
+    y = dfull["y"]
+    p0 = float(np.clip(y.mean(), 1e-9, 1 - 1e-9))
+    D_null = -2.0 * float(np.sum(y * math.log(p0) + (1 - y) * math.log(1 - p0)))
+
+    out = []
+    for f in factors:
+        rest = [x for x in factors if x != f]
+        if not rest:
+            dD = D_null - D_full
+            df = max(dfull["X"].shape[1] - 1, 1)
+        else:
+            br, Xr, dr = fit(rest)
+            if br is None:
+                out.append({"factor": f, "title": labels.get(f, f), "dD": None,
+                            "df": None, "p": None, "share": None,
+                            "note": "去掉它之后模型拟合失败（该因子与其他因子高度共线）"})
+                continue
+            dD = _deviance(Xr, dr["y"], br) - D_full
+            df = (dfull["X"].shape[1] - 1) - (Xr.shape[1] - 1)
+        dD = max(dD, 0.0)
+        out.append({"factor": f, "title": labels.get(f, f), "dD": dD, "df": df,
+                    "p": _chi2_sf(dD, df) if df else None, "share": None,
+                    "levels": len(dfull["levels"].get(f, []))})
+    tot = sum(x["dD"] for x in out if x["dD"])
+    for x in out:
+        x["share"] = (100.0 * x["dD"] / tot) if (tot and x["dD"] is not None) else None
+    out.sort(key=lambda x: -(x["dD"] or 0))
+    return {"full_deviance": D_full, "null_deviance": D_null,
+            "pseudo_r2": (1.0 - D_full / D_null) if D_null else None,
+            "contributions": out, "n": len(rows), "n_events": int(y.sum()),
+            "merges": merges, "excluded": excluded}
+
+
 def analyze(rows, factors, labels=None, y_key="y", merge=True, min_n=SPARSE_MIN):
     """跑多因子分析：粗关联 + 调整后 OR + 四道护栏。
 
@@ -218,37 +387,7 @@ def analyze(rows, factors, labels=None, y_key="y", merge=True, min_n=SPARSE_MIN)
     返回结构化结果，供页面渲染（**不在这一层做 HTML**）。
     """
     labels = labels or {}
-    merges = []
-    excluded = 0
-    if merge:
-        rows, merges = merge_sparse_levels(rows, factors, min_n, y_key)
-        # ⚠ 合并可能**制造共线**（实测撞到的陷阱）：
-        # 如果"在多个因子上都稀疏"的是**同一批人**，那么合并出来的
-        # 「其他（合并）」列在各个因子里**完全相同** → 设计矩阵真共线、无法估计。
-        # 例：年龄段稀疏的是 AG6+AG9、性别稀疏的是 F+M，而恰好都是同样那 3 个人。
-        # 这时"合并"就不是解法。退回更朴素的办法：**排除这些稀疏个体**，
-        # 用"所有因子都有足够样本的人"来估计 —— 代价是样本变少，但模型可识别。
-        # 两条路都要**如实报告**（少了几个人、为什么），不能悄悄换口径。
-        _d = build_design(rows, factors, y_key)
-        if _d["X"].shape[1] - 1 > 0 and \
-                int(np.linalg.matrix_rank(_d["X"])) < _d["X"].shape[1]:
-            keep = []
-            for r in rows:
-                ok = True
-                for f in factors:
-                    same = sum(1 for x in rows if _norm(x[f]) == _norm(r[f]))
-                    if same < min_n:
-                        ok = False
-                        break
-                if ok:
-                    keep.append(r)
-            excluded = len(rows) - len(keep)
-            if keep and excluded:
-                rows = keep
-                merges.append(("__rows__", [], excluded,
-                               "合并后仍共线（同一批人在多个因子上都稀疏）→ "
-                               "改为**排除 %d 个稀疏个体**，用 %d 人估计"
-                               % (excluded, len(rows))))
+    rows, merges, excluded = prepare(rows, factors, merge, min_n, y_key)
     n = len(rows)
     n_events = int(sum(r[y_key] for r in rows))
     n_nonevents = n - n_events

@@ -43,6 +43,7 @@ import csv
 import html
 import io
 import json
+import math
 import os
 import re
 import secrets
@@ -2345,10 +2346,35 @@ def _cramers_v(cells, n_rows, n_cols):
     return round((chi / (n * min(n_rows - 1, n_cols - 1))) ** 0.5, 3)
 
 
+# 透视页的**一键预设** —— 解决"不明所以"最直接的办法：
+# 不是写一段说明让人读，而是给几个**点一下就能出结果**的常用分析。
+# 每个预设就是一组合法的查询参数（row/col/by/t/tval），点完立刻有图。
+PIVOT_PRESETS = [
+    ("学历 → 就业去向", {"rows": "D_DEGREE", "cols": "D_DESTINATION"}),
+    ("学历 → 去向占比（每格看深造率）",
+     {"rows": "D_DEGREE", "cols": "D_DEST_EMPLOYED_VS_STUDY",
+      "t": "D_DEST_EMPLOYED_VS_STUDY", "tval": "继续深造"}),
+    ("海外经历 → 是否进三级医院，按学历分层",
+     {"rows": "D_OVERSEAS_FIELD", "cols": "D_DEST_TIER1", "by": "D_DEGREE"}),
+    ("户籍类型 → 是否去基层医疗",
+     {"rows": "D_HUKOU_TYPE", "cols": "D_DESTINATION",
+      "t": "D_DESTINATION", "tval": "DE3"}),
+    ("海外经历 → 去向，按「数据性质」分层（看结论是不是合成数据撑起来的）",
+     {"rows": "D_OVERSEAS_FIELD", "cols": "D_DESTINATION", "by": "D_DATA_NATURE"}),
+    ("岗位族 → 学历要求（需求侧）",
+     {"entity": "job_posting", "rows": "D_JOB_FAMILY", "cols": "D_JOB_EDU_REQ"}),
+]
+
+
 def view_pivot(c, qs) -> bytes:
     """交互式透视：挑分类变量 → 交叉表 / 目标占比 / 关联强度 / 分层对照。"""
     def one(k, d=""):
         return (qs.get(k, [d])[0] or d).strip()
+
+    # 一键预设：点了就按那一组参数跑（用户不用自己理解每个控件）
+    _pv = one("preset")
+    if _pv.isdigit() and int(_pv) < len(PIVOT_PRESETS):
+        qs = {k: [str(v)] for k, v in PIVOT_PRESETS[int(_pv)][1].items() if v}
 
     reg = _pivot_registry(c)
     entity = one("entity", "person")
@@ -2384,6 +2410,14 @@ def view_pivot(c, qs) -> bytes:
 
     form = (
         '<div class="card"><h2>交互式透视</h2>'
+        '<p class="muted"><b>这一页回答什么问题：</b>'
+        '「把人群按某几个特征分一分，结果（如就业去向）在不同人群里有什么不同」。<br>'
+        '<b>三步：</b>① 选「行」＝你想比较的人群特征；'
+        '② 选「列」＝你想看的另一个特征；'
+        '③ 想算某种占比就选「目标变量 + 目标取值」。'
+        '想排除混杂就再选「分层」——它会在每一层里重复同一张表。<br>'
+        '觉得不知道从哪下手？直接点下面的常见分析，参数会自动填好。</p>'
+        '<div style="margin:8px 0 14px">%s</div>'
         '<form method="get" action="/pivot" class="row">'
         '<div style="flex:1 1 170px"><label>分析对象</label>'
         '<select name="entity" onchange="this.form.submit()">%s</select></div>'
@@ -2403,7 +2437,10 @@ def view_pivot(c, qs) -> bytes:
         '<p class="muted">选 1 个变量＝分布；选 2 个＝交叉表；'
         '再选「分层看」＝在每个分层内部重复同一张表'
         '（这是判断「差异是不是第三个变量带出来的」最朴素的办法）。</p></div>'
-        % ("".join('<option value="%s"%s>%s</option>'
+        % ("".join('<a class="btnlink sec" style="margin:2px 4px 2px 0" '
+                   'href="/pivot?preset=%d">%s</a>' % (i, esc(t))
+                   for i, (t, _a) in enumerate(PIVOT_PRESETS)),
+           "".join('<option value="%s"%s>%s</option>'
                    % (k, " selected" if k == entity else "", esc(v))
                    for k, v in ENTITY_LABEL.items()),
            opts(rid), opts(cid, True), opts(byid, True), opts(tid, True),
@@ -2595,14 +2632,15 @@ def view_funnel(c, qs) -> bytes:
 
 
 def view_factors(c, qs) -> bytes:
-    """多因子分析（3 个及以上因子）：粗关联 vs 调整后效应 + 四道护栏。
+    """多因子分析：**以问题为导向** —— 先看贡献排名，再看细节。
 
-    与 /pivot 的分工：
-      · /pivot   看**分布与两两关系**（交叉表、占比、Cramér's V、分层）
-      · /factors 看**多个因子同时进入模型后各自还剩多少关联**（控制混杂）
-
-    为什么这是"3 个及以上"才有的能力：两个因子只能各看各的；
-    **第三个因子才能把"A 的效应是不是被 B 带出来的"这个问题问出来。**
+    用户反馈："现在的分析和数据透视功能不明所以。我需要针对结果去分析因子的贡献。"
+    所以这一版的组织顺序是**结论先行**：
+      ① 一句话结论（自动从数据里读出来：谁贡献最大、谁只是影子）
+      ② 贡献排名（条形图 + Δχ² + p + 占比）
+      ③ 逐因子细节（粗 OR / 调整 OR / 置信区间 / p）
+      ④ 数据与口径（样本、排除、伪 R²、EPV、合成占比、护栏）
+      ⑤ 这一页能说什么、不能说什么
     """
     import sys as _sys
     _sys.path.insert(0, os.path.join(BASE, "code", "analyze"))
@@ -2622,7 +2660,7 @@ def view_factors(c, qs) -> bytes:
     picked = [x for x in qs.get("f", []) if x in reg["dims"]]
     my_dims = [d for d in reg["dims"].values() if d["entity"] == entity]
 
-    def opts(sel, multi=False):
+    def opts(sel):
         o = []
         for g in sorted({x["group_name"] for x in my_dims}):
             o.append('<optgroup label="%s">' % esc(g))
@@ -2646,28 +2684,30 @@ def view_factors(c, qs) -> bytes:
             tvals = []
 
     form = (
-        '<div class="card"><h2>多因子分析（3 个及以上因子，控制混杂）</h2>'
+        '<div class="card"><h2>第一步：你要问什么？</h2>'
         '<form method="get" action="/factors" class="row">'
-        '<div style="flex:1 1 170px"><label>分析对象</label>'
+        '<div style="flex:1 1 160px"><label>分析对象</label>'
         '<select name="entity" onchange="this.form.submit()">%s</select></div>'
-        '<div style="flex:1 1 200px"><label>结果变量</label>'
+        '<div style="flex:1 1 170px"><label>结果变量</label>'
         '<select name="t" onchange="this.form.submit()">%s</select></div>'
-        '<div style="flex:1 1 150px"><label>结果取值（1 的那一类）</label>'
+        '<div style="flex:1 1 150px"><label>要看的那一类</label>'
         '<select name="tval">%s</select></div>'
-        '<div style="flex:0 0 110px"><label>&nbsp;</label>'
+        '<div style="flex:0 0 100px"><label>&nbsp;</label>'
         '<button type="submit">分析</button></div>'
-        '<div style="flex:1 1 100%%"><label>因子（<b>按住 Ctrl / Shift 多选，选 2–8 个</b>）'
-        '</label><select name="f" multiple size="8" style="width:100%%">%s</select></div>'
-        '</form>'
-        '<p class="muted">每个因子都会给出两个数：<b>粗 OR</b>（只看它自己）与 '
-        '<b>调整 OR</b>（和其他因子一起进模型）。两者差别大 = 那个因子的效应'
-        '很可能是被别的因子带出来的（混杂）。</p></div>'
+        '<div style="flex:1 1 100%%"><label>候选因子（按住 Ctrl / Shift 多选，'
+        '至少 2 个、3 个以上才能真正控制混杂）</label>'
+        '<select name="f" multiple size="8" style="width:100%%">%s</select></div>'
+        '</form><p class="muted">结果变量不是二分类时，'
+        '「要看的那一类」就把它变成"是 / 不是"（例如：是否进三级医院）。'
+        '页面会自动给出**每个因子对结果的贡献**，而不只是各自的系数。</p></div>'
         % ("".join('<option value="%s"%s>%s</option>'
                    % (k, " selected" if k == entity else "", esc(v))
                    for k, v in ENTITY_LABEL.items()),
            "".join('<option value="%s"%s>%s</option>'
                    % (esc(d["dimension_id"]), " selected" if d["dimension_id"] == tid else "",
-                      esc(d["title"])) for d in my_dims),
+                      esc(d["title"]))
+                   for d in my_dims
+                   if d["group_name"] in ("结果", "教育", "人口学", "岗位", "匹配")),
            "".join('<option value="%s"%s>%s</option>'
                    % (esc(v), " selected" if v == tval else "",
                       esc(_dim_label(reg, tid, v))) for v in tvals),
@@ -2677,11 +2717,8 @@ def view_factors(c, qs) -> bytes:
         if not reg["readable"]:
             return page("多因子分析", form + _registry_login_note(), kind="info",
                         subtitle="因子（分类变量）的定义需要登录后查看")
-        return page("多因子分析", form, kind="info" if not picked else "warn",
-                    subtitle="至少选 2 个因子（3 个及以上才能真正控制混杂）")
-    if MF is None:
-        return page("多因子分析", form + '<div class="card"><div class="note err">'
-                    'multifactor 模块加载失败</div></div>', kind="err")
+        return page("多因子分析", form, kind="info",
+                    subtitle="选好结果变量与至少 2 个因子")
 
     texp = reg["dims"][tid]["expr_sql"]
     sel = ", ".join("%s AS f%d" % (reg["dims"][d]["expr_sql"], i)
@@ -2693,7 +2730,7 @@ def view_factors(c, qs) -> bytes:
     except psycopg.Error as e:
         return page("多因子分析", form + '<div class="card"><div class="note err">%s</div>'
                     '</div>' % esc(str(e).splitlines()[0]), kind="err",
-                    subtitle="SQL 被数据库拒绝（通常是权限不够）")
+                    subtitle="数据库拒绝了查询（通常是权限）")
 
     rows = []
     for r in raw:
@@ -2701,46 +2738,98 @@ def view_factors(c, qs) -> bytes:
         for i, dim in enumerate(picked):
             d[dim] = r["f%d" % i]
         rows.append(d)
-
     labels = {d: reg["dims"][d]["title"] for d in picked}
+
+    total_n = len(rows)
     res = MF.analyze(rows, picked, labels)
+    contrib = MF.factor_contributions(rows, picked, labels)
 
-    # ---- 渲染 ----
-    head = ('<div class="card"><h2>样本</h2><table>'
-            '<tr><th>样本量（结果变量非空）</th><td class="n">%d</td></tr>'
-            '<tr><th>事件数（%s = %s）</th><td class="n">%d（%.1f%%）</td></tr>'
-            '<tr><th>非事件数</th><td class="n">%d</td></tr>'
-            '<tr><th>模型参数个数</th><td class="n">%d</td></tr>'
-            '<tr><th>EPV（每个参数几个事件）</th><td class="n">%s</td></tr>'
-            '</table></div>'
-            % (res["n"], esc(reg["dims"][tid]["title"]), esc(str(tval)),
-               res["n_events"], res["outcome_rate"] or 0, res["n_nonevents"],
-               res["n_params"],
-               ("%.1f" % res["epv"]) if res["epv"] else "—"))
+    outcome_label = "%s = %s" % (reg["dims"][tid]["title"], _dim_label(reg, tid, tval))
+    out = [form]
 
-    warn_html = ""
-    for name, msg in res["warn"]:
-        warn_html += '<div class="card"><h2>⚠ %s</h2><div class="note">%s</div></div>' % (
-            esc(name), esc(msg))
-    if not res["converged"]:
-        warn_html += ('<div class="card"><h2>模型没拟合成功</h2>'
-                      '<div class="note">下面**只显示粗关联**，不显示调整后 OR —— '
-                      '与其给一个算不出来的数字，不如说算不出来。'
-                      '常见原因是样本太薄或某两个因子在说同一件事。</div></div>')
+    # ---------- ① 一句话结论（自动从数据里读出来）----------
+    if "error" in contrib:
+        out.append('<div class="card"><h2>算不出因子贡献</h2><div class="note">%s</div>'
+                   '<p class="muted">下面仍给出各因子自己的粗关联与调整后效应。</p></div>'
+                   % esc(contrib["error"]))
+    else:
+        cs = [x for x in contrib["contributions"] if x["dD"] is not None]
+        top = cs[0] if cs else None
+        sig = [x for x in cs if x["p"] is not None and x["p"] < 0.05]
+        # 找出"粗关联明显、独立贡献却很小"的因子 —— 这是混杂的典型长相
+        crude_map = {}
+        for blk in res["factors"]:
+            if blk.get("skip"):
+                continue
+            mx = max((abs(math.log(i["crude_or"])) if i["crude_or"] and i["crude_or"] > 0
+                      else 0) for i in blk["levels"]) if blk["levels"] else 0
+            crude_map[blk["factor"]] = mx
+        shadow = [x for x in cs
+                  if crude_map.get(x["factor"], 0) > 0.5
+                  and (x["p"] is None or x["p"] > 0.1)
+                  and (x["share"] or 0) < 15]
+        lines = []
+        if top:
+            lines.append("**%s** 的贡献最大（Δχ²=%.2f，p=%s，占已解释偏差的 %.0f%%）。"
+                         % (esc(top["title"]), top["dD"],
+                            ("%.3f" % top["p"]) if top["p"] is not None else "—",
+                            top["share"] or 0))
+        if sig:
+            lines.append("达到统计显著（p&lt;0.05）的因子：%s。"
+                         % esc("、".join(x["title"] for x in sig)))
+        else:
+            lines.append("**没有任何因子达到 p&lt;0.05** —— "
+                         "当前样本下，这些因子与结果的关系都还说不准。")
+        for x in shadow:
+            lines.append("⚠ **%s 看着有关联、其实独立贡献很小**"
+                         "（粗 OR 明显偏离 1，但 Δχ²=%.2f、p=%s、占比仅 %.0f%%）—— "
+                         "它更像是被别的因子带出来的，不是独立的原因。"
+                         % (esc(x["title"]), x["dD"],
+                            ("%.3f" % x["p"]) if x["p"] is not None else "—",
+                            x["share"] or 0))
+        out.append('<div class="card"><h2>结论：%s</h2>%s'
+                   '<p class="muted">这是**关联**不是因果；结论只在放进去的因子范围内成立。</p>'
+                   '</div>'
+                   % (esc(outcome_label),
+                      "".join('<p style="margin:6px 0">%s</p>' % t for t in lines)))
 
-    # 数据准备：把"为了让模型可估计，我对数据做了什么"如实摆出来
-    prep = ""
-    if res.get("merges"):
-        prep = ('<div class="card"><h2>为了让模型可估计，先做了这些处理</h2><ul>%s</ul>'
-                '<div class="note">这不是"清洗脏数据"，而是**可识别性的必要条件**：'
-                '一个只有 1–2 个人的类别贡献不了可估计的效应，却会让整个模型不可解。'
-                '代价是"这个类别不再单独看"，所以必须写出来。</div></div>'
-                % "".join("<li>%s</li>" % esc(m[3]) for m in res["merges"]))
+    # ---------- ② 贡献排名（条形图）----------
+    if "error" not in contrib:
+        bars = []
+        mx = max([x["dD"] or 0 for x in contrib["contributions"]] + [1e-9])
+        for x in contrib["contributions"]:
+            w = 100.0 * (x["dD"] or 0) / mx
+            star = "★" if (x["p"] is not None and x["p"] < 0.05) else ""
+            bars.append(
+                '<tr><td style="white-space:nowrap">%s %s</td>'
+                '<td style="width:52%%"><div style="background:rgba(70,120,200,.35);'
+                'height:16px;width:%.1f%%"></div></td>'
+                '<td class="n">%s</td><td class="n">%s</td><td class="n">%s</td>'
+                '<td class="n">%s</td></tr>'
+                % (esc(x["title"]), star, max(w, 1.5),
+                   ("%.0f%%" % x["share"]) if x["share"] is not None else "—",
+                   ("Δχ²=%.2f" % x["dD"]) if x["dD"] is not None else "—",
+                   ("p=%.3f" % x["p"]) if x["p"] is not None else "—",
+                   ("df=%s" % x["df"]) if x["df"] else "—"))
+        out.append(
+            '<div class="card"><h2>每个因子对结果的贡献（从大到小）</h2>'
+            '<div class="tscroll"><table>'
+            '<tr><th>因子</th><th>贡献</th><th class="n">占比</th>'
+            '<th class="n">似然比检验</th><th class="n">p 值</th><th class="n">自由度</th></tr>'
+            '%s</table></div>'
+            '<div class="note"><b>怎么读：</b>贡献 = 把这个因子从模型里拿掉之后，'
+            '模型变差多少（Δχ²，对数似然比）。★ 表示 p&lt;0.05。<br>'
+            '<b>占比是近似的</b>：各因子的 Δχ² 不是严格可加的，所以占比用来**排序**，'
+            '不要当成精确分解。<br>'
+            '<b>整体解释力：McFadden 伪 R² = %.3f</b>（0 表示没解释力，'
+            '0.2–0.4 在本类数据里已算不错）。</div></div>'
+            % ("".join(bars), contrib.get("pseudo_r2") or 0))
 
-    tbl = ['<div class="card"><h2>每个因子的粗关联 vs 调整后效应</h2>'
+    # ---------- ③ 逐因子细节 ----------
+    tbl = ['<div class="card"><h2>逐因子细节：粗关联 vs 控制其他因子之后</h2>'
            '<div class="tscroll"><table>'
-           '<tr><th>因子</th><th>水平</th><th class="n">人数</th>'
-           '<th class="n">事件</th><th class="n">粗 OR</th><th class="n">调整 OR</th>'
+           '<tr><th>因子</th><th>水平</th><th class="n">人数</th><th class="n">事件</th>'
+           '<th class="n">粗 OR</th><th class="n">调整 OR</th>'
            '<th class="n">95% 置信区间</th><th class="n">p 值</th></tr>']
     for blk in res["factors"]:
         if blk.get("skip"):
@@ -2760,43 +2849,55 @@ def view_factors(c, qs) -> bytes:
                 if it["lo"] is not None else "—"
             cell = ('<tr><th rowspan="%d">%s</th>' % (n, esc(blk["title"]))) if first else "<tr>"
             first = False
-            tbl.append(
-                '%s<td>%s</td><td class="n">%d</td><td class="n">%d</td>'
-                '<td class="n">%s</td><td class="n"><b>%s</b></td>'
-                '<td class="n">%s</td><td class="n">%s</td></tr>'
-                % (cell, esc(it["level"]), it["n"], it["events"],
-                   fmt(it["crude_or"]), fmt(it["adj_or"]), ci, fmt(it["p"], 3)))
+            tbl.append('%s<td>%s</td><td class="n">%d</td><td class="n">%d</td>'
+                       '<td class="n">%s</td><td class="n"><b>%s</b></td>'
+                       '<td class="n">%s</td><td class="n">%s</td></tr>'
+                       % (cell, esc(it["level"]), it["n"], it["events"],
+                          fmt(it["crude_or"]), fmt(it["adj_or"]), ci, fmt(it["p"], 3)))
         tbl.append('<tr><td colspan="8" class="muted" style="font-size:12px">'
-                   '参照水平：%s（OR=1.00）%s</td></tr>'
-                   % (esc(blk.get("ref", "—")),
-                      esc(" " + it.get("crude_note", "") if blk["levels"] else "")))
-    tbl.append("</table></div>")
-    tbl.append('<div class="note">OR &gt; 1 表示相对参照水平"更可能发生该结果"。'
-               '**粗 OR 与调整 OR 的差别才是重点**：差别大说明效应被其他因子解释了。</div>')
-    tbl.append("</div>")
+                   '参照水平：%s（OR=1.00）</td></tr>' % esc(blk.get("ref", "—")))
+    tbl.append("</table></div><div class=\"note\">OR &gt; 1 = 相对参照水平"
+               "「更可能发生该结果」。<b>粗 OR 与调整 OR 的差别</b>才是重点。</div></div>")
 
-    conf = ""
-    if res["confound"]:
-        conf = ('<div class="card"><h2>值得注意：效应在控制其他因子后明显变化</h2><ul>%s</ul>'
-                '<div class="note">这不等于"找到因果"，而是**排除了一个明显的解释**：'
-                '那个因子单独看时的关联，至少有一部分是别的因子带来的。</div></div>'
-                % "".join("<li>%s</li>" % esc(x) for x in res["confound"]))
+    # ---------- ④ 数据与口径 ----------
+    prep = ""
+    if res.get("merges"):
+        prep = ('<div class="card"><h2>为了让模型可估计，先做了这些处理</h2><ul>%s</ul>'
+                '<div class="note">这不是"清洗脏数据"，而是**可识别性的必要条件**：'
+                '一个只有 1–2 个人的类别贡献不了可估计的效应，却会让整个模型不可解。'
+                '代价是"这个类别不再单独看"，所以必须写出来。</div></div>'
+                % "".join("<li>%s</li>" % esc(m[3]) for m in res["merges"]))
+    warn = ""
+    for name, msg in res["warn"]:
+        warn += '<div class="card"><h2>⚠ %s</h2><div class="note">%s</div></div>' % (
+            esc(name), esc(msg))
+    stats = ('<div class="card"><h2>数据与口径</h2><table>'
+             '<tr><th>参与分析的人</th><td class="n">%d（原始 %d，处理后排除 %d）</td></tr>'
+             '<tr><th>其中「%s」</th><td class="n">%d 人</td></tr>'
+             '<tr><th>模型参数个数</th><td class="n">%d</td></tr>'
+             '<tr><th>EPV（每个参数几个事件）</th><td class="n">%s</td></tr>'
+             '</table><p class="muted">EPV 低于 10 时回归系数极不稳定 —— '
+             '这时页面上方的"贡献排名"仍然能说明**谁更重要**，'
+             '但 OR 的具体数值不要当真。</p></div>'
+             % (res["n"], total_n, res.get("excluded", 0), esc(str(tval)),
+                res["n_events"], res["n_params"] or 0,
+                ("%.1f" % res["epv"]) if res["epv"] else "—"))
 
-    tail = ('<div class="card"><h2>这个模型能说什么、不能说什么</h2><ul>'
-            '<li><b>能说</b>：在**这些因子的共同作用下**，每个水平相对参照水平还剩下多少关联；'
-            '以及哪个因子的关联在控制其他因子后消失。</li>'
+    tail = ('<div class="card"><h2>这一页能说什么、不能说什么</h2><ul>'
+            '<li><b>能说</b>：在这几个因子的共同作用下，**谁对结果的贡献大、谁小**；'
+            '以及谁"看着有关联、其实只是别的因子的影子"。</li>'
             '<li><b>不能说因果</b>：这是观察数据的回归。要谈因果还需要时间先后、'
-            '无未测混杂、无反向因果、正确的模型设定 —— 缺任何一条都只能叫"关联"。</li>'
-            '<li><b>只有观测到的因子被控制了</b>：没放进来的混杂（家庭条件、院校层次…）'
-            '仍然会影响结论。</li>'
-            '<li><b>样本量是硬约束</b>：EPV 低于 10 时 OR 的数值不可信（见上面的护栏）。'
-            '数据薄的时候，诚实的做法是说"还不能算"，而不是报一个好看的数字。</li>'
-            '</ul><p class="muted">模型：逻辑回归（IRLS，手写 numpy 实现，无外部依赖）。'
-            '每个因子 one-hot 编码并**以样本量最大的水平为参照**，'
-            '比较的是"该水平 vs 最常见的那一类"。</p></div>')
+            '无未测混杂、无反向因果、正确的模型设定。</li>'
+            '<li><b>只有放进去的因子被控制了</b>：没放进来的混杂仍然会影响结论。</li>'
+            '<li><b>样本量是硬约束</b>：EPV 低于 10 时 OR 的具体数值不可信；'
+            '数据薄的时候，诚实的做法是说"还不能算"。</li>'
+            '</ul><p class="muted">模型：逻辑回归（IRLS，手写 numpy 实现，无外部依赖）；'
+            '贡献 = drop-one 对数似然比 χ²（卡方上尾概率同样是自己算的，'
+            '已与已知临界值核对）。每个因子以**样本量最大的水平**为参照。</p></div>')
 
-    return page("多因子分析", form + head + prep + warn_html + "".join(tbl) + conf + tail,
-                subtitle="%d 个因子同时进入模型" % len(picked))
+    return page("多因子分析",
+                "".join(out) + "".join(tbl) + prep + warn + stats + tail,
+                subtitle="结果：%s ｜ %d 个因子" % (outcome_label, len(picked)))
 
 
 def view_analyze(c, qs, aid=None, want_csv=False):

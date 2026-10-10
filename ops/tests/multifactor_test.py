@@ -175,6 +175,64 @@ def main():
     check(res["factors"][0].get("skip") is not None,
           "只有一个取值的因子被明确跳过（而不是算出一个假效应）")
 
+    # ---------- ⑧ 卡方上尾概率与已知临界值一致 ----------
+    # 这是"因子贡献"那套检验的地基，算错会让所有 p 值一起错。
+    # 用教科书上的临界值核对（α=0.05 / 0.01 对应的 χ² 分位点）。
+    for x, k, exp in ((3.841459, 1, 0.05), (6.634897, 1, 0.01),
+                      (5.991465, 2, 0.05), (9.487729, 4, 0.05),
+                      (11.344867, 3, 0.01)):
+        got = MF._chi2_sf(x, k)
+        check(abs(got - exp) < 2e-4,
+              "χ²=%.4f, df=%d 的上尾概率 ≈ %.4f（实得 %.6f）" % (x, k, exp, got))
+
+    # ---------- ⑨ 因子贡献：能不能把"真驱动"和"影子"分开 ----------
+    # 造一个**已知真相**的数据集：
+    #   · A 是真正的驱动（决定 y）；
+    #   · B 只与 A 相关，对 y 没有独立作用（典型混杂/影子）。
+    # 期望：A 的贡献排第一且显著；B 的贡献小且不显著。
+    rows = []
+    for i in range(400):
+        a = "A1" if i % 3 != 0 else "A0"
+        # B 与 A 相关（A1 里 8 成是 B1），但 y 只由 A 决定
+        b = "B1" if (i % 5 < 4) == (a == "A1") else "B0"
+        y = 1 if (a == "A1" and i % 7 != 3) or (a == "A0" and i % 7 >= 6) else 0
+        rows.append({"A": a, "B": b, "y": y})
+    con = MF.factor_contributions(rows, ["A", "B"], {"A": "A", "B": "B"})
+    check("error" not in con, "因子贡献能算出来（全模型收敛）")
+    if "error" not in con:
+        cs = con["contributions"]
+        check(cs[0]["factor"] == "A",
+              "**真正的驱动因子排第一**（%s，Δχ²=%.2f）" % (cs[0]["title"], cs[0]["dD"]))
+        check(cs[0]["p"] is not None and cs[0]["p"] < 0.05,
+              "驱动因子的 p < 0.05（实得 %s）" % con["contributions"][0]["p"])
+        b_blk = next(x for x in cs if x["factor"] == "B")
+        check(b_blk["dD"] < cs[0]["dD"],
+              "影子的贡献明显小于真驱动（%.2f < %.2f）"
+              % (b_blk["dD"], cs[0]["dD"]))
+        check((b_blk["share"] or 0) < 40,
+              "影子的贡献占比不高（%.0f%%）—— 排序能把它排到后面" % (b_blk["share"] or 0))
+        check(0 < (con["pseudo_r2"] or 0) < 1,
+              "伪 R² 在 (0,1) 内（实得 %.3f）" % (con["pseudo_r2"] or 0))
+        check(abs(sum(x["share"] or 0 for x in cs) - 100) < 0.01,
+              "各因子贡献占比之和为 100%%（实得 %.2f）"
+              % sum(x["share"] or 0 for x in cs))
+
+    # ---------- ⑩ 与结果完全无关的因子，贡献应当很小 ----------
+    rows = []
+    for i in range(400):
+        rows.append({"real": "R1" if i % 3 else "R0",
+                     "noise": "N1" if i % 11 < 5 else "N0",
+                     "y": 1 if i % 3 else 0})       # y 只由 real 决定
+    con = MF.factor_contributions(rows, ["real", "noise"])
+    if "error" not in con:
+        cs = con["contributions"]
+        check(cs[0]["factor"] == "real", "真因子排第一（%s）" % cs[0]["title"])
+        noise = next(x for x in cs if x["factor"] == "noise")
+        check(noise["dD"] < cs[0]["dD"],
+              "无关因子的贡献小于真因子（%.2f < %.2f）" % (noise["dD"], cs[0]["dD"]))
+        check(noise["p"] is None or noise["p"] > 0.05,
+              "无关因子不显著（p=%s）—— 假阳性检验" % noise["p"])
+
     return H.report(width=74, list_fails=True)
 
 
