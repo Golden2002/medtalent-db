@@ -149,9 +149,19 @@ def main():
                 n_err += 1
                 print("    [失败] %s -> %s: %s" % (rel, type(e).__name__, str(e)[:140]))
 
+        # 审计：这两张表登记为 **summary 粒度**（迁移 050），触发器不再逐行记录 ——
+        # 因为本脚本按岗位"先删后插"，690 个岗位会产生 60 万行机械记录，
+        # 实测占 change_log 的 70%，把真正的变更淹没了（信噪比比体量更致命）。
+        # 代价是"不逐行记"，所以**必须**在这里显式写一条汇总行 —— 否则
+        # `mt.v_audit_gap` 会报出"有改动但没有任何汇总行覆盖"的缺口。
+        c.execute("SELECT mt.audit_bulk('job_requirement', 'rebuild', %s, %s)",
+                  (n_req, "JD 解析：按岗位先删后插（%d 个岗位）" % n_ok))
+        c.execute("SELECT mt.audit_bulk('job_task', 'rebuild', %s, %s)",
+                  (n_task, "JD 解析：与 job_requirement 同一次重算"))
         c.commit()
         print("\n[✓] 解析入库完成：成功 %d，跳过 %d，失败 %d" % (n_ok, n_skip, n_err))
         print("    job_task %d 条，job_requirement %d 条，解析器 %s" % (n_task, n_req, PARSER_VERSION))
+        print("    审计：已写 2 条汇总行（summary 粒度，见 mt.audit_mode）")
         # 重要提醒：本脚本会为每个 job **先删后插** job_requirement，
         # 因此概念映射（job_requirement.concept_id）与能力权重矩阵都会被清空。
         # 这是刻意的（映射是派生层，可重算），但必须紧接着重建，否则匹配会全是 unknown。

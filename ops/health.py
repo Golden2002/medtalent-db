@@ -406,6 +406,32 @@ def d4_security(c):
     add("D4", "I4.5", "access_log 行数", n_log, ">0", "SHOULD",
         "SELECT count(*) FROM mt.access_log（0 行 = 从未记录过任何访问）")
 
+    # I4.9 **审计缺口**（迁移 050）：summary 粒度的表有没有"改了但没写汇总行"
+    # 为什么必须有：050 把机械重算从"逐行记"改成"按操作记"（实测 job_requirement
+    # 一项占 change_log 的 70%，噪声比体量更致命）。但逐行不记之后，
+    # **改了不报也会不留痕** —— 所以配套用 PostgreSQL 的累计行计数器做检测：
+    # 计数器增量 > 最近汇总行里的快照 = 有改动没被任何汇总行覆盖。
+    # 这让"换粒度"不等于"关审计"，而且缺口是可判定的、会被门禁抓住。
+    gap_rows = c.execute("SELECT table_name, 未覆盖增量 FROM mt.v_audit_gap "
+                         "WHERE 未覆盖增量 > 0 ORDER BY 未覆盖增量 DESC").fetchall()
+    add("D4", "I4.9", "审计粒度表的未覆盖增量（汇总缺口）",
+        len(gap_rows), "0", "SHOULD",
+        "mt.v_audit_gap：pg_stat_user_tables 累计计数器 − 最近汇总行里的快照",
+        ok=(not gap_rows),
+        note=("有缺口的表：%s。"
+              "summary 粒度的表必须由重算工具调用 mt.audit_bulk() 写汇总行；"
+              "缺口意味着「发生了改动但没有任何汇总行覆盖」—— 审计完整性的直接指标"
+              % ("、".join("%s(+%s)" % (r["table_name"], r["未覆盖增量"]) for r in gap_rows)
+                 if gap_rows else "无")))
+
+    # I4.10 变更流水的体量（050 之后增速应显著下降；体量本身要可见）
+    cl_rows = q1(c, "SELECT count(*) FROM mt.change_log")
+    cl_size = q1(c, "SELECT pg_size_pretty(pg_total_relation_size('mt.change_log'))")
+    add("D4", "I4.10", "change_log 行数 / 体量", "%s / %s" % (f"{cl_rows:,}", cl_size),
+        "-", "INFO",
+        "count(*) + pg_total_relation_size；050 起机械重算不再逐行审计，"
+        "增速应显著下降（此前 14 天累积 89 万行、其中 job_requirement 占 70%）")
+
     # I4.6 视图属主是超级用户的个数（视图以属主权限执行 → 绕过列级策略的后门）
     add("D4", "I4.6", "属主是超级用户的视图数",
         q1(c, """SELECT count(*) FROM pg_views v JOIN pg_roles r ON r.rolname=v.viewowner

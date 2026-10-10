@@ -443,6 +443,62 @@ def main():
                      'mt.set_value(text,text,text,text,text[],numeric,text,date,text,'
                      'smallint,numeric)','EXECUTE') AS x""").fetchone()["x"]
             check(not write_ok, "写函数 set_value 仍不可被等级角色执行（收得紧）")
+
+            # I-10 审计粒度（迁移 050）：机械重算按"操作"记，但必须有缺口检测兜底
+            #      背景：实测 change_log 89 万行里 job_requirement 一项占 70%，
+            #      全是 JD 解析"按岗位先删后插"的机械重写 —— 噪声把真正的变更淹没了。
+            mode = c.execute("SELECT mode FROM mt.audit_mode WHERE table_name='job_requirement'"
+                             ).fetchone()
+            check(mode and mode["mode"] == "summary",
+                  "job_requirement 登记为 summary 粒度（按操作记，不逐行记）")
+            before = c.execute("SELECT count(*) AS n FROM mt.change_log "
+                               "WHERE object_type='job_requirement'").fetchone()["n"]
+            with psycopg.connect(_ADMIN_DSN, autocommit=True) as w:
+                w.execute("UPDATE mt.job_requirement SET raw_text = raw_text "
+                          "WHERE requirement_id = (SELECT requirement_id "
+                          "FROM mt.job_requirement LIMIT 1)")
+            after = c.execute("SELECT count(*) AS n FROM mt.change_log "
+                              "WHERE object_type='job_requirement'").fetchone()["n"]
+            check(before == after,
+                  "写 summary 粒度的表**不再产生逐行审计**（%d → %d）" % (before, after))
+
+            # **检测必须真的能检出**（这是"换粒度"与"关审计"的分界线）：
+            # 上面那次写没有写汇总行 → 缺口视图应当立刻报出来。
+            # 只断言"缺口=0"是不够的 —— 那可能只是视图恒返回空。
+            gap_now = c.execute("SELECT 未覆盖增量 AS g FROM mt.v_audit_gap "
+                                "WHERE table_name='job_requirement'").fetchone()["g"]
+            check(gap_now > 0,
+                  "缺口检测**有效**：不写汇总行的改动被检出（job_requirement +%s）" % gap_now)
+            # 写一条汇总行 → 缺口闭合（这正是重算工具该做的事）
+            with psycopg.connect(_ADMIN_DSN, autocommit=True) as w:
+                w.execute("SELECT mt.audit_bulk('job_requirement','rebuild',%s,%s)",
+                          (1, "测试：闭合缺口"))
+            gap_after = c.execute("SELECT 未覆盖增量 AS g FROM mt.v_audit_gap "
+                                  "WHERE table_name='job_requirement'").fetchone()["g"]
+            check(gap_after == 0,
+                  "写汇总行后缺口归零（+%s → %s）—— 所以「按操作记」是可验证的粒度，"
+                  "而不是关掉了审计" % (gap_now, gap_after))
+            # 汇总行必须带计数器快照（否则缺口检测无从比较）
+            snap = c.execute("""SELECT count(*) AS n FROM mt.change_log
+                                 WHERE detail->>'mode'='summary'
+                                   AND detail ? 'counter_snapshot'""").fetchone()["n"]
+            check(snap > 0, "汇总审计行带行计数器快照（%d 条）—— 缺口检测的依据" % snap)
+
+        # I-11 保留策略执行器：既有策略是权威，工具只执行不发明
+        import subprocess as _sp
+        r = _sp.run([sys.executable, os.path.join(BASE, "ops", "retention.py"), "plan"],
+                    capture_output=True, text=True, encoding="utf-8", cwd=BASE)
+        out = (r.stdout or "") + (r.stderr or "")
+        check(r.returncode == 0 and "rp_change_log" in out,
+              "保留策略执行器可读既有策略（含 rp_change_log）")
+        check("1825" in out,
+              "沿用项目**既有**的保留期（change_log 60 个月 = 1825 天），"
+              "而不是工具自己发明一个")
+        r2 = _sp.run([sys.executable, os.path.join(BASE, "ops", "retention.py"),
+                      "apply", "--table", "change_log"],
+                     capture_output=True, text=True, encoding="utf-8", cwd=BASE)
+        check(r2.returncode != 0 and "max-rows" in ((r2.stdout or "") + (r2.stderr or "")),
+              "执行器拒绝「不给上限就删」—— 删除审计必须由人给出具体数字")
         # I-7 密码强度：新口令必须是 cost ≥ 12（原来 pgcrypto 默认 6）
         with psycopg.connect(_ADMIN_DSN, row_factory=dict_row, autocommit=True) as c:
             weak = c.execute("""SELECT count(*) AS n FROM mt.app_user

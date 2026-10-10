@@ -229,8 +229,21 @@ def main(root):
                     #     第一版把两者一律判错，于是修一个函数的 bug 就无路可走
                     #     （改老迁移被台账拒绝、改名又会污染函数空间）。
                     replace = re.search(r"CREATE\s+OR\s+REPLACE", stripped, re.I) is not None
-                    if key in defined and not replace:
-                        errors.append("%s:%d: %s 重复定义（且未用 OR REPLACE，"
+                    # 第三种正当写法（051 实测撞出来的）：**先 DROP 再 CREATE**。
+                    # 当"改了输出结构"时 `OR REPLACE` 做不到：
+                    #   · 视图改列类型 → cannot change data type of view column ...
+                    #   · 函数改返回类型 → cannot change return type of existing function
+                    # 所以 039/042/051 都用 "DROP IF EXISTS + CREATE"。
+                    # 校验器第一版只认 OR REPLACE，于是**把唯一可行的写法判成错误** ——
+                    # 那会让"修 bug"无路可走（改老迁移被台账拒绝、改名污染名称空间）。
+                    # 判据：**同一文件里这条语句之前**出现过 `DROP ... IF EXISTS <name>`。
+                    # 注意要扫 `text[:offset]`（本语句之前的全部内容），而不是 `stripped` ——
+                    # DROP 是**上一条语句**，第一版只在当前语句里找，于是仍然误报。
+                    dropped = re.search(
+                        r"DROP\s+(?:VIEW|FUNCTION|TABLE|MATERIALIZED\s+VIEW)\s+IF\s+EXISTS\s+"
+                        + re.escape(mm.group(1)) + r"\b", text[:offset], re.I) is not None
+                    if key in defined and not replace and not dropped:
+                        errors.append("%s:%d: %s 重复定义（未用 OR REPLACE，也没有先 DROP IF EXISTS，"
                                       "apply 时会报 already exists；上一次定义在 %s）"
                                       % (fname, line, key, defined[key]))
                     elif key in defined and replace:

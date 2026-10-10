@@ -176,7 +176,11 @@ DOMAIN_TABLES = {
                    # 函数执行权登记（schema/sql/045_function_grant_registry.sql 创建）：
                    # "谁可以执行哪个函数、为什么"。PostgreSQL 建函数时默认授 PUBLIC，
                    # 实测曾有 82 个函数对 PUBLIC 可执行 —— 故改为注册表驱动。属治理域。
-                   "function_grant"],
+                   "function_grant",
+                   # 审计粒度登记（schema/sql/050_audit_granularity.sql 创建）：
+                   # row=逐行记 / summary=按操作记（仅限"重算会整体重写"的表）。
+                   # 缺口由 v_audit_gap 用 PostgreSQL 行计数器检测。属治理域。
+                   "audit_mode"],
     "小程序接入": ["external_identity", "response_session", "answer", "experience_episode",
                    "experience_task", "crosswalk", "sync_event"],
     "备份与发布": ["backup_policy", "backup_run", "restore_run", "dataset_release"],
