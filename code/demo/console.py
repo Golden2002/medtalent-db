@@ -201,11 +201,20 @@ def reset_live(c) -> dict:
         demo = [r["person_id"] for r in cur.fetchall()]
         nd = 0
         if demo:
-            for child, col in _person_fk_children(cur):
-                cur.execute(sql.SQL("DELETE FROM mt.{} WHERE {} = ANY(%s)")
-                            .format(sql.Identifier(child), sql.Identifier(col)), (demo,))
-            cur.execute("DELETE FROM person WHERE person_id = ANY(%s)", (demo,))
-            nd = cur.rowcount
+            # ⚠ 这里原来用本地的 `_person_fk_children()`（**只看外键**）来删子表，
+            # 于是 bridge 演示造的人被删了、它们的 `consent_record` 留成了孤儿 ——
+            # 因为 consent_record **没有指向 person 的外键**（只有主键），
+            # 外键发现方式看不见它。实测每次演示净增 2 行孤儿，
+            # 正好被健康指标 I1.1 抓到（而 I1.1 自己也曾有同样的盲区）。
+            #
+            # 教训与 I1.1 同源：**"引用关系"不等于"外键约束"**。
+            # 修法不是在这里再补一张表名清单（两处实现必然分叉），
+            # 而是直接用**共享的清理实现** `hardclean_persons()` ——
+            # 它按 ①孙表 ②无外键但引用 person 的表 ③动态发现的直接子表 ④person
+            # 的顺序删，mock 窗口与表格导入器用的也是它（一个口径一份实现）。
+            import portal_mockreg as MR
+            n_del = MR.hardclean_persons(c, demo)
+            nd = n_del.get("person", 0)
         # 幂等兜底：身份绑定/同步事件按演示与测试前缀再扫一遍
         cur.execute("""DELETE FROM external_identity
                         WHERE external_person_id LIKE ANY(%s) OR source_system LIKE %s""",

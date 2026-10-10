@@ -132,6 +132,10 @@ DOMAIN_TABLES = {
                "competency_run", "competency_drift", "evolution_policy", "concept_candidate"],
     "扩展值与观测": ["field_value", "first_occurrence", "observation_window",
                      "derived_feature", "assertion"],
+    # 分析口径体系（053/054）：把"如何看数据"本身也当数据管起来 —— 口径、分类、漏斗。
+    # 归到"字典与语义"这一域：它们和 code_table/field_catalog 一样，是**定义层**，
+    # 不是业务数据。漏登记会让 I1.2（未归类表）报错，所以新增注册表要同步加进这里。
+    "分析口径体系": ["metric_registry", "dimension_registry", "funnel_registry"],
     "治理与合规": ["access_log", "access_policy", "consent_record", "consent_withdrawal_action",
                    "data_lifecycle_run", "incident_report", "retention_policy",
                    "subject_request", "talent_deletion_request", "tombstone", "change_log",
@@ -842,6 +846,8 @@ NAV = [("/", "总览"), ("/catalog", "数据目录"), ("/viz", "可视化"), ("/
        ("/tree", "职业树"), ("/match", "匹配"), ("/real", "真实案例"),
        ("/extend", "扩展与演化"),
        ("/schema", "表与视图"), ("/search", "检索"), ("/analyze", "分析"),
+       # 交互式透视与漏斗：挑分类变量 → 交叉/占比/关联强度/分层；按业务路径看阶段转化
+       ("/pivot", "透视"), ("/funnel", "漏斗"),
        ("/quality", "质量"), ("/audit", "访问日志"), ("/lineage", "血缘"), ("/sql", "SQL"),
        ("/dev", "开发者模式")]
 
@@ -1990,6 +1996,29 @@ SEARCH_SOURCES = [
      "SELECT source_id AS id, name AS 来源, source_type AS 类型, evidence_grade AS 证据级, "
      "status AS 状态 FROM source_registry "
      "WHERE name ILIKE %s OR source_id ILIKE %s OR coalesce(base_url,'') ILIKE %s LIMIT 40"),
+    # ------------------------------------------------------------------
+    # 人员（按编号）—— **这条是用户实测反馈加上的**
+    # 用户原话："注册后我在人才库看不到自己写的 id""数据库无法检索 id"。
+    # 根因：检索源清单里**没有 person**，所以按编号搜人必然搜不到；
+    # 而注册时填的"外部编号"（regmock_litianxing）与库内生成的 `person_id`
+    # （per_b78367…，不透明 id）是**两个东西**，界面上没把这层关系说清楚。
+    # 这条 SQL 用 LEFT JOIN 一次覆盖三种编号：
+    #   ① 库内编号 person_id   ② 对象编号 subject_code
+    #   ③ **你自己填的来源编号** external_identity.external_person_id
+    # 于是"我注册时写的那个编号"能搜到，并且结果里直接给出库内编号 —— 找得到、对得上。
+    # ⚠ 这三列都是 T1（迁移 030/044 的披露控制），所以**匿名搜会读不到** ——
+    #    检索循环必须能降级（见 view_search：用 try_read，失败只显示一句提示，
+    #    而不是把整个事务 abort 掉、连后面的来源一起打死）。
+    ("人员（按编号）", "person", "person_id", "person_id", "person_id",
+     "SELECT p.person_id AS id, p.person_id AS 库内编号, "
+     "coalesce(p.subject_code,'') AS 对象编号, "
+     "coalesce(ei.external_person_id,'') AS 你注册时填的编号, "
+     "coalesce(ei.source_system,'') AS 来源系统, "
+     "coalesce(p.enroll_channel,'') AS 入组渠道, p.status AS 状态 "
+     "FROM person p LEFT JOIN external_identity ei ON ei.person_id = p.person_id "
+     "WHERE p.person_id ILIKE %s OR coalesce(p.subject_code,'') ILIKE %s "
+     "OR coalesce(ei.external_person_id,'') ILIKE %s "
+     "ORDER BY p.person_id LIMIT 40"),
 ]
 
 
@@ -2008,7 +2037,7 @@ def view_search(c, qs) -> bytes:
                 % "".join('<tr><td>%s</td><td><a href="/t/%s"><code>%s</code></a></td>'
                           '<td><code>%s</code></td></tr>' % (esc(t), tb, esc(tb), esc(f))
                           for t, tb, f, _, _, _ in SEARCH_SOURCES))
-        return page("检索", body, subtitle="跨 7 个数据源的关键词检索")
+        return page("检索", body, subtitle="跨 %d 个数据源的关键词检索" % len(SEARCH_SOURCES))
 
     like = "%" + term + "%"
     # 表名 / 列名的元数据检索：搜"哪张表里有这个列"
@@ -2020,11 +2049,20 @@ def view_search(c, qs) -> bytes:
     blocks = []
     total = 0
     for title, table, field, pk, disp, sqltext in SEARCH_SOURCES:
-        try:
-            rows = q(c, sqltext, (like, like, like))
-        except psycopg.Error as e:
-            blocks.append('<div class="card"><h2>%s</h2><div class="note err">%s</div></div>'
-                          % (esc(title), esc(str(e).splitlines()[0])))
+        # ⚠ 必须用 try_read（SAVEPOINT 隔离），不能用裸 try/except。
+        # 这里原本就是裸 try/except —— 而 PostgreSQL 里**一条语句失败会让整个事务
+        # 进入 aborted 状态**，于是"这个来源读不到"会把**后面所有来源**一起打死，
+        # 表现成"搜什么都 500，错误信息还指向一个无关的表"。
+        # 加了"人员（按编号）"这个 T1 来源之后，匿名用户一搜就会踩到它 ——
+        # 所以这次一并改掉（本项目第四次踩同一个坑，前三次在 ops/health.py、
+        # 字段页、公开概览）。
+        rows = try_read(c, sqltext, (like, like, like))
+        if rows is None:
+            # 读不到：**降级成一句提示**，不是红色报错卡片
+            # （"这条来源需要更高等级"是正常状态，不是故障）
+            blocks.append('<div class="card"><h2>%s</h2>'
+                          '<div class="note">这一来源需要<b>登录</b>后查看'
+                          '（它含编号等需授权的内容）。</div></div>' % esc(title))
             continue
         if not rows:
             continue
@@ -2211,6 +2249,322 @@ def run_analysis(c, aid):
 
 def analysis_rows(c, sqltext):
     return q(c, sqltext + (" LIMIT 500" if "LIMIT" not in sqltext.upper() else ""))
+
+
+# ---------------------------------------------------------------------------
+# 交互式透视 / 漏斗（分析界面）
+#
+# 设计要点（都不是随手写的）：
+#  ① **维度与口径来自数据库注册表**（mt.dimension_registry / metric_registry /
+#     funnel_registry），不是写死在代码里 —— 加一个分类变量只要往注册表插一行，
+#     界面自动多一个可勾选项。口径即代码，所以按代码的规矩管（见迁移 053 的守卫）。
+#  ② **同一 entity 的维度才能拼在一张透视表里**：人的维度与岗位的维度粒度不同，
+#     混在一起算出来的格子没有意义。
+#  ③ **每一格同时给"人数"和"比例"，并带小样本提示**：只给百分比会让
+#     "1 个人 100%"看起来像结论（方法论明确要求看分布而不是只看均值与比率）。
+#  ④ **相关 ≠ 因果**：固定展示一条读数字纪律，并提供"分层看"（by 参数）——
+#     分层是检验"这个差异是不是被第三个变量带出来的"最朴素手段。
+#  ⑤ 基表用**规范模板**（PIVOT_BASE）而不是各维度自己的 from_sql：
+#     同一 entity 的维度必须落在同一个基表上，否则拼不到一起。
+# ---------------------------------------------------------------------------
+PIVOT_BASE = {
+    "person": "mt.person p LEFT JOIN mt.person_demographics d "
+              "ON d.person_id = p.person_id",
+    "job_posting": "mt.job_posting j",
+}
+ENTITY_LABEL = {"person": "人才（person）", "job_posting": "岗位（job_posting）"}
+
+
+def _pivot_registry(c):
+    """读维度/口径/漏斗注册表。读不到就返回空，让页面降级而不是崩。"""
+    out = {"dims": {}, "metrics": {}, "funnels": [], "code": {}}
+    try:
+        for r in q(c, "SELECT * FROM mt.dimension_registry WHERE status='active' "
+                      "ORDER BY entity, group_name, title"):
+            out["dims"][r["dimension_id"]] = r
+        for r in q(c, "SELECT metric_id, title, domain, unit, kind, definition_note, "
+                      "caveat, min_denominator FROM mt.metric_registry "
+                      "WHERE status='active' ORDER BY domain, metric_id"):
+            out["metrics"][r["metric_id"]] = r
+        for r in q(c, "SELECT funnel_id, title, domain, subject, note "
+                      "FROM mt.funnel_registry WHERE status='active' ORDER BY funnel_id"):
+            out["funnels"].append(r)
+    except psycopg.Error:
+        return out
+    try:
+        for r in q(c, "SELECT code_table_id, code, label_zh FROM mt.code_value"):
+            out["code"].setdefault(r["code_table_id"], {})[r["code"]] = r["label_zh"]
+    except psycopg.Error:
+        pass
+    return out
+
+
+def _dim_label(reg, dim, code):
+    """把码翻成中文标签（有码表就翻，没有就原样）。"""
+    if code is None:
+        return "（未填）"
+    d = reg["dims"].get(dim)
+    if d and d.get("code_table_id"):
+        return reg["code"].get(d["code_table_id"], {}).get(code, code)
+    return code
+
+
+def _cramers_v(cells, n_rows, n_cols):
+    """Cramér's V：0=无关，1=完全相关。用**同一张列联表**算，避免另起口径。"""
+    n = sum(cells.values())
+    if n <= 0 or n_rows < 2 or n_cols < 2:
+        return None
+    rs, cs = {}, {}
+    for (i, j), v in cells.items():
+        rs[i] = rs.get(i, 0) + v
+        cs[j] = cs.get(j, 0) + v
+    chi = 0.0
+    for (i, j), v in cells.items():
+        e = rs[i] * cs[j] / n
+        if e > 0:
+            chi += (v - e) ** 2 / e
+    return round((chi / (n * min(n_rows - 1, n_cols - 1))) ** 0.5, 3)
+
+
+def view_pivot(c, qs) -> bytes:
+    """交互式透视：挑分类变量 → 交叉表 / 目标占比 / 关联强度 / 分层对照。"""
+    def one(k, d=""):
+        return (qs.get(k, [d])[0] or d).strip()
+
+    reg = _pivot_registry(c)
+    entity = one("entity", "person")
+    if entity not in PIVOT_BASE:
+        entity = "person"
+    rid, cid, byid = one("rows"), one("cols"), one("by")
+    tid, tval = one("t"), one("tval")
+    my_dims = [d for d in reg["dims"].values() if d["entity"] == entity]
+
+    def opts(sel, allow_empty=False):
+        o = ['<option value="">（不选）</option>'] if allow_empty else []
+        for g in sorted({x["group_name"] for x in my_dims}):
+            o.append('<optgroup label="%s">' % esc(g))
+            for d in my_dims:
+                if d["group_name"] == g:
+                    o.append('<option value="%s"%s>%s</option>'
+                             % (esc(d["dimension_id"]),
+                                " selected" if d["dimension_id"] == sel else "",
+                                esc(d["title"])))
+            o.append("</optgroup>")
+        return "".join(o)
+
+    # 目标变量（算"占比"的分子）：取值从该维度的实际数据里列出来
+    tvals = []
+    if tid and tid in reg["dims"] and reg["dims"][tid]["entity"] == entity:
+        try:
+            tvals = [r["v"] for r in q(
+                c, "SELECT DISTINCT %s AS v FROM %s WHERE %s IS NOT NULL LIMIT 40"
+                % (reg["dims"][tid]["expr_sql"], PIVOT_BASE[entity],
+                   reg["dims"][tid]["expr_sql"]))]
+        except psycopg.Error:
+            tvals = []
+
+    form = (
+        '<div class="card"><h2>交互式透视</h2>'
+        '<form method="get" action="/pivot" class="row">'
+        '<div style="flex:1 1 170px"><label>分析对象</label>'
+        '<select name="entity" onchange="this.form.submit()">%s</select></div>'
+        '<div style="flex:1 1 190px"><label>行（分类变量）</label>'
+        '<select name="rows">%s</select></div>'
+        '<div style="flex:1 1 190px"><label>列（可空）</label>'
+        '<select name="cols">%s</select></div>'
+        '<div style="flex:1 1 190px"><label>再按…分层看</label>'
+        '<select name="by">%s</select></div>'
+        '<div style="flex:1 1 190px"><label>目标变量（算占比）</label>'
+        '<select name="t">%s</select></div>'
+        '<div style="flex:1 1 140px"><label>目标取值</label>'
+        '<select name="tval">%s</select></div>'
+        '<div style="flex:0 0 100px"><label>&nbsp;</label>'
+        '<button type="submit">分析</button></div>'
+        '</form>'
+        '<p class="muted">选 1 个变量＝分布；选 2 个＝交叉表；'
+        '再选「分层看」＝在每个分层内部重复同一张表'
+        '（这是判断「差异是不是第三个变量带出来的」最朴素的办法）。</p></div>'
+        % ("".join('<option value="%s"%s>%s</option>'
+                   % (k, " selected" if k == entity else "", esc(v))
+                   for k, v in ENTITY_LABEL.items()),
+           opts(rid), opts(cid, True), opts(byid, True), opts(tid, True),
+           "".join('<option value="%s"%s>%s</option>'
+                   % (esc(v), " selected" if v == tval else "",
+                      esc(_dim_label(reg, tid, v))) for v in tvals)))
+
+    if not rid or rid not in reg["dims"]:
+        return page("透视", form, subtitle="挑一个分类变量开始")
+
+    def run(sel_rows, sel_cols, sel_by):
+        dexp = reg["dims"][sel_rows]["expr_sql"]
+        cexp = reg["dims"][sel_cols]["expr_sql"] if sel_cols else None
+        bexp = reg["dims"][sel_by]["expr_sql"] if sel_by else None
+        texp = reg["dims"][tid]["expr_sql"] if (tid and tid in reg["dims"]) else None
+        parts = ["%s AS r" % dexp]
+        if cexp:
+            parts.append("%s AS cc" % cexp)
+        if bexp:
+            parts.append("%s AS b" % bexp)
+        parts.append("count(*) AS n")
+        params = []
+        if texp and tval:
+            parts.append("count(*) FILTER (WHERE %s = %%s) AS k" % texp)
+            params.append(tval)
+        group = []
+        if bexp:
+            group.append("3")
+        if cexp:
+            group.append("2")
+        group.append("1")
+        sql = ("SELECT %s FROM %s GROUP BY %s"
+               % (", ".join(parts), PIVOT_BASE[entity], ", ".join(sorted(group))))
+        return q(c, sql, tuple(params) if params else None)
+
+    try:
+        rows = run(rid, cid, byid)
+    except psycopg.Error as e:
+        return page("透视", form + '<div class="card"><div class="note err">%s</div></div>'
+                    % esc(db_error_block(e) if "db_error_block" in globals()
+                          else str(e).splitlines()[0]),
+                    kind="err", subtitle="SQL 被数据库拒绝（通常是权限不够）")
+
+    blocks = [form]
+    min_cell = reg["dims"][rid]["min_cell"] or 20
+
+    def render(rs, title, show_v):
+        has_c = bool(cid)
+        has_t = bool(tid and tval)
+        grid, rtot, ctot = {}, {}, {}
+        for r in rs:
+            rk = _dim_label(reg, rid, r["r"])
+            ck = _dim_label(reg, cid, r["cc"]) if has_c else "合计"
+            grid[(rk, ck)] = (r["n"], r.get("k"))
+            rtot[rk] = rtot.get(rk, 0) + r["n"]
+            ctot[ck] = ctot.get(ck, 0) + r["n"]
+        rkeys = sorted(rtot, key=lambda k: -rtot[k])
+        ckeys = sorted(ctot, key=lambda k: -ctot[k])
+        total = sum(rtot.values())
+        v = _cramers_v({(a, b): n for (a, b), (n, _k) in grid.items()},
+                       len(rkeys), len(ckeys)) if (has_c and show_v) else None
+        head = "".join('<th class="n">%s</th>' % esc(x) for x in ckeys)
+        body = []
+        for rk in rkeys:
+            tds = []
+            for ck in ckeys:
+                n, k = grid.get((rk, ck), (0, None))
+                if n == 0:
+                    tds.append('<td class="n muted">·</td>')
+                    continue
+                share = n / max(rtot[rk], 1)
+                bg = "rgba(70,120,200,%.2f)" % min(0.45, share)
+                cell = '<b>%d</b>' % n
+                if has_t and k is not None:
+                    cell += ('<br><span class="muted">%s %.1f%%</span>'
+                             % (esc(str(tval)), 100.0 * k / n))
+                if n < min_cell:
+                    cell += ' <span title="样本太少，比例不可靠">⚠</span>'
+                tds.append('<td class="n" style="background:%s">%s</td>' % (bg, cell))
+            body.append('<tr><th>%s</th>%s<td class="n"><b>%d</b></td></tr>'
+                        % (esc(rk), "".join(tds), rtot[rk]))
+        footer = ('<tr><th>合计</th>%s<td class="n"><b>%d</b></td></tr>'
+                  % ("".join('<td class="n"><b>%d</b></td>' % ctot[x] for x in ckeys), total))
+        note = ""
+        if total == 0:
+            note = '<div class="note">这一组合没有任何数据（不是页面出错）。</div>'
+        elif v is not None:
+            strength = ("几乎无关" if v < 0.1 else "弱相关" if v < 0.3
+                        else "中等相关" if v < 0.5 else "强相关")
+            note = ('<div class="note">关联强度 <b>Cramér\'s V = %.3f</b>（%s）。'
+                    'V 与上面的百分比**同源**（同一张列联表）。'
+                    '注意：V 只说明两个变量是否一起变，**不说明谁导致谁**。</div>'
+                    % (v, strength))
+        small = [k for k in rkeys if rtot[k] < min_cell]
+        if small:
+            note += ('<div class="note">⚠ 这些行样本不足 %d，百分比不可靠，只看人数：%s</div>'
+                     % (min_cell, esc("、".join(small[:6]))))
+        return ('<div class="card"><h2>%s</h2><div class="tscroll"><table>'
+                '<tr><th>%s</th>%s<th class="n">行合计</th></tr>%s%s</table></div>%s</div>'
+                % (esc(title or "透视结果"), esc(reg["dims"][rid]["title"]), head,
+                   "".join(body), footer, note))
+
+    if byid and byid in reg["dims"]:
+        strata = {}
+        for r in rows:
+            strata.setdefault(_dim_label(reg, byid, r["b"]), []).append(r)
+        blocks.append('<div class="card"><h2>分层对照：%s</h2>'
+                      '<p class="muted">下面在**每个「%s」内部**重复同一张表。'
+                      '若各层里行与列的关系方向一致，说明它不太可能是被这个分层变量带出来的；'
+                      '若各层方向相反（辛普森悖论），合计表就会骗人。</p></div>'
+                      % (esc(reg["dims"][byid]["title"]),
+                         esc(reg["dims"][byid]["title"])))
+        for k in sorted(strata, key=lambda x: -len(strata[x])):
+            blocks.append(render(strata[k], "%s = %s" % (reg["dims"][byid]["title"], k),
+                                 False))
+    else:
+        blocks.append(render(rows, None, True))
+
+    blocks.append(
+        '<div class="card"><h2>看这些数字前必须知道的三件事</h2><ul>'
+        '<li><b>分母是谁</b>：没填的人在库里**没有这一行**（缺失 ≠ 空值），'
+        '所以比例的分母是「填了的人」，不是全体。行合计就是分母。</li>'
+        '<li><b>小样本不给结论</b>：带 ⚠ 的格子人数太少，百分比会剧烈波动。</li>'
+        '<li><b>相关不是因果</b>：哪怕 Cramér\'s V 很高，也只能说「一起变」。'
+        '要往因果方向靠，至少要用「分层看」排除明显混杂，或做对照与时间先后比较。</li>'
+        '</ul><p class="muted">口径与分类的定义都在库里（'
+        '<a href="/t/metric_registry">metric_registry</a> / '
+        '<a href="/t/dimension_registry">dimension_registry</a>），'
+        '每条都写了口径说明与使用注意。</p></div>')
+    return page("透视", "".join(blocks),
+                subtitle="挑分类变量 → 交叉 / 占比 / 关联强度 / 分层对照")
+
+
+def view_funnel(c, qs) -> bytes:
+    """漏斗：按业务路径看阶段转化，并把每阶段的说明一起显示。"""
+    reg = _pivot_registry(c)
+    if not reg["funnels"]:
+        return page("漏斗", '<div class="card"><div class="note">漏斗注册表是空的。</div>'
+                            '</div>', kind="err", subtitle="还没有登记漏斗")
+    fid = (qs.get("f", [""])[0] or reg["funnels"][0]["funnel_id"]).strip()
+    links = "".join('<a href="/funnel?f=%s" class="%s">%s</a> '
+                    % (esc(x["funnel_id"]), "tabon" if x["funnel_id"] == fid else "tab",
+                       esc(x["title"])) for x in reg["funnels"])
+    meta_row = next((x for x in reg["funnels"] if x["funnel_id"] == fid), None)
+    if not meta_row:
+        meta_row = reg["funnels"][0]
+        fid = meta_row["funnel_id"]
+    try:
+        rows = q(c, "SELECT * FROM mt.funnel_run(%s) ORDER BY stage_no", (fid,))
+    except psycopg.Error as e:
+        return page("漏斗", '<div class="card">%s<div class="note err">%s</div></div>'
+                    % (links, esc(str(e).splitlines()[0])),
+                    kind="err", subtitle="漏斗跑不动（通常是阶段定义有问题）")
+
+    first = rows[0]["subjects"] if rows else 0
+    bars = []
+    for r in rows:
+        w = (100.0 * r["subjects"] / first) if first else 0
+        bars.append(
+            '<tr><td style="white-space:nowrap">%d. %s</td>'
+            '<td class="n"><b>%d</b></td><td class="n">%s</td><td class="n">%s</td>'
+            '<td style="width:46%%"><div style="background:rgba(70,120,200,.35);'
+            'height:16px;width:%.1f%%"></div></td></tr>'
+            '<tr><td colspan="5" class="muted" '
+            'style="font-size:12px;padding:0 0 6px 14px">%s</td></tr>'
+            % (r["stage_no"], esc(r["stage_name"]), r["subjects"],
+               ("%.1f%%" % r["step_rate"]) if r["step_rate"] is not None else "—",
+               ("%.1f%%" % r["overall_rate"]) if r["overall_rate"] is not None else "—",
+               w, esc(r["note"] or "")))
+    body = ('<div class="card"><div class="tabs">%s</div><h2>%s</h2>'
+            '<div class="tscroll"><table>'
+            '<tr><th>阶段</th><th class="n">主体数</th><th class="n">环比</th>'
+            '<th class="n">累计</th><th>占比</th></tr>%s</table></div>'
+            '<div class="note"><b>怎么读：</b>环比＝相对上一阶段；累计＝相对第一阶段。'
+            '<b>阶段只能变窄</b> —— 若某阶段人数反而变多，说明阶段定义写错了，'
+            '数据库会直接报错，而不是画一张假的漏斗。</div>%s</div>'
+            % (links, esc(meta_row["title"]), "".join(bars),
+               ('<div class="note">%s</div>' % esc(meta_row["note"]))
+               if meta_row["note"] else ""))
+    return page("漏斗", body, subtitle="按业务路径拆解的阶段转化")
 
 
 def view_analyze(c, qs, aid=None, want_csv=False):
@@ -2723,6 +3077,19 @@ TALENT_COLUMNS = [
     # key, 标题, 分组, 默认显示, SQL 表达式（别名 p = person）, 对齐/格式
     dict(key="pid", title="person_id", group="基本信息", default=True,
          sel="p.person_id", fmt="link"),
+    # "来源编号" —— **用户实测反馈加上的**。
+    # 用户原话："注册后我在人才库看不到自己写的 id"。
+    # 根因：`person_id` 是入库时生成的不透明 id（per_b78367…），而用户在注册页
+    # 填的是"外部编号"（regmock_litianxing），存在 external_identity 里 ——
+    # 人才库默认只显示 person_id，于是**他能看到的那个编号不是他写过的那个**。
+    # 加这一列，两种编号并排出现，找得到、对得上。
+    # （一个主体可能有多个来源编号 —— 例如先后从小程序和表格导入 —— 所以全部列出。）
+    dict(key="ext", title="来源编号", group="基本信息", default=True,
+         sel="(SELECT string_agg(ei.source_system || ':' || ei.external_person_id, ' ') "
+             "FROM external_identity ei WHERE ei.person_id = p.person_id)",
+         fmt="text",
+         hint="你在注册页/表格里填的那个编号，形如 `来源系统:你填的编号`。"
+              "同一主体可能有多个（先后从小程序、表格导入等）。"),
     dict(key="code", title="档案号", group="基本信息", default=False,
          sel="p.subject_code", fmt="text"),
     dict(key="status", title="状态", group="基本信息", default=False,
@@ -5191,6 +5558,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, view_field(c, mm.group(1), mm.group(2), qs))
                 if path == "/search":
                     return self._send(200, view_search(c, qs))
+                if path == "/pivot":
+                    return self._send(200, view_pivot(c, qs))
+                if path == "/funnel":
+                    return self._send(200, view_funnel(c, qs))
                 if path == "/analyze":
                     return self._send(200, view_analyze(c, qs))
                 if path == "/lineage":

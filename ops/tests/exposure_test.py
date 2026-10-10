@@ -56,7 +56,11 @@ _ADMIN_DSN = ("host=127.0.0.1 port=55432 dbname=medtalent user=postgres connect_
               "options='-c search_path=mt,public'")
 
 # 公开页：匿名**应该**能看（都是聚合、字典、结构，不含个人数据）
-PUBLIC = ["/", "/catalog", "/schema", "/search", "/analyze", "/viz", "/sql", "/login"]
+PUBLIC = ["/", "/catalog", "/schema", "/search", "/analyze", "/viz", "/sql", "/login",
+          # 两个分析界面：注册表（口径/分类/漏斗）本身是 T0 可读的说明层，
+          # 所以页面应该能打开；**但底下的数据查询必须以调用者权限执行**，
+          # 匿名算不动就该降级成提示，而不是靠页面不显示来保密。
+          "/pivot", "/funnel"]
 # 受限页：必须 403（含个人数据或内部运营数据）
 DENIED = ["/talent", "/talent.csv", "/real", "/quality", "/audit", "/occupations",
           "/match", "/tree", "/lineage", "/extend", "/t/person", "/t/person_pii",
@@ -171,6 +175,19 @@ def main():
             st, b = fetch(p)
             check(st == 403, "匿名 %-28s → 403（实得 %d）" % (p, st))
             check(DENIED_MARK in b, "  %-28s 返回的是「权限不足」页而不是空白/500" % p)
+
+        # 分析界面：匿名能打开"说明层"，但**算不出人才侧数据**
+        # （metric_value/funnel_run 是 SECURITY INVOKER，按调用者权限执行 ——
+        #  见迁移 057：改成 DEFINER 会绕开列级控制，改成 INVOKER 才会如实拒绝）
+        st, b = fetch("/pivot?entity=person&rows=D_AGE_BAND&cols=D_SEX")
+        check(st in (200, 403), "匿名 /pivot 不炸（实得 %d）" % st)
+        check(not re.search(r"per_[0-9a-f]{8}", b),
+              "匿名 /pivot 页面上**没有任何 person_id**（聚合也不行 —— 标识列始终 T1）")
+        st, b2 = fetch("/funnel?f=F_SUPPLY")
+        check(st in (200, 403), "匿名 /funnel 不炸（实得 %d）" % st)
+        check(not re.search(r"per_[0-9a-f]{8}", b2),
+              "匿名 /funnel 页面上**没有任何 person_id**（含漏斗各阶段明细）")
+        check("口径" in b or "透视" in b, "匿名看到的是口径/分类的说明层（不是空白）")
 
         # ===============================================================
         print("\n【B】内容层：匿名能打开的页面里不许出现识别标记")
@@ -547,7 +564,16 @@ def main():
             n_all = len(c.execute("SELECT * FROM mt.public_counts()").fetchall())
             ms_all = (_t.time() - t0) * 1000
             c.execute("RESET ROLE")
-        check(one == 123, "闸门按表查询返回正确的行数（person=%s）" % one)
+        # ⚠ 这里原来写的是 `check(one == 123, ...)` —— **把人数写死在测试里**。
+        # 一旦有别的套件正常地增删了人（例如控制台端到端、mock 注册窗口），
+        # 这条断言就会失败，而失败信息只显示"person=124"，看起来像闸门算错了。
+        # 实测就是这么被绊了一下。修法：**与被测对象自洽** ——
+        # 拿超级用户连接查一次真实行数，比"闸门返回的"和"实际有的"是否一致。
+        # 这样断言测的是"闸门算得对不对"，而不是"库里恰好有多少人"。
+        with psycopg.connect(_ADMIN_DSN, row_factory=dict_row) as ac:
+            live_person = ac.execute("SELECT count(*) AS n FROM mt.person").fetchone()["n"]
+        check(one == live_person,
+              "闸门按表查询与实际行数一致（闸门 %s = 实际 %s）" % (one, live_person))
         check(ms_one < 250 and ms_all > ms_one,
               "按表查询明显快于全量（单表 %.0fms vs 全量 %.0fms，共 %d 张表）—— "
               "这才让公开页敢用它" % (ms_one, ms_all, n_all))

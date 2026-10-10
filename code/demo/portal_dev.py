@@ -56,7 +56,15 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 PORT = 8083
 TOOL_TIMEOUT = 900
-DEV_NAV = [("/", "概览"), ("/mockreg", "mock 注册窗口"), ("/sql", "SQL 控制台"),
+# 哪些路径"GET 只渲染表单、POST 才执行"。**新增可写页面必须同时改这里和 _dispatch** ——
+# 这是本页最容易漏的一步：路由加进 _dispatch 了，但白名单没加，GET 会静默 404
+# （实测踩过：/occupation 与 /import 加好后 GET 全部 404，POST 却正常，
+#   症状像"页面不存在"，其实是白名单没同步）。
+# 沿用本项目对这类问题的态度：**两处清单必须一致**，所以在这里显式点名一次。
+READ_FORM_ROUTES = ("/sql", "/model", "/tools", "/mockreg", "/occupation", "/import")
+
+DEV_NAV = [("/", "概览"), ("/mockreg", "mock 注册窗口"), ("/occupation", "新增职业"),
+           ("/import", "批量导入"), ("/sql", "SQL 控制台"),
            ("/model", "动态建模"),
            ("/tools", "运维工具"), ("/audit", "审计流水"), ("/migrate", "迁移与结构"),
            ("/portal", "← 只读门户")]
@@ -771,6 +779,18 @@ class DevHandler(BaseHTTPRequestHandler):
                 out, kind = run_tool(qs["run"][0], qs)
                 return self._send(200, view_tools(c, qs, out, "", kind))
             return self._send(200, view_tools(c, qs))
+        if path == "/occupation":
+            # 新增职业：GET 只渲染表单；POST 才写库（与 /mockreg 同一纪律）
+            import portal_admin as AD
+            if write and qs.get("act", [""])[0]:
+                return self._send(200, AD.handle(c, qs))
+            return self._send(200, AD.view_occupation(c, qs))
+        if path == "/import":
+            # 批量导入：GET 渲染表单；POST 才跑导入（默认还只是"计划"）
+            import portal_admin as AD
+            if write and qs.get("act", [""])[0]:
+                return self._send(200, AD.handle(c, qs))
+            return self._send(200, AD.view_import(c, qs))
         if path == "/mockreg":
             # mock 小程序注册窗口：**真实写库**，走 bridge 而不是直写 person。
             # GET 只渲染表单；POST 才执行（防预取/爬虫误触发写库，与 /sql 同一纪律）。
@@ -796,7 +816,7 @@ class DevHandler(BaseHTTPRequestHandler):
             with P.admin_db(readonly=False) as c:
                 if path == "/":
                     return self._send(200, view_home(c, qs))
-                if path in ("/sql", "/model", "/tools", "/mockreg"):
+                if path in READ_FORM_ROUTES:
                     # GET 只渲染表单（或把 SQL 填进去），绝不执行 —— 防预取/爬虫误触发写库
                     return self._dispatch(c, path, qs, write=False)
                 if path == "/audit":

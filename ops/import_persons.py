@@ -41,6 +41,7 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import io
 import os
 import sys
 from datetime import datetime
@@ -81,7 +82,16 @@ OCC_COLS = {"意向职业", "target_occupations", "targetOccupations"}
 
 
 def read_table(path):
-    """读 .xlsx 或 .csv，返回 (表头列表, [行字典…])。"""
+    """读 .xlsx 或 .csv/.tsv，返回 (表头列表, [行字典…], 元信息)。
+
+    ⚠ **分隔符必须嗅探**（实测踩到）：从 Excel 复制粘贴出来的是**制表符**分隔，
+    而导出的 .csv 文件通常是逗号。第一版直接 `csv.DictReader(fh)`（默认逗号），
+    于是粘贴的表格被当成"只有 1 列"，报告里出现
+    「表头 1 列：外部编号	同意个人分析	…」这种明显不对的东西，
+    而结果是"0 条导入、全部未授权" —— **症状指向数据，真因是分隔符**。
+    这里用**确定性规则**（数第一行里谁多）而不是 `csv.Sniffer` 的启发式：
+    可预测、可解释、出问题时人一眼能看出用了哪个分隔符。
+    """
     ext = os.path.splitext(path)[1].lower()
     if ext in (".xlsx", ".xlsm"):
         try:
@@ -101,16 +111,26 @@ def read_table(path):
                 continue                              # 整行空 → 跳过（Excel 常见的尾部空行）
             out.append({head[i]: ("" if v is None else str(v).strip())
                         for i, v in enumerate(r) if i < len(head)})
-        return head, out
-    # csv
+        return head, out, {"kind": "excel", "delimiter": None}
+    # csv / tsv：先定分隔符
     for enc in ("utf-8-sig", "gbk"):
         try:
             with open(path, encoding=enc, newline="") as fh:
-                rd = list(csv.DictReader(fh))
-            return (list(rd[0].keys()) if rd else []), rd
+                sample = fh.read()
         except UnicodeDecodeError:
             continue
-    raise SystemExit("[X] 读不出这个 CSV（试过 utf-8-sig 与 gbk）")
+        first = next((l for l in sample.splitlines() if l.strip()), "")
+        tabs, commas, semis = first.count("\t"), first.count(","), first.count(";")
+        delim = "\t" if tabs >= max(commas, semis) and tabs > 0 else \
+                (";" if semis > commas else ",")
+        with io.StringIO(sample) as fh2:
+            rd = list(csv.DictReader(fh2, delimiter=delim))
+        if not rd:
+            return ([], [], {"kind": "csv", "delimiter": delim, "encoding": enc})
+        return (list(rd[0].keys()), rd,
+                {"kind": "csv", "delimiter": delim, "encoding": enc,
+                 "delimiter_name": {"\t": "制表符", ",": "逗号", ";": "分号"}[delim]})
+    raise SystemExit("[X] 读不出这个文件（试过 utf-8-sig 与 gbk）")
 
 
 def person_fields(c):
@@ -188,10 +208,13 @@ def cmd_import(a):
     import exchange as EX
     with psycopg.connect(ADMIN, row_factory=dict_row) as c:
         fields = person_fields(c)
-        head, rows = read_table(a.file)
+        head, rows, tinfo = read_table(a.file)
 
     plan = classify(head, fields)
     print("表格：%s" % a.file)
+    if tinfo.get("kind") == "csv":
+        print("分隔符：%s（%s 编码）" % (tinfo.get("delimiter_name", "?"),
+                                        tinfo.get("encoding", "?")))
     print("表头 %d 列：%s" % (len(head), "、".join(head)))
     print()
     print("列映射：")

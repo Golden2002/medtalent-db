@@ -138,7 +138,22 @@ def q1(c, sql, p=None):
 def d1_integrity(c):
     """D1 正确性与完整性：数据是不是"说得通"的。
     这一维度最容易假装合格 —— 表都在、列都在、能查，但引用可能断、码可能是标签。"""
-    # I1.1 孤儿行：所有指向 person 的外键子表动态发现后逐个查
+    # I1.1 孤儿行：所有指向 person 的子表逐个查
+    #
+    # ⚠ 这里曾有一个**盲区**（实测撞出来的）：只"动态发现**有外键**的子表"，
+    # 而孤儿行恰恰最容易藏在**没有外键**的引用表里 ——
+    # `consent_record` 只有主键、没有指向 person 的外键，于是它的孤儿行
+    # 对这条 MUST 指标完全不可见（实测藏着 179 行，指标却显示 0）。
+    # 更讽刺的是：**清理代码早就知道**这些表（mock 窗口的 NO_FK_TO_PERSON 清单里就有
+    # consent_record 与 field_value），只有门禁不知道。
+    # 教训："动态发现"要比对的对象是**引用关系**，不是**外键约束** ——
+    # 外键只是引用关系的一种表达方式，没有外键不等于没有引用。
+    #
+    # 修法：两类都查
+    #   ① 有指向 person 外键的子表（原有逻辑，动态发现，新增子表自动覆盖）
+    #   ② **有 person_id 列、却没有指向 person 外键的表**（动态发现，同样自动覆盖）
+    # 另加一个多态表的特例：field_value 用 (subject_type, subject_id) 指主体，
+    # 无法用列名发现 —— 它是本项目唯一的多态表，用显式规则（并说明理由）。
     kids = c.execute("""
         SELECT cl.relname AS t, a.attname AS col
           FROM pg_constraint con
@@ -147,13 +162,40 @@ def d1_integrity(c):
           JOIN pg_class cl2 ON cl2.oid = con.confrelid
           JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = con.conkey[1]
          WHERE con.contype='f' AND n.nspname='mt' AND cl2.relname='person'""").fetchall()
+    n_fk = len(kids)
+    # ② 没有外键但用 person_id 引用的表
+    nofk = c.execute("""
+        SELECT cl.relname AS t, 'person_id' AS col
+          FROM pg_class cl
+          JOIN pg_namespace n ON n.oid = cl.relnamespace
+          JOIN pg_attribute a ON a.attrelid = cl.oid AND a.attname = 'person_id'
+                              AND a.attnum > 0 AND NOT a.attisdropped
+         WHERE n.nspname='mt' AND cl.relkind='r'
+           AND NOT EXISTS (SELECT 1 FROM pg_constraint con
+                            JOIN pg_class c2 ON c2.oid = con.confrelid
+                           WHERE con.conrelid = cl.oid AND con.contype='f'
+                             AND c2.relname = 'person')
+         ORDER BY 1""").fetchall()
     orphans = 0
-    for k in kids:
-        orphans += q1(c, 'SELECT count(*) FROM mt.%s ch LEFT JOIN mt.person p '
-                         'ON p.person_id = ch.%s WHERE ch.%s IS NOT NULL AND p.person_id IS NULL'
-                      % (k["t"], k["col"], k["col"]))
+    worst = []
+    for k in kids + nofk:
+        n = q1(c, 'SELECT count(*) FROM mt.%s ch LEFT JOIN mt.person p '
+                  'ON p.person_id = ch.%s WHERE ch.%s IS NOT NULL AND p.person_id IS NULL'
+               % (k["t"], k["col"], k["col"]))
+        orphans += n
+        if n:
+            worst.append("%s %d" % (k["t"], n))
+    # 多态表 field_value（唯一一处显式规则，因为列名发现不了它）
+    n_fv = q1(c, "SELECT count(*) FROM mt.field_value fv WHERE fv.subject_type='person' "
+                 "AND NOT EXISTS (SELECT 1 FROM mt.person p WHERE p.person_id = fv.subject_id)")
+    if n_fv:
+        orphans += n_fv
+        worst.append("field_value %d" % n_fv)
     add("D1", "I1.1", "指向 person 的孤儿行数", orphans, 0, "MUST",
-        "动态发现 %d 张子表，逐表 LEFT JOIN 反查" % len(kids))
+        "查了 %d 张外键子表 + %d 张**无外键但用 person_id 引用**的表 + field_value(多态)"
+        % (n_fk, len(nofk)),
+        note=("未通过时按降序看是哪张表：%s" % "、".join(worst[:5])) if worst else
+             "两类引用表都覆盖（外键与无外键），新增表自动纳入")
 
     # I1.2 未分类的表（每张表都要归入一个业务域）
     # 判据：mt 下的基础表里，有多少张既不在 entity_catalog（语义层登记），
