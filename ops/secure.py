@@ -153,12 +153,19 @@ def cmd_list(a):
 def cmd_passwd(a):
     pw = a.password or gen_password()
     with conn() as c:
-        n = c.execute("""UPDATE mt.app_user SET password_hash = crypt(%s, gen_salt('bf'))
+        # ⚠ 必须显式写 cost=12：pgcrypto 的 `gen_salt('bf')` 默认是 **6**，
+        # 而 cost 6 在现代显卡上是秒级可暴破的量级（实测原实现哈希前缀 $2a$06$）。
+        # 这里与 mt.web_user_add 保持一致（同一个口径，两处实现必须同值）。
+        n = c.execute("""UPDATE mt.app_user
+                            SET password_hash = crypt(%s, gen_salt('bf', 12))
                           WHERE lower(email) = lower(%s)""", (pw, a.email)).rowcount
+        cost = c.execute("""SELECT mt.password_hash_cost(password_hash) AS c
+                              FROM mt.app_user WHERE lower(email)=lower(%s)""",
+                         (a.email,)).fetchone()
     if not n:
         print("[X] 没有这个邮箱：%s" % a.email)
         return 1
-    print("[✓] 已重置 %s 的口令" % a.email)
+    print("[✓] 已重置 %s 的口令（bcrypt cost=%s）" % (a.email, cost["c"] if cost else "?"))
     if not a.password:
         print("\n  新口令（只显示这一次）：\n  %s" % pw)
     return 0

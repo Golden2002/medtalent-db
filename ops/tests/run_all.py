@@ -250,6 +250,74 @@ def select_todo(tier, want_ids, after_only, no_after):
     return todo, auto
 
 
+LOCK_PATH = os.path.join(BASE, ".tools", "run_all.lock")
+
+
+class RunLock:
+    """回归运行的**互斥锁**：同一时间只允许一份会改库的测试在跑。
+
+    为什么必须有（这是用一次真实事故换来的）：
+    我在完整档还在跑的时候，又手动跑了一个会建/删账号的套件和一个过载压测 ——
+    结果两个都会写库的测试互相污染：控制台套件报出荒谬的外键错误
+    （`Key (person_id)=()`），门户套件 90 项失败，备份套件直接被拖到异常退出。
+    **现象指向代码，真因是运行方式** —— 这种"假警报"最费时间，而且会让人
+    开始不信任回归结果（那比没有回归更糟）。
+
+    实现：写一个带 pid 与启动时间的锁文件；退出时删除。
+    · 锁存在且 pid 还活着 → 拒绝启动，并把占用者的信息打出来；
+    · 锁存在但 pid 已死（上次被 Ctrl-C / 杀进程）→ 视为陈旧，接管并提示；
+    · `--force` 显式跳过检查（给人留后门，但必须自己说出口）。
+    """
+
+    def __init__(self, force=False):
+        self.force = force
+        self.held = False
+
+    def _alive(self, pid):
+        try:
+            out = subprocess.run(["powershell", "-NoProfile", "-Command",
+                                  "(Get-Process -Id %d -ErrorAction SilentlyContinue) "
+                                  "| Measure-Object | Select-Object -ExpandProperty Count"
+                                  % pid],
+                                 capture_output=True, text=True, timeout=20).stdout.strip()
+            return out == "1"
+        except Exception:                                  # noqa: BLE001
+            return True                                    # 判不出来就当它还活着（保守）
+
+    def acquire(self):
+        if self.force:
+            print("[!] --force：跳过回归互斥锁检查")
+            return True
+        if os.path.isfile(LOCK_PATH):
+            try:
+                with open(LOCK_PATH, encoding="utf-8") as fh:
+                    info = fh.read().strip()
+                pid = int(info.split("pid=")[1].split()[0])
+            except Exception:                              # noqa: BLE001
+                pid = None
+            if pid and self._alive(pid):
+                print("[X] 拒绝启动：已有一份回归在跑（%s）" % info)
+                print("    两个会改库的测试同时跑会互相污染，产生**假失败** ——")
+                print("    那些失败指向代码，真因却是运行方式，最费时间也最伤对回归的信任。")
+                print("    等它结束，或用 --force 强行并行（不推荐）。")
+                return False
+            print("[=] 发现陈旧锁（占用进程已退出）：%s —— 接管" % info)
+        os.makedirs(os.path.dirname(LOCK_PATH), exist_ok=True)
+        with open(LOCK_PATH, "w", encoding="utf-8") as fh:
+            fh.write("pid=%d started=%s\n" % (os.getpid(),
+                                              time.strftime("%Y-%m-%d %H:%M:%S")))
+        self.held = True
+        return True
+
+    def release(self):
+        if self.held:
+            try:
+                os.remove(LOCK_PATH)
+            except OSError:
+                pass
+            self.held = False
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", help="只跑这些编号（步骤号 1-15 或收尾 R1/R2），逗号分隔，如 3,4,12")
@@ -260,6 +328,8 @@ def main():
     ap.add_argument("--list", action="store_true", help="列出步骤（含档位与副作用）")
     ap.add_argument("--no-after", action="store_true", help="跳过收尾动作（调试用）")
     ap.add_argument("-v", "--verbose", action="store_true", help="打印完整输出")
+    ap.add_argument("--force", action="store_true",
+                    help="跳过回归互斥锁（并行跑会互相污染，出了假失败别怪回归）")
     a = ap.parse_args()
 
     if a.fast:
@@ -350,4 +420,10 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    _lock = RunLock(force="--force" in sys.argv)
+    if not _lock.acquire():
+        sys.exit(3)
+    try:
+        sys.exit(main())
+    finally:
+        _lock.release()

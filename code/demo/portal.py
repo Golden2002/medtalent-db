@@ -171,7 +171,11 @@ DOMAIN_TABLES = {
                    "login_attempt", "login_policy",
                    # 计数闸门的排除登记（schema/sql/041_count_gateway_exclusions.sql 创建）：
                    # 登记"行数也不公开"的表及理由（如登录流水）。策略元数据，属治理域。
-                   "public_count_excluded"],
+                   "public_count_excluded",
+                   # 函数执行权登记（schema/sql/045_function_grant_registry.sql 创建）：
+                   # "谁可以执行哪个函数、为什么"。PostgreSQL 建函数时默认授 PUBLIC，
+                   # 实测曾有 82 个函数对 PUBLIC 可执行 —— 故改为注册表驱动。属治理域。
+                   "function_grant"],
     "小程序接入": ["external_identity", "response_session", "answer", "experience_episode",
                    "experience_task", "crosswalk", "sync_event"],
     "备份与发布": ["backup_policy", "backup_run", "restore_run", "dataset_release"],
@@ -233,6 +237,32 @@ _EXPORT_CACHE = None
 # 会话不会跨请求泄漏；而且它只用于**渲染**（页头显示身份），
 # 真正的权限判断在数据库（`SET LOCAL ROLE`），不依赖这个变量。
 _LOCAL = threading.local()
+
+# ---------------------------------------------------------------------------
+# 并发闸：把"数据库连接数"变成有上界的量，而不是跟着请求数涨
+# ---------------------------------------------------------------------------
+# 为什么必须有（实测的算式）：
+#   · `max_connections = 50`（ops/pg.py 设的）；
+#   · 门户**每个请求要开 3 条连接**：会话查询（`_cookie_session`）+ 页面查询（`db()`）
+#     + 审计（`log_visit` 用独立连接，刻意不污染只读事务）；
+#   · `ThreadingHTTPServer` 是"一请求一线程、**没有上限**"。
+#   于是并发约 16 个请求就能把 50 条连接吃干净，第 17 个开始拿到
+#   `sorry, too many clients already`。而这是**公网**地址，任何人可并发触发。
+#
+# 加闸之后：最多 `MAX_CONCURRENT_REQUESTS` 个请求同时进业务逻辑，
+# 连接数上界 ≈ 3 × 该值（默认 10 → 约 30 条，留出备份/psql/其它工具的余量）。
+# 超出的请求**排队等待**，等不到就回 503 + Retry-After（见 handle_one_request）。
+# 这是"过载时优雅降级"，而不是"过载时雪崩"：后者会让 Cloudflare 那边看到一片 500，
+# 而真正的原因是本地连接池被自己打满 —— 现象离原因很远，最难查。
+#
+# 为什么不用连接池（psycopg_pool）：本机**没有**这个包（实测 find_spec 为 None），
+# 而网络受限无法安装。加闸是把同样的问题用更少依赖解决 ——
+# 池解决"复用"，闸解决"上界"，而真正致命的是没有上界。
+MAX_CONCURRENT_REQUESTS = int(os.environ.get("MEDTALENT_MAX_CONCURRENCY", "10"))
+_REQ_SEM = threading.BoundedSemaphore(MAX_CONCURRENT_REQUESTS)
+_REQ_WAIT_SECONDS = float(os.environ.get("MEDTALENT_REQ_WAIT", "8"))
+_REQ_WAITERS = threading.Semaphore(0)          # 仅用于观测：当前排队数
+
 
 
 def set_current_session(s: Session):
@@ -552,6 +582,19 @@ def lbl(code_table_id: str, code) -> str:
 
 
 META = {}          # 进程内缓存：门户是只读的，元数据在一次演示里不必反复重读
+# 元数据缓存的**有效期**与互斥锁。
+#
+# 为什么必须有有效期（原来是无条件永久缓存）：
+#   · 这是**长时间运行**的服务（已经跑了几十小时）；
+#   · 而**另一个进程**可以改变结构 —— 开发者模式（:8083）能建维度/加列、
+#     迁移也会加表。永久缓存意味着"结构页显示的是门户启动那一刻的样子"，
+#     而目录页的整个卖点就是"看到数据库真实的样子"。
+#     **缓存没有失效机制，等于给读者看一份越来越旧的地图。**
+#   · 300 秒是权衡：重建一次要读全部系统目录 + 每张表 count(*)（约 0.5 秒），
+#     而结构变化是低频事件。要立刻生效就用 `refresh_meta()`（或重启门户）。
+META_TTL_SECONDS = int(os.environ.get("MEDTALENT_META_TTL", "300"))
+META_AT = 0.0                      # 上次构建的时间戳（time.monotonic）
+_META_LOCK = threading.Lock()      # 防"检查-构建"竞态：并发首请求会各自建一遍
 
 
 def admin_db(readonly: bool = True):
@@ -572,17 +615,36 @@ def admin_db(readonly: bool = True):
 
 
 def meta() -> dict:
-    global META
-    if not META:
+    """进程级元数据缓存，**带有效期**（见 META_TTL_SECONDS 的说明）。
+
+    用锁包住"检查-构建"：`ThreadingHTTPServer` 下一请求一线程，
+    并发首请求会同时发现缓存为空、各自构建一遍（结果一样，但白做几遍重活，
+    而且会让启动瞬间的数据库负载翻几倍）。
+    """
+    global META, META_AT
+    now = time.monotonic()
+    if META and (META_TTL_SECONDS <= 0 or now - META_AT < META_TTL_SECONDS):
+        return META
+    with _META_LOCK:
+        # 双重检查：等锁期间别的线程可能已经建好了
+        now = time.monotonic()
+        if META and (META_TTL_SECONDS <= 0 or now - META_AT < META_TTL_SECONDS):
+            return META
         with admin_db() as c:
             META = load_meta(c)
+        META_AT = time.monotonic()
     return META
 
 
 def refresh_meta():
-    global META
-    META = {}
-    return meta()
+    """立刻重建元数据（结构刚被改过时用；迁移脚本与测试也用它）。"""
+    global META, META_AT
+    with _META_LOCK:
+        META = {}
+        with admin_db() as c:
+            META = load_meta(c)
+        META_AT = time.monotonic()
+    return META
 
 
 def require_table(name: str) -> str:
@@ -1073,8 +1135,28 @@ def export_filter(cols, table=None):
     return keep, dropped
 
 
+def csv_safe(v):
+    """把可能被 Excel/表格软件当成**公式**的单元格改成纯文本。
+
+    为什么必须做（CSV 公式注入）：CSV 里以 `=` `+` `-` `@` 开头的单元格，
+    Excel / LibreOffice / Google Sheets 打开时会**当公式执行**。
+    本库导出的是**外部来源的原始文本**（JD 原文、雇主名称、人才自述），
+    这些内容不由我们控制 —— 一条 `=HYPERLINK("http://evil","点我")`
+    或者更糟的 DDE 形式，会在**打开导出文件的同事机器上**执行。
+    这是"把不可信输入交给另一个程序当代码"的经典形态。
+
+    做法：前缀一个单引号（Excel 的"这是文本"约定），而不是删掉内容 ——
+    导出是给人看的，不能因为一个字符就把数据改了。
+    数字类型不动（负数是正常数值，不构成公式）。
+    """
+    if isinstance(v, str) and v[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + v
+    return v
+
+
 def to_csv(cols, rows, table=None) -> bytes:
-    """CSV 序列化的**唯一出口** —— 导出禁令在这里强制，而不是靠各调用点自觉。
+    """CSV 序列化的**唯一出口** —— 导出禁令与公式注入防护都在这里强制，
+    而不是靠各调用点自觉。
 
     与 `db()`（权限注入）和 `_send`（审计）同一个道理：安全性质挂在**单点**上。
     """
@@ -1088,7 +1170,7 @@ def to_csv(cols, rows, table=None) -> bytes:
     w = csv.writer(buf)
     w.writerow(allowed)
     for r in rows:
-        w.writerow([r.get(c) for c in allowed])
+        w.writerow([csv_safe(r.get(c)) for c in allowed])
     return ("\ufeff" + buf.getvalue()).encode("utf-8")   # BOM：Excel 直接打开不乱码
 
 
@@ -4187,8 +4269,13 @@ def public_overview(c) -> str:
         # 于是第一个读不到的指标会把后面所有指标一起打死 ——
         # 表现成"匿名首页 403 且理由指向一个毫不相关的表"。
         # 这是本项目第三次踩同一个坑（ops/health.py、字段页各一次），所以这里也写明。
-        rows = try_read(c, "SELECT n_rows FROM mt.public_counts() WHERE table_name = %s",
-                        (tbl,))
+        #
+        # **把表名传给闸门**（迁移 042）：不传的话闸门会把全部 89 张表数一遍再让外层
+        # WHERE 过滤 —— 实测"取一张表"要 689ms（而直接数这张表只要 5ms），
+        # 因为集合返回函数里的循环**不会**被外层 WHERE 下推。
+        # 首页要为 7 个指标各查一次，不传参就是 **4.8 秒**的数据库开销，而且是**公网页面**。
+        # 传参之后每次约 20ms。教训：把"便宜的查询"做成公开接口之前，先量它的真实代价。
+        rows = try_read(c, "SELECT n_rows FROM mt.public_counts(%s)", (tbl,))
         if rows is None:
             denied.append(label)
             continue
@@ -4578,13 +4665,17 @@ def view_quality(c, qs) -> bytes:
     null_rows.sort(key=lambda x: (-x["空值率%"], x["表"], x["列"]))
     worst = null_rows[:25]
 
-    # 空表清单：**逐表精确计数，但走聚合闸门 mt.public_counts()**。
+    # 空表清单：**精确计数，但走聚合闸门 mt.public_counts()**。
     # 曾经这里是对每张表用**会话连接**跑 `count(*)`，而 039 的 `login_attempt`
     # 刻意对应用角色零授权 —— 于是**一张表的收紧把整页打成 403**，
     # 而且提示自相矛盾（"需要 T2，你当前是 T3"）。实测踩到。
     # 正解就是 031 已经建立的闸门：它以属主身份计数，不需要任何列权限，
     # 一次调用拿到全部精确行数（N 次查询变 1 次），且"数量公开"与"列受限"不再互相牵制。
     # 闸门自带排除清单（041 的 public_count_excluded：登录流水等行数也属运维信息）。
+    #
+    # 这里**不传表名**（要的就是全量清单），所以是闸门里最贵的一次调用（约 470ms，
+    # 因为要数 change_log 这类 10 万行级大表）。质量页是需要 T2 的页面、访问量低，
+    # 这个代价可以接受；公开落地页则必须传表名（见 public_overview 的说明）。
     try:
         counts = {r["table_name"]: r["n_rows"] for r in q(c, "SELECT * FROM mt.public_counts()")}
         empty = [t for t in sorted(meta()["by_name"]) if counts.get(t, 0) == 0]
@@ -4793,10 +4884,87 @@ python code\\demo\\portal_dev.py --serve   # 开发者模式 http://127.0.0.1:80
 # HTTP 服务
 # ---------------------------------------------------------------------------
 class Handler(BaseHTTPRequestHandler):
+    # 过长或恶意的请求头不要拖住线程（默认没有上限）
+    protocol_version = "HTTP/1.1"
+    timeout = 300
+
+    def handle_one_request(self):
+        """每个请求先过**并发闸**（见 MAX_CONCURRENT_REQUESTS 的说明）。
+
+        为什么在 `handle_one_request` 而不是 do_GET/do_POST：
+        这里能覆盖**全部**方法（GET/POST/HEAD/OPTIONS/未知方法），
+        而写两遍一定会漏一个 —— 和 `_send` 统一记审计是同一个道理：**单点**。
+        """
+        acquired = _REQ_SEM.acquire(timeout=_REQ_WAIT_SECONDS)
+        if not acquired:
+            self._drain_then_busy()
+            return
+        try:
+            super().handle_one_request()
+        finally:
+            _REQ_SEM.release()
+
+    def _drain_then_busy(self):
+        """排队超时：**先把请求读掉**，再回 503。
+
+        为什么不能直接写响应就关连接（第一版就是这么写的，实测踩到）：
+        此时请求行/请求头还在客户端的发送缓冲里，服务端"响应先于请求读完"就
+        `close_connection`，客户端看到的是 `URLError`/连接被重置 ——
+        而不是我们精心写的 503。**客户端拿到什么，才算我们做到了什么。**
+        所以这里先把请求头解析掉（不碰数据库，很便宜），再明确回 503 + Retry-After。
+        """
+        try:
+            self.raw_requestline = self.rfile.readline(65537)
+            if len(self.raw_requestline) > 65536 or not self.raw_requestline:
+                self.close_connection = True
+                return
+            if not self.parse_request():        # 内含畸形请求的处理（会自己回 4xx）
+                return
+            self.close_connection = True
+            body = page("服务繁忙",
+                        '<div class="note warn"><b>服务繁忙，请稍后重试。</b></div>'
+                        '<div class="card"><p>当前同时处理的请求已达上限（%d），'
+                        '这一请求排队 %.0f 秒仍未轮到，已被拒绝，'
+                        '<b>没有</b>执行任何查询。</p>'
+                        '<p class="muted">这是过载保护：限制并发是为了不把'
+                        '数据库连接吃光（每个请求最多用 3 条连接，'
+                        '而 PostgreSQL 的 max_connections 是有限的），'
+                        '从而让已进入的请求能正常完成。</p>'
+                        '<p><a href="/">稍后重试</a></p></div>'
+                        % (MAX_CONCURRENT_REQUESTS, _REQ_WAIT_SECONDS))
+            self.send_response(503)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Retry-After", "3")
+            self.end_headers()
+            self.wfile.write(body)
+        except OSError:
+            # 客户端已经走了：什么都不用做，也别让异常冒到 socketserver
+            pass
+
     server_version = "MedTalentPortal/1.0"
 
     def log_message(self, fmt, *args):      # 安静一点，演示时不刷屏
         pass
+
+    def _cookie_flags(self) -> str:
+        """会话 cookie 的安全标记。**Secure 只在真的走 HTTPS 时加。**
+
+        为什么要按请求判断，而不是写死：
+          · 写死 `Secure` → 本机 http://127.0.0.1 下浏览器**不回传** cookie，
+            表现为"登录成功但立刻又是未登录"，很难查；
+          · 写死不加 → 公网（Cloudflare 隧道，浏览器看到的是 https）的 cookie
+            可以经明文 HTTP 泄露 —— 而公网正是最需要它的地方。
+        判断依据：反向代理的 `X-Forwarded-Proto`；没有该头时看 Host 是不是本机。
+        `SameSite=Lax` 挡跨站携带，`HttpOnly` 挡 JS 读取，这三项一起才是完整的。
+        """
+        proto = (self.headers.get("X-Forwarded-Proto") or "").strip().lower()
+        if proto:
+            secure = proto == "https"
+        else:
+            host = (self.headers.get("Host") or "").split(":")[0].strip().lower()
+            secure = host not in ("", "127.0.0.1", "localhost", "[::1]")
+        return ("; Path=/; HttpOnly; SameSite=Lax" + ("; Secure" if secure else ""))
 
     def _send(self, status, body: bytes, ctype="text/html; charset=utf-8", extra=None):
         extra = dict(extra or {})
@@ -4882,7 +5050,7 @@ class Handler(BaseHTTPRequestHandler):
                     log_visit(sess, "logout", "web")
                     return self._send(302, b"", extra={
                         "Location": "/",
-                        "Set-Cookie": "%s=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"
+                        "Set-Cookie": "%s=" % (COOKIE,) + self._cookie_flags() + "; Max-Age=0"
                                       % SESSION_COOKIE})
                 if path == "/audit":
                     return self._send(200, view_audit(c, qs, sess))
@@ -4999,6 +5167,34 @@ class Handler(BaseHTTPRequestHandler):
             # 页面在渲染过程中发现权限不够：用它渲染好的页面，但状态码必须是 403
             self._audit_detail = {"need": e.need}
             return self._send(403, e.body)
+        except psycopg.OperationalError as e:
+            # **数据库连不上/连接数打满**必须与"权限不足"区分开，而且不能是 500。
+            # 实测背景：`max_connections = 50`，而门户**每个请求要开 3 条连接**
+            # （会话查询 + 页面查询 + 审计各一条），线程模型又是"一请求一线程、无上限"。
+            # 公网被并发打满时 PostgreSQL 会回 `sorry, too many clients already` ——
+            # 那不是"服务器坏了"，而是**过载**，正确响应是 503 + Retry-After，
+            # 让调用方（和 Cloudflare）知道该退避重试，而不是收到一个 500 后不断重试加剧过载。
+            msg = str(e).splitlines()[0] if str(e) else ""
+            overload = ("too many clients" in msg or "connection" in msg.lower()
+                        or "could not connect" in msg.lower())
+            if overload:
+                self._audit_detail = {"overloaded": True, "db_error": msg[:200]}
+                return self._send(503, page(
+                    "服务繁忙",
+                    '<div class="note warn"><b>服务繁忙，请稍后重试。</b></div>'
+                    '<div class="card"><p>当前并发请求超过了数据库连接上限，'
+                    '系统主动拒绝了这一请求，<b>没有</b>执行任何查询。'
+                    '这是过载保护，不是数据出错。</p>'
+                    '<p class="muted">数据库原话：%s</p>'
+                    '<p><a href="/">稍后重试</a></p></div>' % esc(msg[:200]),
+                    session=sess), extra={"Retry-After": "3"})
+            self._audit_detail = {"db_error": msg[:200]}
+            return self._send(503, page(
+                "数据库暂不可用",
+                '<div class="note err"><b>数据库暂时不可用。</b></div>'
+                '<div class="card"><p class="muted">%s</p>'
+                '<p><a href="/">重试</a></p></div>' % esc(msg[:200]),
+                session=sess), extra={"Retry-After": "5"})
         except psycopg.errors.InsufficientPrivilege as e:
             # **权限不足是正常状态，不是 500。** 让数据库的拒绝变成一句人话。
             need = _required_tier_for(path)
@@ -5075,12 +5271,14 @@ class Handler(BaseHTTPRequestHandler):
         log_visit(Session(actor=r["actor"], tier=r["tier"], session_id=r["session_id"],
                           ok=True), "login", "web")
         # 会话 cookie 只放随机 id：等级由数据库里的行决定，不放客户端。
-        # HttpOnly 挡 XSS 读 cookie；SameSite=Lax 挡跨站携带；Secure 留给 Cloudflare 终止 TLS 之后再加
-        # （本机 127.0.0.1 是 http，加了 Secure 浏览器就不回传，登录会"成功但没生效"）。
+        # 三个标记一起才完整：HttpOnly 挡 JS 读取、SameSite=Lax 挡跨站携带、
+        # **Secure 只在真的走 HTTPS 时加**（见 _cookie_flags：
+        # 本机 http 下加了浏览器就不回传，表现为"登录成功但仍是未登录"；
+        # 而公网走 Cloudflare 隧道时**必须**加，否则 cookie 可经明文泄露）。
         return self._send(302, b"", extra={
             "Location": "/",
-            "Set-Cookie": "%s=%s; Path=/; Max-Age=28800; HttpOnly; SameSite=Lax"
-                          % (SESSION_COOKIE, r["session_id"])})
+            "Set-Cookie": "%s=%s" % (SESSION_COOKIE, r["session_id"])
+                          + self._cookie_flags() + "; Max-Age=28800"})
 
     def _table_csv(self, c, name, qs) -> bytes:
         m = meta()

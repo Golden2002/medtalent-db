@@ -47,16 +47,85 @@ ADMIN = ("host=127.0.0.1 port=55432 dbname=medtalent user=postgres connect_timeo
 RESULTS = []
 
 
-def add(dim, iid, title, value, target, level, how, note=""):
-    """登记一条指标。how 是"怎么测出来的"，必须能在结果里复核。"""
-    if level == "INFO":
-        ok = True
-    elif level == "MUST":
+def parse_target(target):
+    """把目标的**声明形式**解析成 (比较符, 数值或期望值)。
+
+    为什么必须解析（实测的严重缺陷）：原来写的是
         ok = value == target if isinstance(target, (int, str)) else value >= target
-    else:
-        ok = True
+    目标是字符串时会走 **`value == target`** —— 于是 `"≥70"`、`"相等"`、`">0"` 这类
+    声明的判定**永远为 False**，再被下面的"非 MUST 一律 ok=True"掩盖成 OK。
+    后果：I2.2（字段字典覆盖率 7.8% vs ≥70）、I4.3（7.4% vs ≥30）、
+    I5.1 等**多条指标的"OK"是假的**，从未真正被检查 —— 记分卡在骗人。
+    这是"门禁本身不可信"，比任何单条指标不达标都严重：它让所有 OK 都失去意义。
+    """
+    if target is None:
+        return "info", None
+    if isinstance(target, (int, float)):
+        return "==", target
+    s = str(target).strip()
+    for op, syms in ((">=", ("≥", ">=")), ("<=", ("≤", "<=")),
+                     (">", (">",)), ("<", ("<",)),
+                     ("!=", ("≠", "!=")), ("==", ("=", "相等"))):
+        for sym in syms:
+            if s.startswith(sym):
+                rest = s[len(sym):].strip()
+                if rest == "" and op == "==":
+                    return "==", None      # "相等" 只有符号没有值：交给调用方用 value==value
+                try:
+                    return op, float(rest)
+                except ValueError:
+                    return op if op != "==" else "text==", rest
+    try:
+        return ">=", float(s)              # 裸数字默认"越大越好"
+    except ValueError:
+        return "text==", s
+
+
+def add(dim, iid, title, value, target, level, how, note="", ok=None):
+    """登记一条指标。how 是"怎么测出来的"，必须能在结果里复核。
+
+    `ok` 可以**显式传入**：有些指标的正确判定不是"数值比大小"
+    （例如"某个函数能不能跑通"），让调用方直说，比塞进比较符里更清楚。
+
+    级别语义（修正后）：
+      · MUST —— 不达标就是缺陷，门禁会红；
+      · SHOULD —— **也会红**（原来被 `else: ok = True` 一律放过，等于 SHOULD 形同虚设）；
+      · INFO —— 只报数，不判定。
+    """
+    if ok is None:
+        if level == "INFO":
+            ok = True
+        else:
+            op, tgt = parse_target(target)
+            if op == "info":
+                ok = True
+            elif op == "==" and tgt is None:
+                # "相等" 且值形如 "N/M"（指标里用来表达"分子==分母"，例如
+                # "禁止导出策略的强制点数 / 总条数 = 5/5"、"迁移文件/台账 = 42/42"）。
+                # 不能笼统地"比不了就算过" —— 那正好是原来那个假 OK 的成因。
+                m = re.match(r"^\s*(\d+)\s*/\s*(\d+)", str(value))
+                if m:
+                    ok = (int(m.group(1)) == int(m.group(2)))
+                else:
+                    raise ValueError(
+                        "指标 %s 的目标是「相等」，但值是 %r，无法判定。"
+                        "请让调用方显式传 ok=..." % (iid, value))
+            elif op == ">=":
+                ok = float(value) >= tgt
+            elif op == "<=":
+                ok = float(value) <= tgt
+            elif op == ">":
+                ok = float(value) > tgt
+            elif op == "<":
+                ok = float(value) < tgt
+            elif op == "!=":
+                ok = float(value) != tgt
+            elif op == "text==":
+                ok = str(value) == str(tgt)
+            else:
+                ok = float(value) == tgt
     RESULTS.append({"dim": dim, "id": iid, "title": title, "value": value,
-                    "target": target, "level": level, "ok": ok, "how": how,
+                    "target": target, "level": level, "ok": bool(ok), "how": how,
                     "note": note})
 
 
@@ -202,8 +271,13 @@ def d3_performance(c):
         "对 %d 行的 change_log 实测一次精确计数" % n)
 
     # I3.2 一次"列浓度剖析"的耗时（目录页要展示数量/空值率，必须知道代价）
+    # ⚠ 列名必须与真实表一致。原来这里写的是 `count(action)`，而 change_log 没有
+    #    `action` 列（实际是 `change_type`）—— 于是**整个 D3 维度报
+    #    `column "action" does not exist` 而只输出 I3.1**。
+    #    这是"指标写错看起来像体检正常"的典型：维度崩了，但没人注意少了几条。
     t0 = time.time()
-    c.execute("""SELECT count(*) AS n, count(actor) AS n_actor, count(action) AS n_action
+    c.execute("""SELECT count(*) AS n, count(actor) AS n_actor,
+                        count(change_type) AS n_type
                    FROM mt.change_log""").fetchone()
     ms2 = round((time.time() - t0) * 1000)
     add("D3", "I3.2", "最大表 3 列浓度剖析耗时（毫秒）", ms2, 3000, "SHOULD",
@@ -322,8 +396,10 @@ def d4_security(c):
     add("D4", "I4.4", "禁止导出策略的强制点数 / 总条数",
         "%s/%s（落点 %s 列）" % (n_landed, n_x_policy, n_den_col), "相等", "MUST",
         "access_policy(action='export_row',min_tier='X') 对比 export_denied.policy_id；"
-        "强制点在 portal.to_csv()——CSV 的**唯一出口**")
-    RESULTS[-1]["ok"] = (n_x_policy > 0 and n_landed == n_x_policy)
+        "强制点在 portal.to_csv()——CSV 的**唯一出口**",
+        # 显式传 ok，而不是事后改 RESULTS[-1]：
+        # 事后改会让"判定"与"登记"分家，读代码的人看不到真正的判据在哪。
+        ok=(n_x_policy > 0 and n_landed == n_x_policy))
 
     # I4.5 访问日志是否真的在写（"记录访问用户"这条需求的直接证据）
     n_log = q1(c, "SELECT count(*) FROM mt.access_log")
@@ -349,16 +425,42 @@ def d4_security(c):
 
 def d5_maintainability(c):
     """D5 可维护性与可演进：改一次结构要付多少代价、会不会让库与定义漂移。"""
+    # I5.0 **授权对账入口可用 + 权限不变式成立**（独立审查的建议，对应 P0-2）
+    #
+    # 为什么必须单独有一条：`mt.apply_column_grants()` 是本项目**唯一的授权对账入口**。
+    # 曾因为 042 DROP 掉无参 `public_counts()` 却漏改基线函数里的 GRANT，
+    # 它整体报错 —— 而**没有任何指标盯着它**，于是"权限自愈"静默失效：
+    # 任何策略调整都落不到实际授权上，只能手工 GRANT。
+    # 这是"注释里承诺的能力"与"实测的能力"之间的又一次分叉，所以做成 MUST。
+    inv_bad = []
+    try:
+        c.execute("SELECT * FROM mt.apply_column_grants()").fetchall()
+        reconcile_ok = True
+        reconcile_note = "apply_column_grants() 正常返回"
+    except psycopg.Error as e:
+        reconcile_ok = False
+        reconcile_note = str(e).splitlines()[0][:160]
+    try:
+        for r in c.execute("SELECT invariant, ok, detail FROM mt.check_policy_invariants()"):
+            if not r["ok"]:
+                inv_bad.append("%s（%s）" % (r["invariant"], r["detail"]))
+    except psycopg.Error as e:
+        inv_bad.append("不变式检查本身失败：%s" % str(e).splitlines()[0][:120])
+    add("D5", "I5.0", "授权对账入口可用 且 权限不变式成立",
+        "可用；不变式 %s" % ("全部成立" if not inv_bad else "违反 %d 条" % len(inv_bad)),
+        "相等", "MUST",
+        "调用 mt.apply_column_grants() 一次（它是对账唯一入口）+ mt.check_policy_invariants()",
+        ok=(reconcile_ok and not inv_bad),
+        note=reconcile_note + (" || 违反：" + "；".join(inv_bad) if inv_bad else ""))
+
     # I5.1 迁移台账一致性
     n_files = len([f for f in os.listdir(os.path.join(BASE, "schema", "sql"))
                    if f.endswith(".sql")])
     n_ledger = q1(c, "SELECT count(*) FROM mt.schema_migration")
     add("D5", "I5.1", "迁移文件数 / 台账条数", "%d/%d" % (n_files, n_ledger),
-        "相等", "SHOULD", "schema/sql/*.sql 对比 mt.schema_migration（不等说明有未登记的漂移）")
-    if n_files == n_ledger:
-        RESULTS[-1]["ok"] = True
-    else:
-        RESULTS[-1]["ok"] = False
+        "相等", "SHOULD", "schema/sql/*.sql 对比 mt.schema_migration（不等说明有未登记的漂移）",
+        ok=(n_files == n_ledger),
+        note="不等通常意味着：有迁移文件未登记，或有迁移被改过（漂移）")
 
     # I5.2 字典即代码：码值在库与 CSV 之间是否一致
     # **真跑一次校验器并解析结果**，而不是写一句"由某脚本保证"——
@@ -401,17 +503,26 @@ def d6_observability(c):
         "-", "INFO", "change_log：由触发器写入，是「数据何时变成现在这样」的唯一依据")
     add("D6", "I6.2", "访问日志行数", q1(c, "SELECT count(*) FROM mt.access_log"), ">0", "SHOULD",
         "access_log：谁在什么时候读了什么")
+    # ⚠ LIKE 里的 `%` 必须写成 `%%`：psycopg 会把 `%h` 当成占位符，
+    #    报 `only '%s','%b','%t' are allowed as placeholders, got '%h'`，
+    #    **整个 D6 维度直接崩掉**，于是 I6.3 从未被输出过。
+    #    这是"指标写错看起来像体检正常"的又一例：维度没了，但摘要仍说 35 条。
     add("D6", "I6.3", "健康/质量类视图数",
         q1(c, """SELECT count(*) FROM information_schema.views
-                  WHERE table_schema='mt' AND (table_name LIKE 'v_%health%'
-                        OR table_name LIKE 'v_%coverage%' OR table_name LIKE 'v_%quality%'
-                        OR table_name LIKE 'v_%policy%')"""), "≥4", "SHOULD",
-        "视图名含 health/coverage/quality/policy 的数量")
-    bk = q1(c, """SELECT max(finished_at) FROM mt.backup_manifest WHERE status='ok'""") \
+                  WHERE table_schema='mt' AND (table_name LIKE 'v_%%health%%'
+                        OR table_name LIKE 'v_%%coverage%%' OR table_name LIKE 'v_%%quality%%'
+                        OR table_name LIKE 'v_%%policy%%')"""), "≥4", "SHOULD",
+        "视图名含 health/coverage/quality/policy 的数量（LIKE 的 % 已转义为 %%）")
+    # 备份新鲜度：表名实测是 `backup_run`（不是 `backup_manifest`）——
+    # 原写法查一张不存在的表，静默退化成"无记录"，等于**从未检查过备份新鲜度**。
+    bk = q1(c, """SELECT max(finished_at) FROM mt.backup_run WHERE status='ok'""") \
         if q1(c, """SELECT count(*) FROM information_schema.tables
-                    WHERE table_schema='mt' AND table_name='backup_manifest'""") else None
-    add("D6", "I6.4", "最近一次成功备份时间", str(bk) if bk else "无记录", "-", "INFO",
-        "backup_manifest 里 status='ok' 的最新一条")
+                    WHERE table_schema='mt' AND table_name='backup_run'""") else None
+    bk_txt = str(bk)[:19] if bk else "无记录"
+    add("D6", "I6.4", "最近一次成功备份时间", bk_txt, "-", "SHOULD",
+        "mt.backup_run 里 status='ok' 的最新 finished_at",
+        ok=bool(bk),   # 显式判定：备份新鲜度是"必须存在"的性质，不是数值比较
+        note="没有成功备份记录 = 这条 SHOULD 不达标（原来因表名写错而永远显示「无记录」却判 OK）")
 
 
 def d7_cost(c):

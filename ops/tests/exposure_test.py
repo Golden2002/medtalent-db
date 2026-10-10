@@ -19,12 +19,16 @@ D. **部署层**：隧道的端口白名单只有只读门户；门户只绑回�
 """
 from __future__ import annotations
 
+import concurrent.futures
+import csv
 import inspect
+import io
 import os
 import re
 import sys
 import threading
 import urllib.error
+import urllib.parse
 import urllib.request
 from http.server import ThreadingHTTPServer
 
@@ -56,7 +60,14 @@ PUBLIC = ["/", "/catalog", "/schema", "/search", "/analyze", "/viz", "/sql", "/l
 # 受限页：必须 403（含个人数据或内部运营数据）
 DENIED = ["/talent", "/talent.csv", "/real", "/quality", "/audit", "/occupations",
           "/match", "/tree", "/lineage", "/extend", "/t/person", "/t/person_pii",
-          "/field/person/person_id", "/field/person/subject_code"]
+          "/field/person/person_id", "/field/person/subject_code",
+          # ⚠ 独立审查指出的漏检：原来这里**只列了 person 表**的两个字段页。
+          # 而主体标识在 29 张子表里都存在 —— 匿名因此能通过
+          # /field/evidence/person_id 拿到"真实人物 id + 精确条数"。
+          # 教训：清单式断言必须覆盖**同一类对象的全部**，否则它守的是"这一个"而不是"这一类"。
+          "/field/evidence/person_id", "/field/award_honor/person_id",
+          "/field/education_record/person_id", "/field/research_output/person_id",
+          "/field/person_pii/full_name_enc", "/t/app_user", "/t/login_attempt"]
 
 # 内容层的精确标记（**必须精确**：第一版用 `'@' in body` 判"含个人数据"，
 # 结果每个页面都报 True —— 因为 CSS 里有 @media。粗糙的检测等于没有检测）
@@ -96,34 +107,35 @@ def _fetch_with(path, cookie):
         return e.code, e.read().decode("utf-8", "replace"), dict(e.headers)
 
 
-def _login_t3():
-    """用一个临时 T3 账号登录，拿会话 cookie（导出禁令对 T3 才有意义：
-    低等级本来就看不到那些列，测不出"能看不能导"）。
-
-    账号自建自删，前缀 exposure_test@，不污染库。
-    """
+def _ensure_t3():
+    """建（或重建）一个临时 T3 账号，返回 (邮箱, 口令)。账号自建自删，不污染库。"""
     import psycopg
     from psycopg.rows import dict_row
     email, pw = "exposure_test@local.test", "exposure-test-pw-3a71"
     admin = ("host=127.0.0.1 port=55432 dbname=medtalent user=postgres connect_timeout=5 "
              "options='-c search_path=mt,public'")
+    with psycopg.connect(admin, row_factory=dict_row, autocommit=True) as c:
+        c.execute("""DELETE FROM mt.web_session WHERE user_id IN
+                       (SELECT user_id FROM mt.app_user WHERE email=%s)""", (email,))
+        c.execute("DELETE FROM mt.app_user WHERE email=%s", (email,))
+        c.execute("SELECT mt.web_user_add(%s,%s,'T3','暴露面测试')", (email, pw))
+    return email, pw
+
+
+def _login_t3():
+    """用一个临时 T3 账号登录，拿会话 cookie（导出禁令对 T3 才有意义：
+    低等级本来就看不到那些列，测不出"能看不能导"）。
+    """
+    email, pw = _ensure_t3()
+    req = urllib.request.Request(ROOT + "/login")
+    req.data = urllib.parse.urlencode({"email": email, "password": pw}).encode()
+    req.method = "POST"
     try:
-        with psycopg.connect(admin, row_factory=dict_row, autocommit=True) as c:
-            c.execute("""DELETE FROM mt.web_session WHERE user_id IN
-                           (SELECT user_id FROM mt.app_user WHERE email=%s)""", (email,))
-            c.execute("DELETE FROM mt.app_user WHERE email=%s", (email,))
-            c.execute("SELECT mt.web_user_add(%s,%s,'T3','暴露面测试')", (email, pw))
-        req = urllib.request.Request(ROOT + "/login")
-        req.data = urllib.parse.urlencode({"email": email, "password": pw}).encode()
-        req.method = "POST"
-        try:
-            with urllib.request.build_opener(_NoRedirect()).open(req, timeout=30) as r:
-                sc = r.headers.get("Set-Cookie") or ""
-        except urllib.error.HTTPError as e:
-            sc = e.headers.get("Set-Cookie") or ""
-        return sc.split(";")[0]
-    except Exception:                                     # noqa: BLE001
-        return None
+        with urllib.request.build_opener(_NoRedirect()).open(req, timeout=30) as r:
+            sc = r.headers.get("Set-Cookie") or ""
+    except urllib.error.HTTPError as e:
+        sc = e.headers.get("Set-Cookie") or ""
+    return sc.split(";")[0]
 
 
 def _cleanup_t3():
@@ -286,6 +298,200 @@ def main():
         check(n == 0 and t == 0,
               "四个写尝试**没有留下任何痕迹**（探测行 %d、probe_table %d）—— "
               "这是「公网只读」的实证，不是文案" % (n, t))
+
+        # ===============================================================
+        print("\n【I】权限不变式（独立审查发现的 P0/P1 都在这里变成断言）")
+        with psycopg.connect(_ADMIN_DSN, row_factory=dict_row, autocommit=True) as c:
+            # I-1 主体标识：**全部表**都不许对匿名开放（P0-1）
+            #     030 曾按表名只保护 person/person_pii 两张，于是另外 29 张子表的
+            #     person_id 全是 T0，匿名能枚举全库主体、并从公开剖析视图拿到
+            #     取值+精确频次（per_real_fengtang 等编码姓名的 id）。
+            n_t0 = c.execute("""SELECT count(*) AS n FROM mt.column_policy
+                                 WHERE column_name IN ('person_id','subject_code')
+                                   AND mt.access_rank(min_tier) <= mt.access_rank('T0')"""
+                             ).fetchone()["n"]
+            check(n_t0 == 0, "没有任何表的主体标识列 ≤ T0（实测 %d 个）" % n_t0)
+            # I-2 公开剖析视图不得交出主体标识的取值（P0-1 的第二层）
+            n_top = c.execute("""SELECT count(*) AS n FROM mt.v_column_profile_public
+                                  WHERE column_name IN ('person_id','subject_code')
+                                    AND top_values IS NOT NULL""").fetchone()["n"]
+            check(n_top == 0, "公开剖析视图没有交出主体标识的 Top-K 取值（%d 条）" % n_top)
+            # I-3 凭据列不得对任何等级角色外授（P1-2）
+            cred = [r for r in c.execute("""SELECT unnest(ARRAY['mt_portal','mt_t0','mt_t1',
+                                                'mt_t2','mt_t3']) AS r""")
+                    if c.execute("SELECT has_column_privilege(%s,'mt.app_user',"
+                                 "'password_hash','SELECT') AS x", (r["r"],)).fetchone()["x"]]
+            check(not cred, "口令哈希对任何等级角色都不可读（可读的：%s）"
+                  % ("、".join(x["r"] for x in cred) or "无"))
+            # I-4 本库自有函数不得对 PUBLIC 可执行（P1-3：原来 82 个）
+            n_pub = c.execute("SELECT count(*) AS n FROM mt.v_function_public_exposure"
+                              ).fetchone()["n"]
+            check(n_pub == 0, "本库自有函数对 PUBLIC 的可执行数 = %d（期望 0）" % n_pub)
+            # I-5 不变式检查函数本身必须全部成立（P0-2 的守卫）
+            inv = c.execute("SELECT invariant, ok, detail FROM mt.check_policy_invariants()"
+                            ).fetchall()
+            bad = ["%s（%s）" % (r["invariant"], r["detail"]) for r in inv if not r["ok"]]
+            check(not bad and len(inv) >= 4,
+                  "权限不变式全部成立（%d 条）；违反：%s" % (len(inv), "；".join(bad) or "无"))
+            # I-6 授权对账入口必须可跑（P0-2：曾因 public_counts 签名不一致整体报错）
+            try:
+                c.execute("SELECT * FROM mt.apply_column_grants()").fetchall()
+                recon = True
+            except psycopg.Error:
+                recon = False
+            check(recon, "授权对账入口 apply_column_grants() 可正常执行（唯一自愈路径）")
+            # I-9 只读辅助函数的"自动放行"规则（047）
+            #     045 的"一刀切拒绝"曾把门户要用的 occupation_asof 也锁死 → /tree 对
+            #     T3 管理员 403。判据必须是函数属性（非 DEFINER + 只读），不是名字清单。
+            n_definer = c.execute("""SELECT count(*) AS n FROM mt.read_only_helpers() h
+                                       JOIN pg_proc p ON p.proname = h.proname
+                                       JOIN pg_namespace ns ON ns.oid = p.pronamespace
+                                                            AND ns.nspname = 'mt'
+                                      WHERE p.prosecdef""").fetchone()["n"]
+            check(n_definer == 0,
+                  "自动放行的只读函数里没有 SECURITY DEFINER（%d 个）—— "
+                  "DEFINER 会绕过调用者权限，绝不能自动放行" % n_definer)
+            asof = c.execute("SELECT has_function_privilege('mt_t3',"
+                             "'mt.occupation_asof(date)','EXECUTE') AS t3,"
+                             " has_function_privilege('mt_t1',"
+                             "'mt.occupation_asof(date)','EXECUTE') AS t1").fetchone()
+            check(asof["t3"] and asof["t1"],
+                  "页面要用的只读辅助函数 occupation_asof 对 T1/T3 可执行（否则 /tree 会 403）")
+            write_ok = c.execute("""SELECT has_function_privilege('mt_t3',
+                     'mt.set_value(text,text,text,text,text[],numeric,text,date,text,'
+                     'smallint,numeric)','EXECUTE') AS x""").fetchone()["x"]
+            check(not write_ok, "写函数 set_value 仍不可被等级角色执行（收得紧）")
+        # I-7 密码强度：新口令必须是 cost ≥ 12（原来 pgcrypto 默认 6）
+        with psycopg.connect(_ADMIN_DSN, row_factory=dict_row, autocommit=True) as c:
+            weak = c.execute("""SELECT count(*) AS n FROM mt.app_user
+                                 WHERE mt.password_hash_cost(password_hash) < 12""").fetchone()["n"]
+        check(weak == 0, "没有 bcrypt cost < 12 的账号（实测 %d 个）" % weak)
+
+        # ===============================================================
+        print("\n【H】运行健壮性：性能上界、导出安全、过载降级")
+        # H1 聚合闸门必须能"只数一张表"。实测过的事故：不带参数时闸门会把全部
+        #    89 张表数一遍（含 change_log 这类十万行级大表），而外层 WHERE **不会下推**
+        #    —— 取 person 一张表的行数要 689ms，而直接数它只要 5ms。
+        #    公开落地页要为 7 个指标各查一次 → 匿名打开一次首页约 4.8 秒数据库开销，
+        #    而且是**公网**页面。所以这里把"代价"本身做成断言。
+        import time as _t
+        with psycopg.connect(portal.PORTAL_DSN, row_factory=dict_row, autocommit=True) as c:
+            c.execute("SET ROLE mt_t0")
+            t0 = _t.time()
+            one = c.execute("SELECT n_rows FROM mt.public_counts('person')").fetchone()["n_rows"]
+            ms_one = (_t.time() - t0) * 1000
+            t0 = _t.time()
+            n_all = len(c.execute("SELECT * FROM mt.public_counts()").fetchall())
+            ms_all = (_t.time() - t0) * 1000
+            c.execute("RESET ROLE")
+        check(one == 123, "闸门按表查询返回正确的行数（person=%s）" % one)
+        check(ms_one < 250 and ms_all > ms_one,
+              "按表查询明显快于全量（单表 %.0fms vs 全量 %.0fms，共 %d 张表）—— "
+              "这才让公开页敢用它" % (ms_one, ms_all, n_all))
+        # 首页端到端时间上界（含渲染）：改前约 4.8 秒数据库开销
+        t0 = _t.time()
+        st, body = fetch("/")
+        ms_page = (_t.time() - t0) * 1000
+        check(st == 200 and ms_page < 3000,
+              "匿名首页端到端 %.0fms（上界 3000ms）—— 数量走闸门后不再拖慢公网页面" % ms_page)
+
+        # H2 CSV 公式注入：以 = + - @ 制表符开头的单元格必须变成纯文本
+        #    （导出的是外部来源的原始文本，不由我们控制；Excel 打开会当公式执行）
+        sample = [{"a": "=HYPERLINK(\"http://evil\",\"点我\")", "b": "@SUM(1:2)"},
+                  {"a": "-2+3", "b": 12345}]
+        out = portal.to_csv(["a", "b"], sample).decode("utf-8-sig")
+        rows = list(csv.reader(io.StringIO(out)))
+        check(all(not str(v).startswith(("=", "+", "@", "\t", "\r"))
+                  for v in rows[1]), "CSV 里没有以公式字符开头的单元格（%s）" % rows[1])
+        check(str(rows[2][1]) == "12345" and "-2+3" in out,
+              "数字未被误改、内容未被删除（只加文本前缀）")
+
+        # H3 会话 cookie：本机 http 不加 Secure（加了浏览器不回传，登录会"成功但没生效"）；
+        #    经反向代理走 https 时必须加（否则公网 cookie 可经明文泄露）
+        #    用**真实账号**登录：第一版拿假账号测，登录失败 → 根本没有 Set-Cookie，
+        #    于是断言在测"空字符串"（实测踩到：一条看起来在测安全的断言其实啥也没测）。
+        email3, pw3 = _ensure_t3()
+
+        def _login_headers(extra=None):
+            req = urllib.request.Request(ROOT + "/login")
+            req.data = urllib.parse.urlencode({"email": email3, "password": pw3}).encode()
+            req.method = "POST"
+            for k, v in (extra or {}).items():
+                req.add_header(k, v)
+            try:
+                with urllib.request.build_opener(_NoRedirect()).open(req, timeout=30) as r:
+                    return r.headers.get("Set-Cookie") or ""
+            except urllib.error.HTTPError as e:
+                return e.headers.get("Set-Cookie") or ""
+
+        local_ck = _login_headers()
+        proxied_ck = _login_headers({"X-Forwarded-Proto": "https",
+                                     "Host": "example.trycloudflare.com"})
+        check(bool(local_ck), "真实账号登录确实拿到了 Set-Cookie（否则下面的断言在测空串）")
+        check("Secure" not in local_ck,
+              "本机 http 的会话 cookie 不带 Secure（否则浏览器不回传）")
+        check("Secure" in proxied_ck and "HttpOnly" in proxied_ck
+              and "SameSite" in proxied_ck,
+              "经 https 反向代理时会话 cookie 三个标记齐全（HttpOnly+SameSite+Secure）")
+
+        # H4 过载降级：把并发闸临时缩小，用慢查询占满它，确认多出来的请求拿到
+        #    **503 + Retry-After**，而不是 500、也不是挂死。
+        #    为什么要测这条：并发闸的价值不在"正常时照旧"，而在**压力最大时**
+        #    给出可退避的信号 —— 那条路径如果从没被触发过，就等于不存在。
+        #    背景：max_connections=50，而每个请求最多开 3 条连接；
+        #    ThreadingHTTPServer 是一请求一线程且无上限，不加闸就会被自己打满。
+        old_sem, old_wait = portal._REQ_SEM, portal._REQ_WAIT_SECONDS
+        portal._REQ_SEM = threading.BoundedSemaphore(2)
+        portal._REQ_WAIT_SECONDS = 0.3
+        try:
+            slow = ROOT + "/sql?" + urllib.parse.urlencode({"q": "SELECT pg_sleep(1)"})
+
+            def _hit(_i):
+                try:
+                    with urllib.request.urlopen(slow, timeout=60) as r:
+                        r.read()
+                        return r.status, r.headers.get("Retry-After")
+                except urllib.error.HTTPError as e:
+                    ra = e.headers.get("Retry-After")
+                    e.read()
+                    return e.code, ra
+                except Exception as e:                     # noqa: BLE001
+                    return type(e).__name__, None
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+                codes = list(ex.map(_hit, range(8)))
+            got = [c for c, _ in codes]
+            check(503 in got, "并发闸触发过载通道（状态分布 %s）" % got)
+            check(500 not in got, "过载时没有 500（过载不等于「服务器坏了」）")
+            check(all(isinstance(c, int) for c in got),
+                  "每个请求都拿到明确的 HTTP 结果，没有挂死或连接重置")
+            check(all(ra for c, ra in codes if c == 503),
+                  "所有 503 都带 Retry-After（调用方知道该退避多久）")
+        finally:
+            portal._REQ_SEM, portal._REQ_WAIT_SECONDS = old_sem, old_wait
+
+        # H5 元数据缓存**必须有失效机制**。原来是无条件永久缓存，而门户是长时间
+        #    运行的服务、**另一个进程**（开发者模式/迁移）会改结构 ——
+        #    "结构页显示的是门户启动那一刻的样子"会让目录页的卖点（看到真实的样子）失效。
+        m1 = portal.meta()
+        check(portal.meta() is m1, "元数据在有效期内复用缓存（不为每个请求重读系统目录）")
+        old_at = portal.META_AT
+        try:
+            portal.META_AT = _t.monotonic() - (portal.META_TTL_SECONDS + 60)
+            m2 = portal.meta()
+            check(m2 is not m1, "缓存过期后会重建（TTL=%ds）—— 结构变化不会永远看不到"
+                  % portal.META_TTL_SECONDS)
+            check(len(m2["rels"]) == len(m1["rels"]), "重建结果与原来一致（表数 %d）"
+                  % len(m2["rels"]))
+        finally:
+            portal.META_AT = old_at
+        # 显式刷新：必须是"真的重建"，所以断言返回的是**另一个对象**。
+        # （第一版写成 `... or True` —— 那是恒真断言，等于没测；
+        #   本项目把"测了个寂寞"列为要避免的反模式，不能自己犯。）
+        before = portal.meta()
+        after = portal.refresh_meta()
+        check(after is not before and len(after["rels"]) == len(before["rels"]),
+              "显式刷新 refresh_meta() 真的重建了元数据（%d 张表/视图）" % len(after["rels"]))
 
         # ===============================================================
         print("\n【G】登录限流：公开的登录入口必须防在线爆破（迁移 039）")
