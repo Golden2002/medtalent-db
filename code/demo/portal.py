@@ -847,7 +847,7 @@ NAV = [("/", "总览"), ("/catalog", "数据目录"), ("/viz", "可视化"), ("/
        ("/extend", "扩展与演化"),
        ("/schema", "表与视图"), ("/search", "检索"), ("/analyze", "分析"),
        # 交互式透视与漏斗：挑分类变量 → 交叉/占比/关联强度/分层；按业务路径看阶段转化
-       ("/pivot", "透视"), ("/funnel", "漏斗"),
+       ("/pivot", "透视"), ("/factors", "多因子"), ("/funnel", "漏斗"),
        ("/quality", "质量"), ("/audit", "访问日志"), ("/lineage", "血缘"), ("/sql", "SQL"),
        ("/dev", "开发者模式")]
 
@@ -2276,8 +2276,13 @@ ENTITY_LABEL = {"person": "人才（person）", "job_posting": "岗位（job_pos
 
 
 def _pivot_registry(c):
-    """读维度/口径/漏斗注册表。读不到就返回空，让页面降级而不是崩。"""
-    out = {"dims": {}, "metrics": {}, "funnels": [], "code": {}}
+    """读维度/口径/漏斗注册表。读不到就返回空，让页面降级而不是崩。
+
+    同时返回 `readable`：注册表的列等级是 **T1**（由对账机制决定，见迁移 058），
+    所以**匿名读不到**。这时页面要明确说"需要登录"，而不是给一个没有选项的空表单
+    ——空表单看起来像功能坏了，而实际上只是权限边界。
+    """
+    out = {"dims": {}, "metrics": {}, "funnels": [], "code": {}, "readable": False}
     try:
         for r in q(c, "SELECT * FROM mt.dimension_registry WHERE status='active' "
                       "ORDER BY entity, group_name, title"):
@@ -2289,6 +2294,7 @@ def _pivot_registry(c):
         for r in q(c, "SELECT funnel_id, title, domain, subject, note "
                       "FROM mt.funnel_registry WHERE status='active' ORDER BY funnel_id"):
             out["funnels"].append(r)
+        out["readable"] = True
     except psycopg.Error:
         return out
     try:
@@ -2297,6 +2303,19 @@ def _pivot_registry(c):
     except psycopg.Error:
         pass
     return out
+
+
+def _registry_login_note():
+    """注册表读不到时统一给出的话。"""
+    return ('<div class="card"><h2>需要登录</h2>'
+            '<div class="note">这一页的**口径、分类、漏斗定义**存放在数据库的注册表里，'
+            '而注册表的访问等级是 <b>T1（登录后可见）</b> —— '
+            '它是"分析层"的定义（该怎么算、按什么分层），'
+            '与匿名的"数据目录"（码表、字段字典）不是同一层。<br>'
+            '登录后即可看到全部可选维度与口径。'
+            '（这不是页面出错，是权限边界：本库的权限强制点在数据库，不在页面上。）</div>'
+            '<p><a class="btnlink" href="/login">去登录</a></p></div>')
+
 
 
 def _dim_label(reg, dim, code):
@@ -2393,6 +2412,11 @@ def view_pivot(c, qs) -> bytes:
                       esc(_dim_label(reg, tid, v))) for v in tvals)))
 
     if not rid or rid not in reg["dims"]:
+        if not reg["readable"]:
+            # 匿名读不到注册表（T1，见迁移 058）：明确说"需要登录"，
+            # 而不是给一个没有选项的空表单 —— 空表单看起来像功能坏了。
+            return page("透视", form + _registry_login_note(), kind="info",
+                        subtitle="口径与分类的定义需要登录后查看")
         return page("透视", form, subtitle="挑一个分类变量开始")
 
     def run(sel_rows, sel_cols, sel_by):
@@ -2522,6 +2546,9 @@ def view_funnel(c, qs) -> bytes:
     """漏斗：按业务路径看阶段转化，并把每阶段的说明一起显示。"""
     reg = _pivot_registry(c)
     if not reg["funnels"]:
+        if not reg["readable"]:
+            return page("漏斗", _registry_login_note(), kind="info",
+                        subtitle="漏斗定义需要登录后查看")
         return page("漏斗", '<div class="card"><div class="note">漏斗注册表是空的。</div>'
                             '</div>', kind="err", subtitle="还没有登记漏斗")
     fid = (qs.get("f", [""])[0] or reg["funnels"][0]["funnel_id"]).strip()
@@ -2565,6 +2592,211 @@ def view_funnel(c, qs) -> bytes:
                ('<div class="note">%s</div>' % esc(meta_row["note"]))
                if meta_row["note"] else ""))
     return page("漏斗", body, subtitle="按业务路径拆解的阶段转化")
+
+
+def view_factors(c, qs) -> bytes:
+    """多因子分析（3 个及以上因子）：粗关联 vs 调整后效应 + 四道护栏。
+
+    与 /pivot 的分工：
+      · /pivot   看**分布与两两关系**（交叉表、占比、Cramér's V、分层）
+      · /factors 看**多个因子同时进入模型后各自还剩多少关联**（控制混杂）
+
+    为什么这是"3 个及以上"才有的能力：两个因子只能各看各的；
+    **第三个因子才能把"A 的效应是不是被 B 带出来的"这个问题问出来。**
+    """
+    import sys as _sys
+    _sys.path.insert(0, os.path.join(BASE, "code", "analyze"))
+    try:
+        import multifactor as MF
+    except ImportError:
+        MF = None
+
+    def one(k, d=""):
+        return (qs.get(k, [d])[0] or d).strip()
+
+    reg = _pivot_registry(c)
+    entity = one("entity", "person")
+    if entity not in PIVOT_BASE:
+        entity = "person"
+    tid, tval = one("t"), one("tval")
+    picked = [x for x in qs.get("f", []) if x in reg["dims"]]
+    my_dims = [d for d in reg["dims"].values() if d["entity"] == entity]
+
+    def opts(sel, multi=False):
+        o = []
+        for g in sorted({x["group_name"] for x in my_dims}):
+            o.append('<optgroup label="%s">' % esc(g))
+            for d in my_dims:
+                if d["group_name"] == g:
+                    o.append('<option value="%s"%s>%s</option>'
+                             % (esc(d["dimension_id"]),
+                                " selected" if d["dimension_id"] in sel else "",
+                                esc(d["title"])))
+            o.append("</optgroup>")
+        return "".join(o)
+
+    tvals = []
+    if tid and tid in reg["dims"] and reg["dims"][tid]["entity"] == entity:
+        try:
+            tvals = [r["v"] for r in q(
+                c, "SELECT DISTINCT %s AS v FROM %s WHERE %s IS NOT NULL LIMIT 40"
+                % (reg["dims"][tid]["expr_sql"], PIVOT_BASE[entity],
+                   reg["dims"][tid]["expr_sql"]))]
+        except psycopg.Error:
+            tvals = []
+
+    form = (
+        '<div class="card"><h2>多因子分析（3 个及以上因子，控制混杂）</h2>'
+        '<form method="get" action="/factors" class="row">'
+        '<div style="flex:1 1 170px"><label>分析对象</label>'
+        '<select name="entity" onchange="this.form.submit()">%s</select></div>'
+        '<div style="flex:1 1 200px"><label>结果变量</label>'
+        '<select name="t" onchange="this.form.submit()">%s</select></div>'
+        '<div style="flex:1 1 150px"><label>结果取值（1 的那一类）</label>'
+        '<select name="tval">%s</select></div>'
+        '<div style="flex:0 0 110px"><label>&nbsp;</label>'
+        '<button type="submit">分析</button></div>'
+        '<div style="flex:1 1 100%%"><label>因子（<b>按住 Ctrl / Shift 多选，选 2–8 个</b>）'
+        '</label><select name="f" multiple size="8" style="width:100%%">%s</select></div>'
+        '</form>'
+        '<p class="muted">每个因子都会给出两个数：<b>粗 OR</b>（只看它自己）与 '
+        '<b>调整 OR</b>（和其他因子一起进模型）。两者差别大 = 那个因子的效应'
+        '很可能是被别的因子带出来的（混杂）。</p></div>'
+        % ("".join('<option value="%s"%s>%s</option>'
+                   % (k, " selected" if k == entity else "", esc(v))
+                   for k, v in ENTITY_LABEL.items()),
+           "".join('<option value="%s"%s>%s</option>'
+                   % (esc(d["dimension_id"]), " selected" if d["dimension_id"] == tid else "",
+                      esc(d["title"])) for d in my_dims),
+           "".join('<option value="%s"%s>%s</option>'
+                   % (esc(v), " selected" if v == tval else "",
+                      esc(_dim_label(reg, tid, v))) for v in tvals),
+           opts(picked)))
+
+    if not (tid and tval and len(picked) >= 2):
+        if not reg["readable"]:
+            return page("多因子分析", form + _registry_login_note(), kind="info",
+                        subtitle="因子（分类变量）的定义需要登录后查看")
+        return page("多因子分析", form, kind="info" if not picked else "warn",
+                    subtitle="至少选 2 个因子（3 个及以上才能真正控制混杂）")
+    if MF is None:
+        return page("多因子分析", form + '<div class="card"><div class="note err">'
+                    'multifactor 模块加载失败</div></div>', kind="err")
+
+    texp = reg["dims"][tid]["expr_sql"]
+    sel = ", ".join("%s AS f%d" % (reg["dims"][d]["expr_sql"], i)
+                    for i, d in enumerate(picked))
+    sql = ("SELECT %s, %s AS tv FROM %s WHERE %s IS NOT NULL"
+           % (sel, texp, PIVOT_BASE[entity], texp))
+    try:
+        raw = q(c, sql)
+    except psycopg.Error as e:
+        return page("多因子分析", form + '<div class="card"><div class="note err">%s</div>'
+                    '</div>' % esc(str(e).splitlines()[0]), kind="err",
+                    subtitle="SQL 被数据库拒绝（通常是权限不够）")
+
+    rows = []
+    for r in raw:
+        d = {"y": 1 if r["tv"] == tval else 0}
+        for i, dim in enumerate(picked):
+            d[dim] = r["f%d" % i]
+        rows.append(d)
+
+    labels = {d: reg["dims"][d]["title"] for d in picked}
+    res = MF.analyze(rows, picked, labels)
+
+    # ---- 渲染 ----
+    head = ('<div class="card"><h2>样本</h2><table>'
+            '<tr><th>样本量（结果变量非空）</th><td class="n">%d</td></tr>'
+            '<tr><th>事件数（%s = %s）</th><td class="n">%d（%.1f%%）</td></tr>'
+            '<tr><th>非事件数</th><td class="n">%d</td></tr>'
+            '<tr><th>模型参数个数</th><td class="n">%d</td></tr>'
+            '<tr><th>EPV（每个参数几个事件）</th><td class="n">%s</td></tr>'
+            '</table></div>'
+            % (res["n"], esc(reg["dims"][tid]["title"]), esc(str(tval)),
+               res["n_events"], res["outcome_rate"] or 0, res["n_nonevents"],
+               res["n_params"],
+               ("%.1f" % res["epv"]) if res["epv"] else "—"))
+
+    warn_html = ""
+    for name, msg in res["warn"]:
+        warn_html += '<div class="card"><h2>⚠ %s</h2><div class="note">%s</div></div>' % (
+            esc(name), esc(msg))
+    if not res["converged"]:
+        warn_html += ('<div class="card"><h2>模型没拟合成功</h2>'
+                      '<div class="note">下面**只显示粗关联**，不显示调整后 OR —— '
+                      '与其给一个算不出来的数字，不如说算不出来。'
+                      '常见原因是样本太薄或某两个因子在说同一件事。</div></div>')
+
+    # 数据准备：把"为了让模型可估计，我对数据做了什么"如实摆出来
+    prep = ""
+    if res.get("merges"):
+        prep = ('<div class="card"><h2>为了让模型可估计，先做了这些处理</h2><ul>%s</ul>'
+                '<div class="note">这不是"清洗脏数据"，而是**可识别性的必要条件**：'
+                '一个只有 1–2 个人的类别贡献不了可估计的效应，却会让整个模型不可解。'
+                '代价是"这个类别不再单独看"，所以必须写出来。</div></div>'
+                % "".join("<li>%s</li>" % esc(m[3]) for m in res["merges"]))
+
+    tbl = ['<div class="card"><h2>每个因子的粗关联 vs 调整后效应</h2>'
+           '<div class="tscroll"><table>'
+           '<tr><th>因子</th><th>水平</th><th class="n">人数</th>'
+           '<th class="n">事件</th><th class="n">粗 OR</th><th class="n">调整 OR</th>'
+           '<th class="n">95% 置信区间</th><th class="n">p 值</th></tr>']
+    for blk in res["factors"]:
+        if blk.get("skip"):
+            tbl.append('<tr><th>%s</th><td colspan="7" class="muted">%s</td></tr>'
+                       % (esc(blk["title"]), esc(blk["skip"])))
+            continue
+        n = len(blk["levels"]) + 1
+        first = True
+        for it in blk["levels"]:
+            def fmt(v, nd=2):
+                if v is None:
+                    return "—"
+                if isinstance(v, float) and v == float("inf"):
+                    return "∞"
+                return ("%%.%df" % nd) % v
+            ci = ("%s ~ %s" % (fmt(it["lo"]), fmt(it["hi"]))) \
+                if it["lo"] is not None else "—"
+            cell = ('<tr><th rowspan="%d">%s</th>' % (n, esc(blk["title"]))) if first else "<tr>"
+            first = False
+            tbl.append(
+                '%s<td>%s</td><td class="n">%d</td><td class="n">%d</td>'
+                '<td class="n">%s</td><td class="n"><b>%s</b></td>'
+                '<td class="n">%s</td><td class="n">%s</td></tr>'
+                % (cell, esc(it["level"]), it["n"], it["events"],
+                   fmt(it["crude_or"]), fmt(it["adj_or"]), ci, fmt(it["p"], 3)))
+        tbl.append('<tr><td colspan="8" class="muted" style="font-size:12px">'
+                   '参照水平：%s（OR=1.00）%s</td></tr>'
+                   % (esc(blk.get("ref", "—")),
+                      esc(" " + it.get("crude_note", "") if blk["levels"] else "")))
+    tbl.append("</table></div>")
+    tbl.append('<div class="note">OR &gt; 1 表示相对参照水平"更可能发生该结果"。'
+               '**粗 OR 与调整 OR 的差别才是重点**：差别大说明效应被其他因子解释了。</div>')
+    tbl.append("</div>")
+
+    conf = ""
+    if res["confound"]:
+        conf = ('<div class="card"><h2>值得注意：效应在控制其他因子后明显变化</h2><ul>%s</ul>'
+                '<div class="note">这不等于"找到因果"，而是**排除了一个明显的解释**：'
+                '那个因子单独看时的关联，至少有一部分是别的因子带来的。</div></div>'
+                % "".join("<li>%s</li>" % esc(x) for x in res["confound"]))
+
+    tail = ('<div class="card"><h2>这个模型能说什么、不能说什么</h2><ul>'
+            '<li><b>能说</b>：在**这些因子的共同作用下**，每个水平相对参照水平还剩下多少关联；'
+            '以及哪个因子的关联在控制其他因子后消失。</li>'
+            '<li><b>不能说因果</b>：这是观察数据的回归。要谈因果还需要时间先后、'
+            '无未测混杂、无反向因果、正确的模型设定 —— 缺任何一条都只能叫"关联"。</li>'
+            '<li><b>只有观测到的因子被控制了</b>：没放进来的混杂（家庭条件、院校层次…）'
+            '仍然会影响结论。</li>'
+            '<li><b>样本量是硬约束</b>：EPV 低于 10 时 OR 的数值不可信（见上面的护栏）。'
+            '数据薄的时候，诚实的做法是说"还不能算"，而不是报一个好看的数字。</li>'
+            '</ul><p class="muted">模型：逻辑回归（IRLS，手写 numpy 实现，无外部依赖）。'
+            '每个因子 one-hot 编码并**以样本量最大的水平为参照**，'
+            '比较的是"该水平 vs 最常见的那一类"。</p></div>')
+
+    return page("多因子分析", form + head + prep + warn_html + "".join(tbl) + conf + tail,
+                subtitle="%d 个因子同时进入模型" % len(picked))
 
 
 def view_analyze(c, qs, aid=None, want_csv=False):
@@ -5560,6 +5792,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, view_search(c, qs))
                 if path == "/pivot":
                     return self._send(200, view_pivot(c, qs))
+                if path == "/factors":
+                    return self._send(200, view_factors(c, qs))
                 if path == "/funnel":
                     return self._send(200, view_funnel(c, qs))
                 if path == "/analyze":

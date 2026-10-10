@@ -60,7 +60,7 @@ PUBLIC = ["/", "/catalog", "/schema", "/search", "/analyze", "/viz", "/sql", "/l
           # 两个分析界面：注册表（口径/分类/漏斗）本身是 T0 可读的说明层，
           # 所以页面应该能打开；**但底下的数据查询必须以调用者权限执行**，
           # 匿名算不动就该降级成提示，而不是靠页面不显示来保密。
-          "/pivot", "/funnel"]
+          "/pivot", "/funnel", "/factors"]
 # 受限页：必须 403（含个人数据或内部运营数据）
 DENIED = ["/talent", "/talent.csv", "/real", "/quality", "/audit", "/occupations",
           "/match", "/tree", "/lineage", "/extend", "/t/person", "/t/person_pii",
@@ -188,6 +188,19 @@ def main():
         check(not re.search(r"per_[0-9a-f]{8}", b2),
               "匿名 /funnel 页面上**没有任何 person_id**（含漏斗各阶段明细）")
         check("口径" in b or "透视" in b, "匿名看到的是口径/分类的说明层（不是空白）")
+
+        # 多因子分析页：注册表是 T1，所以匿名**看不到可选因子**，
+        # 但必须拿到**明确的登录提示**（而不是一个看起来坏了的空表单）。
+        # 这一点在迁移 058 里定死：注册表等级由 column_policy/对账决定 = T1。
+        st, b3 = fetch("/factors?entity=person&t=D_OUTCOME_FIELD&tval=JO1"
+                       "&f=D_AGE_BAND&f=D_SEX&f=D_EDU_OVERSEAS")
+        check(st in (200, 403), "匿名 /factors 不炸（实得 %d）" % st)
+        check(not re.search(r"per_[0-9a-f]{8}", b3),
+              "匿名 /factors 页面上**没有任何 person_id**")
+        check("需要登录" in b3,
+              "匿名 /factors 给的是**明确的登录提示**（而不是没有选项的空表单）")
+        check("调整 OR" not in b3 or "需要登录" in b3,
+              "匿名拿不到任何调整 OR")
 
         # ===============================================================
         print("\n【B】内容层：匿名能打开的页面里不许出现识别标记")
