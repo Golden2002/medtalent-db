@@ -725,6 +725,25 @@ nav a.on{color:#fff;border-bottom-color:#2f81f7}
 /* 开发者模式是可写的另一个进程（8083），它在只读门户的导航里必须一眼可辨，
    否则"只读"这个前提在导航条上就自相矛盾。分隔线 + 「可写」标签就是干这个的。 */
 nav .navsep{width:1px;height:18px;background:#30363d;margin:0 9px}
+/* 导航分组标签（评审优先级 5："导航组织"）：把 21 项按**任务**分组，
+   用户先看"我要做的事"再看具体页面，而不是从一长串里找。 */
+nav .navgroup{color:#6e7681;font-size:11px;padding:12px 4px 12px 12px;letter-spacing:.5px;
+  border-left:2px solid #21262d;margin-left:6px}
+/* ⚠ 移动端：之前只加了 viewport，若不配套下面这些，窄屏上导航会被压成一团、
+   表格会撑破布局。"加 viewport"与"真的能用"是两件事。 */
+@media (max-width:760px){
+  nav{padding:0 8px;flex-wrap:wrap;gap:0}
+  nav .brand{width:100%;padding:8px 0;font-size:13px}
+  nav a{padding:9px 8px;font-size:12px}
+  nav .navgroup{padding:8px 3px 8px 8px;border-left:none}
+  .navsep{display:none}
+  .wrap{padding:10px}
+  /* 表格：窄屏上**横向滚动**而不是压扁 —— 压扁会丢掉列，等于看不到数据 */
+  .tscroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .tscroll table{min-width:520px}
+  h1{font-size:19px}
+  .card{padding:10px}
+}
 nav a .wtag{font-size:10px;line-height:15px;border:1px solid #9e6a03;color:#d29922;
   border-radius:9px;padding:0 5px;margin-left:5px;vertical-align:1px}
 .wrap{max-width:1400px;margin:0 auto;padding:20px 18px 60px}
@@ -889,6 +908,25 @@ NAV = [("/", "总览"), ("/catalog", "数据目录"), ("/viz", "可视化"), ("/
        ("/quality", "质量"), ("/audit", "访问日志"), ("/lineage", "血缘"), ("/sql", "SQL"),
        ("/dev", "开发者模式")]
 
+# 导航**按任务分组**（评审优先级 5 的"导航组织"）。
+# 原来 21 项平铺一行，用户找不到"我想做的事"；现在按**要完成的任务**分五组，
+# 而不是按技术分层（那样反而要求用户先懂架构）。
+# `NAV` 保留为扁平名单，供内部与自检使用；渲染走 NAV_GROUPS。
+NAV_GROUPS = [
+    ("看数据", [("/", "总览"), ("/catalog", "数据目录"), ("/schema", "表与视图"),
+                ("/search", "检索"), ("/lineage", "血缘")]),
+    ("看人才", [("/talent", "人才库"), ("/occupations", "职业库"), ("/tree", "职业树"),
+                ("/real", "真实案例")]),
+    ("做分析", [("/analyze", "分析"), ("/pivot", "透视"), ("/factors", "多因子"),
+                ("/funnel", "漏斗"), ("/viz", "可视化"), ("/match", "匹配")]),
+    ("看质量", [("/quality", "质量"), ("/integration", "接入状态"), ("/audit", "访问日志")]),
+    ("管数据", [("/extend", "扩展与演化"), ("/sql", "SQL"), ("/dev", "开发者模式")]),
+]
+# 自检：分组必须覆盖扁平名单里的每一项（否则会有页面在导航上找不到入口）
+assert {t for _g, xs in NAV_GROUPS for _u, t in xs} == {t for _u, t in NAV}, \
+    "NAV_GROUPS 与 NAV 不一致：%s" % (
+        {t for _u, t in NAV} ^ {t for _g, xs in NAV_GROUPS for _u, t in xs})
+
 
 def esc(s) -> str:
     return html.escape("" if s is None else str(s))
@@ -906,7 +944,26 @@ def page(title, body, msg="", kind="info", subtitle="", nav=None,
     """
     active = here or title
     parts = []
-    for u, t in (nav or NAV):
+    # 导航**分组**（评审优先级 5："导航组织"）。原来 21 项平铺成一行，
+    # 用户找不到"我想做的事在哪"。按**任务**分组而不是按技术分层：
+    #   看数据 / 看人才 / 做分析 / 看质量与接入 / 管数据
+    # 自定义 nav（少数页面传自己的）仍走扁平渲染，保持兼容。
+    if nav is None:
+        seq = []
+        for gi, (gname, items) in enumerate(NAV_GROUPS):
+            if gi:
+                seq.append(("__sep__", None))
+            seq.append(("__group__", gname))
+            seq.extend(items)
+    else:
+        seq = list(nav)
+    for u, t in seq:
+        if t is None:
+            parts.append('<span class="navsep" aria-hidden="true"></span>')
+            continue
+        if u == "__group__":
+            parts.append('<span class="navgroup">%s</span>' % esc(t))
+            continue
         cls = "on" if t == active else ""
         cur = ' aria-current="page"' if cls else ""
         if t == "开发者模式":
@@ -933,6 +990,10 @@ def page(title, body, msg="", kind="info", subtitle="", nav=None,
                 for href, text in crumbs]
         crumb_html = '<div class="crumbs">%s</div>' % '<span class="sep">›</span>'.join(segs)
     doc = """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<!-- ⚠ viewport 之前**完全没有** —— 手机上浏览器按桌面宽度（约 980px）渲染再缩小，
+     结果是"字小到看不清、要横向拖动"，属于"移动端根本不可用"而不是"不够好看"。
+     这是评审优先级 5 点名的"移动端"。 -->
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>%s · 医学生人才信息库</title><style>%s</style></head><body>
 <nav aria-label="主导航"><span class="brand">医学生人才信息库 · 数据库门户</span>%s%s</nav>
 <div class="wrap"><div class="phead">%s<h1>%s</h1>%s</div>%s%s</div></body></html>""" % (
