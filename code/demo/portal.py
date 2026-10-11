@@ -1871,6 +1871,18 @@ def view_table(c, name, qs) -> bytes:
     rel = m["by_name"][name]
     cols = m["cols"].get(name, [])
     colnames = [x["column_name"] for x in cols]
+    # --- 默认列：先看哪几列（不删任何列的访问路径）---
+    _vis, _hid = default_cols(c, name)
+    _show_all = (qs.get("all", [""])[0] == "1")
+    if _vis:
+        _seen = set(_vis)
+        _used_cols = ([x for x in _vis if x in set(colnames)]
+                      + [x for x in colnames if x not in _seen]) if _show_all \
+                     else [x for x in _vis if x in set(colnames)]
+        if not _used_cols:
+            _used_cols = colnames
+    else:
+        _used_cols = colnames
 
     # --- 浏览参数（全部与系统目录比对后再用） ---
     page_no = _int_param(qs, "page", 1, lo=1)
@@ -2002,8 +2014,8 @@ append-only 变更流水、扩展属性门禁都挂在触发器上。</p></div>
            esc(rel["kind"] == "table" and "基础表" or "视图"), esc(name),
            "（%s）" % esc(rel["domain"]) if rel["kind"] == "table" else "（只读视图）"),
        page_no, n_pages, len(rows), ms, csv_href,
-       render_rows(name, colnames, rows,
-                   n_right=tuple(x["column_name"] for x in cols if is_numeric(x["data_type"]))),
+       render_rows(name, _used_cols, rows,
+                   n_right=tuple(x["column_name"] for x in cols if is_numeric(x["data_type"]))) + _hidden_cols_note(name, _hid, _show_all, len(colnames)),
        pager, sort_links,
        len(cols), col_rows, inb_html, esc(name),
        len(m["cons"].get(name, [])), cons_rows,
@@ -4037,6 +4049,62 @@ def talent_col_keys(qs) -> list:
             if k and k not in out:
                 out.append(k)
     return out
+
+
+def default_cols(c, table):
+    """读 `mt.table_default_columns`：**先看哪几列**（而不是"只能看哪几列"）。
+
+    为什么要按任务定默认列：通用表页原来是 `SELECT *` 把**所有列**铺开，
+    `occupation` 25 列、`job_posting` 几十列，最前面往往是簿记时间戳与内部载荷。
+    用户的任务是"看内容、找记录、判断状态"，所以默认先给
+    标识 → 码值/状态 → 人可读名称 → 业务时间 → 数量 → 说明。
+
+    ⚠ 隐藏**不是**不可访问：`?all=1` 展开全部，页面也会把隐藏列名与理由列出来。
+    否则就是本库最怕的「看不到 ≠ 没有」在界面上的翻版。
+
+    读不到注册表（迁移 073 之前）时返回 (None, [])，页面退回"全部列"的原行为。
+    """
+    # ⚠ **必须用 try_read，不能裸 try/except**：PostgreSQL 里一条语句失败会让
+    # **整个事务**进入 aborted 状态，之后任何语句都报 InFailedSqlTransaction。
+    # 第一版写的是 try: q(...) except psycopg.Error: return None, [] ——
+    # 异常被吞了、事务却被毒化，紧接着的 count(*) 直接 500。
+    # 实测：匿名访问 /t/person（本来该 403）变成了 **500**，
+    # 而错误信息与真正的权限问题**毫无关系**。
+    # 更该记一笔的是：try_read 的文档字符串里明确写着
+    # 「这个坑本项目踩过两次，**第二次就在这里**」—— 我绕开现成机制手写了一遍，
+    # 于是**第三次**踩在同一个坑上。
+    rs = try_read(c, """SELECT column_name, visible, position, reason, rule_id
+                          FROM mt.table_default_columns WHERE table_name = %s
+                         ORDER BY position, column_name""", (table,))
+    if not rs:
+        return None, []
+    return ([r["column_name"] for r in rs if r["visible"]],
+            [r for r in rs if not r["visible"]])
+
+
+def _hidden_cols_note(table, hidden, show_all, n_total) -> str:
+    """把"默认隐藏了哪些列、为什么"说清楚，并给出展开入口。"""
+    if not hidden:
+        return ""
+    items = "、".join('<code>%s</code>' % esc(h["column_name"]) for h in hidden[:12])
+    more = "等" if len(hidden) > 12 else ""
+    if show_all:
+        return ('<div class="note">已展开全部 %d 列。'
+                '<a href="/t/%s">收起为默认列</a>（默认先看 %d 列）。</div>'
+                % (n_total, esc(table), n_total - len(hidden)))
+    reasons = {}
+    for h in hidden:
+        reasons.setdefault(h["reason"], []).append(h["column_name"])
+    why = "".join('<li>%s —— 例：%s</li>'
+                  % (esc(r), "、".join('<code>%s</code>' % esc(x) for x in xs[:4]))
+                  for r, xs in reasons.items())
+    return ('<div class="note">本页默认只铺开 %d 列（共 %d 列），'
+            '<b>按你常做的事排序</b>：标识 → 码值/状态 → 人可读名称 → 业务时间 → '
+            '数量 → 说明。默认隐藏 %d 列：%s%s'
+            '<br><b>为什么隐藏</b>（隐藏 ≠ 不可访问，点下面链接可展开）：<ul>%s</ul>'
+            '<a href="/t/%s?all=1">显示全部 %d 列（含默认隐藏的 %d 列）</a></div>'
+            % (n_total - len(hidden), n_total, len(hidden), items, more, why,
+               esc(table), n_total, len(hidden)))
 
 
 def talent_pick_columns(qs) -> list:
