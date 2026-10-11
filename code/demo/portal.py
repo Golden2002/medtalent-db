@@ -5788,6 +5788,98 @@ def view_audit(c, qs, session=None) -> bytes:
     return page("访问日志", body, subtitle="谁 · 什么时候 · 读了什么 · 多少行", session=session)
 
 
+def _evolution_change_card(c) -> str:
+    """职业树变更的**影响预览 / 发布管理 / 下游一致性**（评审优先级 5 收窄项）。
+
+    为什么放在 `/extend`（扩展与演化）页顶部：
+    这一页原来的重点是"树怎么长"（候选、晋升、漂移）。但"**树改了之后下游对不对**"
+    是同一件事的另一半，而且更容易出事 —— 停用一个节点而忘了迁移映射，
+    下游（岗位、能力权重、人的经历）会**静默悬挂**：页面照旧显示旧节点名，
+    但那个节点已经不作数了。这正是本库最怕的「看不到 ≠ 没有」。
+
+    三条要求的落点：
+      · 影响预览 → `v_occupation_impact`（每个节点被谁引用、各多少、风险多高）
+      · 发布管理 → `occupation_release_item` + `v_occupation_release_status`
+      · 下游一致性 → `v_occupation_downstream_gap`（三类缺口）
+    """
+    try:
+        agg = q(c, """SELECT count(*) AS n,
+                             count(*) FILTER (WHERE impact_risk LIKE '高%') AS high,
+                             count(*) FILTER (WHERE dependents_total = 0) AS orphan,
+                             max(dependents_total) AS mx
+                        FROM mt.v_occupation_impact""")[0]
+        top = q(c, """SELECT occupation_id, label_zh, n_jobs, n_weights, n_children,
+                             n_employment, dependents_total, impact_risk
+                        FROM mt.v_occupation_impact
+                       WHERE dependents_total > 0
+                       ORDER BY dependents_total DESC LIMIT 8""")
+        gaps = q(c, """SELECT gap_kind, count(*) AS n
+                         FROM mt.v_occupation_downstream_gap GROUP BY 1 ORDER BY 2 DESC""")
+        n_gap = sum(g["n"] for g in gaps)
+        rel = q(c, """SELECT count(*) AS n, count(*) FILTER (WHERE is_live) AS live
+                        FROM mt.dataset_release""")[0]
+        n_ch = q(c, "SELECT count(*) AS n FROM mt.occupation_change")[0]["n"]
+        n_ri = q(c, "SELECT count(*) AS n FROM mt.occupation_release_item")[0]["n"]
+        pub = q(c, """SELECT count(*) AS n FROM mt.v_occupation_release_status
+                       WHERE published_with_pending""")[0]["n"]
+    except psycopg.Error:
+        return ""
+
+    trows = "".join(
+        '<tr><td><code>%s</code></td><td>%s</td><td class="n">%d</td>'
+        '<td class="n">%d</td><td class="n">%d</td><td class="n">%d</td>'
+        '<td class="n"><b>%d</b></td></tr>'
+        % (esc(r["occupation_id"]), esc(r["label_zh"]), r["n_jobs"], r["n_weights"],
+           r["n_children"], r["n_employment"], r["dependents_total"])
+        for r in top)
+
+    if n_gap:
+        gap_html = "".join('<li>✗ <b>%s</b>：%d 处</li>' % (esc(g["gap_kind"]), g["n"])
+                           for g in gaps)
+        gap_box = ('<div class="note err"><b>下游一致性缺口 %d 个</b><ul>%s</ul>%s</div>'
+                   % (n_gap, gap_html,
+                      "A 类（停用但下游仍引用且无迁移映射）会让下游**静默悬挂**，最危险"))
+    else:
+        gap_box = ('<div class="note">下游一致性缺口 <b>0</b>。'
+                   '⚠ 但**0 只说明目前没有不一致，不说明机制被验证过** —— '
+                   '要证明机制成立请跑 <code>python ops/evolution.py selfcheck</code>'
+                   '（它会故意造出不一致、确认被检出、再修好）。</div>')
+
+    return (
+        '<div class="card" style="border-left:4px solid #7c3aed">'
+        '<h2>职业树变更：影响预览 · 发布管理 · 下游一致性</h2>'
+
+        '<h3 style="margin:10px 0 4px;font-size:14px">① 变更影响预览</h3>'
+        '<p style="margin:0 0 6px">%d 个职业节点里，<b>%d 个是高影响</b>'
+        '（改动会直接影响匹配与推荐：有岗位样本/子节点/有效能力权重），'
+        '<b>%d 个零依赖</b>（没有任何下游引用），依赖最多的是 <b>%d</b> 个。</p>'
+        '<div class="tscroll"><table>'
+        '<tr><th>职业</th><th>名称</th><th class="n">岗位</th><th class="n">能力权重</th>'
+        '<th class="n">子节点</th><th class="n">人才经历</th><th class="n">依赖合计</th></tr>'
+        '%s</table></div>'
+        '<div class="note">⚠ 风险分级的依据是「**改动会不会让下游失效**」，'
+        '不是「这个节点重不重要」—— 一个"重要但没人引用"的节点改起来是安全的，'
+        '而一个"不起眼但有 30 份 JD"的节点改起来会直接影响推荐。</div>'
+
+        '<h3 style="margin:10px 0 4px;font-size:14px">② 发布管理</h3>'
+        '<p style="margin:0 0 6px">数据集发布登记 <b>%d</b> 次（其中在用 %d 次）· '
+        '职业树变更 <b>%d</b> 条 · 其中已纳入发布 <b>%d</b> 条</p>'
+        '%s'
+        '<div class="note">职业树变更应当随一次「口径版本发布」一起对外生效 —— '
+        '这样别人才说得出"我在用哪一版口径"。'
+        '当前 <b>%d 次发布</b>意味着：任何"我们的口径是怎样的"都只是代码里的现状，'
+        '还不是一个可引用的版本。</div>'
+
+        '<h3 style="margin:10px 0 4px;font-size:14px">③ 下游一致性</h3>'
+        '%s'
+        '</div>'
+        % (agg["n"], agg["high"], agg["orphan"], agg["mx"], trows,
+           rel["n"], rel["live"], n_ch, n_ri,
+           ('<div class="note err">发布内容与树状态不一致：<b>%d</b> 次发布已发布、'
+            '却还挂着未决变更。</div>' % pub) if pub else "",
+           rel["n"], gap_box))
+
+
 def view_extend(c, qs) -> bytes:
     h = q(c, "SELECT * FROM v_evolution_health")[0]
     usage = {
@@ -5952,7 +6044,11 @@ SELECT * FROM mt.form_schema('person');"""))
              ORDER BY abs(coalesce(d.delta,0)) DESC LIMIT 12"""),
     ], "分析这个演化层",
         "三个分析分别看：词表有没有空壳、断言缓冲里堆了什么、能力需求最近一版漂了多少。")
-    return page("扩展与演化", body, subtitle="结构能长 · 而且真的在长")
+    return page("扩展与演化",
+                # 变更影响/发布/一致性放在最前：这一页原来只讲「树怎么长」，
+                # 但「**树改了之后下游对不对**」是更容易出事的另一半。
+                _evolution_change_card(c) + body,
+                subtitle="结构能长 · 而且真的在长 · 改之前先看影响")
 
 
 # ---------------------------------------------------------------------------
