@@ -145,7 +145,13 @@ DOMAIN_TABLES = {
                      # 这是第三次漏登记新表（053 口径注册表 / 062 刻意锁 / 063 算法注册表）——
                      # 根因是「建表在迁移里、分域在 Python 里」，两处清单必然漏。
                      # 门禁 I1.2（MUST）会拦，且提示里直接报出是哪张表。
-                     "algorithm_registry"],
+                     "algorithm_registry",
+                     # 匹配展示策略（阈值类，如"覆盖率低于多少就不给结论"）。
+                     # 它也是**定义层**：说明"结果该怎么展示"。第四次漏登记的就是它。
+                     "match_display_policy",
+                     # 域登记表本身（迁移 065：把域划分从 Python 搬进数据库，
+                     # 让建表的迁移能顺带声明域 —— 从此"建表"与"归类"在一处）。
+                     "domain_registry"],
     "治理与合规": ["access_log", "access_policy", "consent_record", "consent_withdrawal_action",
                    "data_lifecycle_run", "incident_report", "retention_policy",
                    "subject_request", "talent_deletion_request", "tombstone", "change_log",
@@ -547,6 +553,17 @@ def load_meta(c) -> dict:
     m = {"rels": [], "by_name": {}, "cols": {}, "cons": {}, "idx": {}, "trg": {},
          "fk_cols": {}, "pk": {}, "inbound": {}}
 
+    # 域划分：**先看数据库登记**（`mt.domain_registry`，迁移 065），Python 清单只作兜底。
+    # 这样建表的迁移只要在同一个文件里 `INSERT INTO domain_registry` 一行，
+    # 门户与门禁就都认 —— 不必再去改 Python（原来两处清单各漏了两次，共四次）。
+    db_domains = {}
+    try:
+        with c.cursor() as cur:
+            cur.execute("SELECT table_name, domain FROM mt.domain_registry")
+            db_domains = {x["table_name"]: x["domain"] for x in cur.fetchall()}
+    except psycopg.Error:
+        db_domains = {}          # 065 之前没有这张表
+
     # 精确行数：reltuples 会过时（实测 code_table 估 53 / 实 49），门户不显示估算值
     t0 = time.time()
     for r in rels:
@@ -555,7 +572,11 @@ def load_meta(c) -> dict:
             cur.execute(sql.SQL("SELECT count(*) AS n FROM {}.{}").format(
                 sql.Identifier(SCHEMA), sql.Identifier(r["name"])))
             r["rows"] = cur.fetchone()["n"]
-        r["domain"] = domain_of(r["name"]) if r["kind"] == "table" else "视图"
+        if r["kind"] != "table":
+            r["domain"] = "视图"
+        else:
+            # DB 登记优先；它没有时退回 Python 清单
+            r["domain"] = db_domains.get(r["name"]) or domain_of(r["name"])
         r["n_cols"] = 0
         m["rels"].append(r)
         m["by_name"][r["name"]] = r
@@ -2913,6 +2934,106 @@ def view_factors(c, qs) -> bytes:
                 subtitle="结果：%s ｜ %d 个因子" % (outcome_label, len(picked)))
 
 
+def _match_three_state_card(c) -> str:
+    """匹配结果的**三态卡**：资格判定 / 匹配依据 / 信息完整度（评审优先级 3）。
+
+    评审要求："结果卡固定显示三块：资格判定（已确认满足／已确认不满足／待核实）、
+    匹配依据（哪些能力和偏好吻合、证据来自哪里）、信息完整度（适用要求中已评估多少、
+    关键未知项是什么）"，并强调"**已知维度上的高分不能覆盖未知的硬门槛**"、
+    "并列应显示并列组或名次范围"、"覆盖率分母是该岗位适用且应评估的要求"。
+
+    三块的算法**全部在数据库视图里**（`v_match_coverage` / `v_match_ranked`），
+    页面只负责展示 —— 这样"口径只此一处"，换页面也不会算出两个答案。
+    """
+    try:
+        agg = q(c, """SELECT count(*) AS n,
+                             count(*) FILTER (WHERE verdict='待核实') AS pending,
+                             count(*) FILTER (WHERE verdict='已确认满足') AS ok,
+                             count(*) FILTER (WHERE verdict='已确认不满足') AS no,
+                             round(avg(n_hard_unknown)::numeric, 1) AS hard_unk,
+                             round(avg(n_hard)::numeric, 1) AS hard_all,
+                             round(avg(coverage_corrected)::numeric * 100, 1) AS cov,
+                             round(avg(coverage_raw)::numeric * 100, 1) AS cov_raw,
+                             round(avg(n_applicable)::numeric, 1) AS applicable,
+                             round(avg(n_scored)::numeric, 1) AS scored,
+                             round(avg(n_not_applicable)::numeric, 1) AS na,
+                             round(avg(n_met)::numeric, 1) AS met,
+                             round(avg(n_partial)::numeric, 1) AS partial,
+                             round(avg(n_gap)::numeric, 1) AS gap
+                        FROM mt.v_match_coverage""")[0]
+        ties = q(c, """SELECT count(*) FILTER (WHERE tie_n > 1) AS tie,
+                              count(*) AS all_n,
+                              max(tie_n) AS max_tie
+                         FROM mt.v_match_ranked""")[0]
+        pol = q(c, """SELECT value, provisional, note FROM mt.match_display_policy
+                       WHERE policy_id='min_coverage_for_conclusion'""")[0]
+        top_unk = q(c, """SELECT top_unknown FROM mt.v_match_coverage
+                           WHERE top_unknown IS NOT NULL LIMIT 1""")
+    except psycopg.Error:
+        return ""
+    if not agg or not agg["n"]:
+        return ""
+
+    thr = float(pol["value"]) * 100.0
+    cov = agg["cov"] or 0
+    low = cov < thr
+    verdict = "待核实" if agg["pending"] else ("已确认满足" if agg["ok"] else "已确认不满足")
+    vcolor = "#b45309" if agg["pending"] else ("#15803d" if agg["ok"] else "#b91c1c")
+
+    return (
+        '<div class="card" style="border-left:4px solid %s">'
+        '<h2>结果卡：资格判定 · 匹配依据 · 信息完整度</h2>'
+
+        # ---- 块① 资格判定 ----
+        '<h3 style="margin:10px 0 4px;font-size:14px">① 资格判定</h3>'
+        '<p style="margin:0 0 4px"><b style="color:%s">%s</b>'
+        '（%d 条结果里：已确认满足 %d · 已确认不满足 %d · <b>待核实 %d</b>）</p>'
+        '<p class="muted" style="margin:0 0 8px">硬门槛共约 %s 个，'
+        '其中<b>平均 %s 个待核实</b>。'
+        '硬门槛不过就不能录用，所以<b>硬门槛未知时结论只能是"待核实"</b> —— '
+        '排序分再高也不能把它说成匹配。</p>'
+
+        # ---- 块② 匹配依据 ----
+        '<h3 style="margin:10px 0 4px;font-size:14px">② 匹配依据（哪些项吻合、证据在哪）</h3>'
+        '<p class="muted" style="margin:0 0 8px">在已评估的 %s 项里：'
+        '满足 %s · 部分满足 %s · 确认不满足 %s。'
+        '每一条的 <code>sourceFactIndex</code> 指向具体的证据行；'
+        '本轮离线结果存在 <code>score_breakdown</code> 里、'
+        '用户侧规则结果存在 <code>met/gap/unknown</code> 里，逐条可展开核对。</p>'
+
+        # ---- 块③ 信息完整度 ----
+        '<h3 style="margin:10px 0 4px;font-size:14px">③ 信息完整度</h3>'
+        '<p style="margin:0 0 4px">应评估 <b>%s</b> 项，已评估 <b>%s</b> 项 → '
+        '<b>%s%%</b>'
+        '（另有 %s 项是"该岗位没提"＝<b>不适用</b>，不计入分母；'
+        '按旧口径「已评估/全部维度」算出来是 %s%%，**会低估**）</p>'
+        '<p class="muted" style="margin:0 0 4px">关键未知项：%s</p>'
+
+        # ---- 阈值与结论 ----
+        '%s'
+
+        # ---- 并列 ----
+        '<h3 style="margin:10px 0 4px;font-size:14px">名次：并列要给范围</h3>'
+        '<p class="muted" style="margin:0">%d / %d 条结果存在同分（最多一组 %s 条）。'
+        '所以本页显示的是<b>名次范围</b>（如"并列第 1–50 名"），'
+        '而不是靠 ID 顺序排出的精确名次 —— 那是**伪精确**。</p>'
+        '</div>'
+        % (vcolor,
+           vcolor, esc(verdict), agg["n"], agg["ok"], agg["no"], agg["pending"],
+           int(agg["hard_all"] or 0), agg["hard_unk"],
+           agg["scored"], agg["met"], agg["partial"], agg["gap"],
+           agg["applicable"], agg["scored"], cov, agg["na"], agg["cov_raw"],
+           esc(top_unk[0]["top_unknown"] if top_unk else "—"),
+           ('<div class="note err"><b>信息完整度 %s%% 低于阈值 %s%%，'
+            '因此不给"匹配"结论</b> —— 只显示"信息不足，需补数据"。<br>'
+            '⚠ 该阈值当前是<b>临时值</b>（%s），尚未用带时间截点的真实验证集确定。'
+            '</div>' % (cov, int(thr), "provisional" if pol["provisional"] else "已定稿"))
+           if low else
+           ('<div class="note">信息完整度 %s%% 达到阈值 %s%%。</div>'
+            % (cov, int(thr))),
+           ties["tie"], ties["all_n"], ties["max_tie"]))
+
+
 def view_integration(c, qs) -> bytes:
     """**接入状态**页：把"哪套算法接在哪、有没有东西卡住"摆在一屏里。
 
@@ -5052,7 +5173,11 @@ SELECT * FROM match_run ORDER BY started_at DESC;""" % who))
                    '</div>' % (_items, esc(_user)))
     except psycopg.Error:
         _vb = ""
-    return page(title, _vb + body, subtitle="能力 ↔ 职业 · 三态可解释", here="匹配")
+    # 三态卡（资格判定 / 匹配依据 / 信息完整度）放在版本提示**之前** ——
+    # 它回答的是"这个结果能不能当结论"，比"哪套算法"更靠前。
+    _three = _match_three_state_card(c)
+    return page(title, _three + _vb + body,
+                subtitle="能力 ↔ 职业 · 三态可解释", here="匹配")
 
 
 # ---------------------------------------------------------------------------

@@ -225,7 +225,12 @@ def d1_integrity(c):
                      OR has_any_column_privilege('mt_t2', c.oid, 'SELECT')
                      OR has_any_column_privilege('mt_t3', c.oid, 'SELECT'))
              ORDER BY 1""").fetchall()
-        names = [r[0] for r in no_grants]
+        # ⚠ 这里必须用列名取（连接是 dict_row）——
+        # 第一版写 `r[0]`，而 no_grants 为空时列表推导体根本不执行，
+        # 于是这个 bug **只有在真的发现违规时才会崩**（失败路径上的潜伏 bug）。
+        # 实测：066 新建的表没授权 → I1.8 检出违规 → 然后自己崩了，
+        # 表现成"体检挂了"而不是"有张表没授权"。
+        names = [r["relname"] for r in no_grants]
         locked = q1(c, "SELECT count(*) FROM mt.locked_object_registry")
         add("D1", "I1.8", "无任何等级可读的对象数", len(names), 0, "MUST",
             "对账后扫全部表与视图（表级 + 列级都查）；已在 locked_object_registry "
@@ -237,24 +242,39 @@ def d1_integrity(c):
             "扫描失败（locked_object_registry 可能还没建，见迁移 062）")
 
     # I1.2 未分类的表（每张表都要归入一个业务域）
-    # 判据：mt 下的基础表里，有多少张既不在 entity_catalog（语义层登记），
-    # 也不在 DOMAIN_TABLES（门户的域划分）里 —— 两边都没登记就是"没人认领的表"。
+    #
+    # 判据：mt 下的基础表里，有多少张**两个来源都没登记**：
+    #   ① `mt.domain_registry`（**权威**，迁移 065 把域划分从 Python 搬进了数据库）——
+    #      建表的迁移可以顺手 INSERT 一行，于是"建表"与"归类"在**同一处**；
+    #   ② `portal.DOMAIN_TABLES`（**兜底**：DB 读不到时不让体检整体挂掉）。
+    #
+    # 为什么要有 ①：原来只有 Python 那一份清单，而表在 SQL 迁移里建 ——
+    # **两处清单必然漏**。实测漏了四次（053 口径注册表 / 062 刻意锁 /
+    # 063 算法注册表 / 064 展示策略表），每次都是"门户套件 + 门禁同时失败"。
     sys.path.insert(0, os.path.join(BASE, "code", "demo"))
+    known = set()
+    try:
+        for r in c.execute("SELECT table_name FROM mt.domain_registry"):
+            known.add(r["table_name"])
+    except psycopg.Error:
+        pass                                   # 065 之前没有这张表
     try:
         import portal
-        known = set()
         for _dom, tabs in portal.DOMAIN_TABLES.items():
             for t in tabs:
                 known.add(t[0] if isinstance(t, (list, tuple)) else t)
     except Exception:  # noqa: BLE001 —— 门户导入失败不该让体检挂掉
-        known = set()
+        pass
     all_tabs = [r["table_name"] for r in c.execute("""
         SELECT table_name FROM information_schema.tables
          WHERE table_schema='mt' AND table_type='BASE TABLE'""")]
     unclassified = [t for t in all_tabs if known and t not in known]
     add("D1", "I1.2", "未归入任何业务域的基础表数", len(unclassified), 0, "MUST",
-        "information_schema.tables 对比 portal.DOMAIN_TABLES（%d 张表，未归类 %s）"
-        % (len(all_tabs), "、".join(unclassified[:3]) or "无"))
+        "information_schema.tables 对比 mt.domain_registry（权威）+ portal.DOMAIN_TABLES"
+        "（兜底），共 %d 张表" % len(all_tabs),
+        note=("未归类：%s —— 建表的迁移应顺手 INSERT INTO domain_registry"
+              % "、".join(unclassified[:5])) if unclassified else
+             "每张表都有归属（新表请在同一个迁移里声明域）")
 
     # I1.3 无主键的表
     nopk = q1(c, """SELECT count(*) FROM information_schema.tables t
