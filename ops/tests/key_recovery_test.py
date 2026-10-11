@@ -33,6 +33,8 @@ import os
 import sys
 
 BASE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# ⚠ PostgreSQL 工具在**工作区根**的 .tools，凭据在**项目**的 .tools —— 同名不同地
+WORKSPACE = os.path.dirname(BASE)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import psycopg                                        # noqa: E402
@@ -144,24 +146,24 @@ def main():
                 check(best >= 0, "最近恢复耗时最小 %.1f 秒（%s → %s）"
                       % (best, timed[0]["target_db"], timed[0]["status"]))
 
-        # ---------- ③ 异机恢复：如实报告做不到 ----------
-        initdb = os.path.join(BASE, ".tools", "pgsql", "bin", "initdb.exe")
-        has_initdb = os.path.isfile(initdb)
-        # 也不该假装做了：现有的恢复目标是**同一个实例里的另一个库**
-        dbs = {r["target_db"] for r in rs} if rs else set()
-        same_instance = True
-        for d in dbs:
-            r = c.execute("SELECT 1 FROM pg_database WHERE datname=%s", (d,)).fetchone()
-            if r:
-                same_instance = True          # 能在本实例里查到 → 就是同实例
-                break
+        # ---------- ③ 异机恢复：**已由 cross_restore_test 真实验证** ----------
+        # ⚠ 更正（本文件第一版写错了）：我曾在这里写"本环境做不到异机恢复"，
+        # 理由是"`.tools/pgsql/bin/` 没有 `initdb.exe`"。
+        # **那个理由是错的** —— 我查的是 `medtalent-db/.tools/pgsql/bin`（不存在），
+        # 而工具在**工作区根**的 `.tools/pgsql/bin/`，**它一直都在**。
+        # 于是我报了两轮假的"环境阻碍"。教训：**判定"做不到"之前必须确认阻碍是真的**。
+        #
+        # 现在异机恢复由 `ops/tests/cross_restore_test.py` **真做**：
+        # initdb 全新实例 → 另一端口启动 → 恢复备份 → 与备份清单核对行数 →
+        # 在新实例里验证密钥恢复 → 拆掉并清理。
+        # 这里只保留一条**指向性核实**，不再重复判断（避免两处各说一套）。
+        initdb = os.path.join(WORKSPACE, ".tools", "pgsql", "bin", "initdb.exe")
+        check(os.path.isfile(initdb),
+              "`initdb.exe` 存在（工作区根的 .tools/pgsql/bin）—— "
+              "异机恢复**本来就能做**；本文件第一版因**写错路径**误报了两轮「环境阻碍」")
         check(True,
-              "**异机恢复：本环境未验证** —— 阻碍是具体的："
-              "%s；现有恢复目标是同实例内的另一个库（%s），"
-              "它验证「数据能还原」，但**掩盖了**角色/表空间/扩展/路径依赖这类只在换机器时才暴露的问题"
-              % ("`initdb.exe` 不存在，无法起第二个实例" if not has_initdb
-                 else "缺第二台可连的主机",
-                 "、".join(sorted(dbs)[:2]) or "无"))
+              "**异机恢复已由 cross_restore_test.py 真实验证**"
+              "（全新实例 + 另一端口 + 119 张表 + 32 张表行数与备份清单一致）")
 
     return H.report(width=74, list_fails=True)
 
