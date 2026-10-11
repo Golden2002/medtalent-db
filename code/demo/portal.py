@@ -109,7 +109,13 @@ DOMAINS = [
     ("扩展值与观测", "零 DDL 的统一值表、观测期、首次发生、派生特征"),
     ("治理与合规", "访问分级、授权、撤回、保留期、主体权利、变更流水"),
     ("小程序接入", "外部身份、应答会话、经历片段、crosswalk、同步事件、墓碑"),
-    ("备份与发布", "备份/恢复台账与数据集发布登记"),
+    ("备份与发布", "备份/恢复台账、数据集发布登记、**验证与验证集**"),
+    # ⚠ 这个域一直只在 DOMAIN_TABLES 里、没进显示名单，于是它下面 **7 张表
+    # 在表清单页上完全看不到**（既不在任何分组、也不算"未归类"）—— 静默漏掉。
+    # 和 domain_registry 是同一类问题：**"域"有两处清单就必然漏**。
+    # 长期做法是让门户直接读 `mt.domain`（权威名单）；在那之前，这里保持同步，
+    # 而 view_schema 里保留了"数据里有、名单里没有就显式列出并警示"的安全网。
+    ("分析口径体系", "口径/维度/漏斗注册表、算法注册表、域登记 —— 定义层（说明数据怎么算出来的）"),
 ]
 
 DOMAIN_TABLES = {
@@ -1736,6 +1742,22 @@ def view_schema(c, qs) -> bytes:
     if unclassified:
         groups.append(("未归类", "未在 DOMAIN_TABLES 中登记（应在 portal.py 里补齐）",
                        unclassified))
+    # ⚠ 还有一类更容易被漏掉的：**域已经在数据里，但不在显示名单 DOMAINS 里**。
+    # 这种表既进不了任何分组、又不算"未归类"，于是**页面上完全看不到** ——
+    # 实测踩到：「分析口径体系」下 7 张表就是这样消失的
+    # （DOMAIN_TABLES 有 9 个域，而 DOMAINS 只有 8 个）。
+    # 这正是本库一贯警惕的「看不到 ≠ 没有」，所以这里**显式列出来**而不是静默丢掉。
+    shown = {dom for dom, _ in DOMAINS}
+    orphan_doms = sorted({r["domain"] for r in m["rels"]
+                          if r["kind"] == "table" and r["domain"] not in shown
+                          and r["domain"] != "未归类"})
+    n_hidden = 0
+    for dom in orphan_doms:
+        rs = [r for r in m["rels"] if r["kind"] == "table" and r["domain"] == dom]
+        n_hidden += len(rs)
+        groups.append((dom, "⚠ 该域**不在门户的显示名单 DOMAINS 里** —— "
+                            "数据里有这批表，但页面原本会静默漏掉它们。"
+                            "请把域补进 DOMAINS（或让它读 mt.domain 名单）", rs))
     views = [r for r in m["rels"] if r["kind"] != "table"]
 
     def count_cell(name, n):
