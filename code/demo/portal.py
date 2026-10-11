@@ -6154,6 +6154,17 @@ def _data_nature_card(c) -> str:
               (SELECT count(DISTINCT occupation_id) FROM mt.job_posting
                 WHERE occupation_id IS NOT NULL) AS jocc,
               (SELECT count(*) FROM mt.occupation WHERE level=3 AND status='active') AS l3,
+              -- ⚠ 评审 ① 要求的是「真实岗位覆盖的**职业/地区/来源**」，
+              -- 我先前只做了职业，地区和来源一个口径都没有（核对原文才发现）。
+              (SELECT count(DISTINCT j.city) FROM mt.job_posting j
+                WHERE j.city IS NOT NULL) AS cities,
+              (SELECT count(DISTINCT j.city) FROM mt.job_posting j
+                 JOIN mt.source_registry sr ON sr.source_id = j.source_id
+                WHERE j.city IS NOT NULL AND NOT sr.is_synthetic) AS real_cities,
+              (SELECT count(DISTINCT j.source_id) FROM mt.job_posting j) AS srcs,
+              (SELECT count(DISTINCT j.source_id) FROM mt.job_posting j
+                 JOIN mt.source_registry sr ON sr.source_id = j.source_id
+                WHERE NOT sr.is_synthetic) AS real_srcs,
               (SELECT count(DISTINCT o.parent_id) FROM mt.job_posting j JOIN mt.occupation o
                 ON o.occupation_id=j.occupation_id WHERE o.parent_id IS NOT NULL) AS l2cov,
               (SELECT count(*) FROM mt.occupation WHERE level=2 AND status='active') AS l2,
@@ -6219,6 +6230,13 @@ def _data_nature_card(c) -> str:
         '<td class="n">%d</td><td class="n">%s</td></tr>'
         '<tr><td>方向覆盖率（level 2 方向）</td><td class="n">%d</td>'
         '<td class="n">%d</td><td class="n">%s</td></tr>'
+        # ⚠ 评审 ① 原文要求「职业/地区/来源」三项，这两行是补上的：
+        # 分母都是**同一层级**（有岗位的城市 / 提供岗位的来源），
+        # 不混层级（职业覆盖那次就是混层级才算出 704%）。
+        '<tr><td>真实岗位地区覆盖率（有岗位的城市）</td><td class="n">%d</td>'
+        '<td class="n">%d</td><td class="n">%s</td></tr>'
+        '<tr><td>真实岗位来源覆盖率（提供岗位的来源）</td><td class="n">%d</td>'
+        '<td class="n">%d</td><td class="n">%s</td></tr>'
         '<tr><td class="muted">（对照）若把 151 个节点混在一个分母里</td>'
         '<td class="n muted">%d</td><td class="n muted">%d</td>'
         '<td class="n muted">%s ← <b>分母口径错误</b></td></tr>'
@@ -6235,6 +6253,10 @@ def _data_nature_card(c) -> str:
            row["wreal"], row["wall"] - row["wreal"], pct(row["wreal"], row["wall"]),
            row["jocc"], row["l3"], pct(row["jocc"], row["l3"]),
            row["l2cov"], row["l2"], pct(row["l2cov"], row["l2"]),
+           row["real_cities"], row["cities"],
+           pct(row["real_cities"], row["cities"]),
+           row["real_srcs"], row["srcs"],
+           pct(row["real_srcs"], row["srcs"]),
            row["jocc"], row["allocc"], pct(row["jocc"], row["allocc"]),
            pct(row["jocc"], row["allocc"]), pct(row["jocc"], row["l3"]),
            "".join('<div class="note err" style="margin-top:8px">%s</div>' % v

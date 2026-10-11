@@ -106,6 +106,41 @@ def main():
               "岗位数(%d) 明显大于 level 3 节点数(%d) —— 所以把岗位数当分子必然爆表"
               % (jobs, lv[3]["n"]))
 
+        # ---------- ②b 真实岗位覆盖的**地区与来源**（评审 ① 原文要求三项）----------
+        # ⚠ 这一条是**回头逐字核对需求原文**才发现的缺口：
+        # 评审写的是"真实岗位覆盖的**职业/地区/来源**"，我先前只做了职业，
+        # 地区和来源一个口径都没有（实测 metric_id ~ 'REGION|CITY' = 0 条）。
+        n_city = q1("SELECT count(DISTINCT city) AS n FROM mt.job_posting "
+                    "WHERE city IS NOT NULL", conn=c)["n"]
+        n_src = q1("SELECT count(DISTINCT source_id) AS n FROM mt.job_posting",
+                   conn=c)["n"]
+        for mid, den_expect, label in (
+                ("M_DEMAND_REAL_REGION_COVERAGE", n_city, "地区"),
+                ("M_DEMAND_REAL_SOURCE_COVERAGE", n_src, "来源")):
+            r = q1("SELECT * FROM mt.metric_value(%s)", (mid,), conn=c)
+            check(r is not None, "%s 存在（真实岗位%s覆盖率）" % (mid, label))
+            check(r["denominator"] == den_expect,
+                  "%s 的分母 == 该层级有岗位的对象数（%s vs %d）—— "
+                  "分母必须是同一层级，不能混层级" % (mid, r["denominator"], den_expect))
+            check(r["value"] is None or 0 <= r["value"] <= 100,
+                  "%s 的值在 0–100 之间（实得 %s）—— 超过 100 说明分子用错了层级"
+                  % (mid, r["value"]))
+        # 来源性质清单必须覆盖全部来源，且能区分合成/真实
+        src = c.execute("SELECT source_id, is_synthetic, n_jobs "
+                        "FROM mt.v_job_source_nature").fetchall()
+        check(len(src) >= 1, "来源性质清单非空（%d 个来源）" % len(src))
+        check(any(r["is_synthetic"] for r in src),
+              "来源清单能标出合成来源（%d 个）—— 判据是 source_registry.is_synthetic（事实）"
+              % sum(1 for r in src if r["is_synthetic"]))
+        # 一个必须说清的点：**来源数多不等于数据好**
+        n_real_src = sum(1 for r in src if not r["is_synthetic"])
+        n_src_with_jobs = sum(1 for r in src if r["n_jobs"] > 0)
+        if n_real_src and not any(not r["is_synthetic"] and r["n_jobs"] > 0 for r in src):
+            check(True,
+                  "存在 %d 个标记为「真实」的来源，但它们**贡献 0 个岗位** —— "
+                  "所以「来源数」比「来源覆盖」好看，两者必须一起看"
+                  % n_real_src)
+
         # ---------- ③ "谁都读不到"的对象必须显式登记 ----------
         nolock = c.execute("""
             SELECT c.relname FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
