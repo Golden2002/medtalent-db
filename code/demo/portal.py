@@ -139,7 +139,13 @@ DOMAIN_TABLES = {
     "分析口径体系": ["metric_registry", "dimension_registry", "funnel_registry",
                      # 刻意锁住的对象登记表：它属于"定义层"（写明哪些对象是故意不给读的），
                      # 所以和口径注册表同一域；漏登记会让 I1.2（未归类表）报错。
-                     "locked_object_registry"],
+                     "locked_object_registry",
+                     # 算法注册表：登记谁在算、什么版本、写到哪、是不是用户侧。
+                     # 它是**定义层**（说明数据怎么算出来的），所以与分析口径同域。
+                     # 这是第三次漏登记新表（053 口径注册表 / 062 刻意锁 / 063 算法注册表）——
+                     # 根因是「建表在迁移里、分域在 Python 里」，两处清单必然漏。
+                     # 门禁 I1.2（MUST）会拦，且提示里直接报出是哪张表。
+                     "algorithm_registry"],
     "治理与合规": ["access_log", "access_policy", "consent_record", "consent_withdrawal_action",
                    "data_lifecycle_run", "incident_report", "retention_policy",
                    "subject_request", "talent_deletion_request", "tombstone", "change_log",
@@ -852,6 +858,7 @@ NAV = [("/", "总览"), ("/catalog", "数据目录"), ("/viz", "可视化"), ("/
        ("/schema", "表与视图"), ("/search", "检索"), ("/analyze", "分析"),
        # 交互式透视与漏斗：挑分类变量 → 交叉/占比/关联强度/分层；按业务路径看阶段转化
        ("/pivot", "透视"), ("/factors", "多因子"), ("/funnel", "漏斗"),
+       ("/integration", "接入状态"),
        ("/quality", "质量"), ("/audit", "访问日志"), ("/lineage", "血缘"), ("/sql", "SQL"),
        ("/dev", "开发者模式")]
 
@@ -2906,6 +2913,249 @@ def view_factors(c, qs) -> bytes:
                 subtitle="结果：%s ｜ %d 个因子" % (outcome_label, len(picked)))
 
 
+def view_integration(c, qs) -> bytes:
+    """**接入状态**页：把"哪套算法接在哪、有没有东西卡住"摆在一屏里。
+
+    评审要求（优先级 2）："后台应增加「接入状态」页，直接显示未映射字段、
+    版本冲突、待投递事件、死信及下游删除确认，复用已有机制。"
+
+    这一页回答四个问题：
+      ① **用户拿到的是哪套算法？门户显示的是哪套？**（版本冲突）
+      ② **有多少要求因为没映射而根本没参与匹配？**（未映射字段）
+      ③ **有没有东西卡在投递队列里？**（待投递 / 死信）
+      ④ **删除请求有没有被下游确认？**（合规风险）
+
+    并附一张**真实链路核对清单**：评审给的验收链路是
+    "提交画像 → 规范化入库 → 调用实际匹配 API → 页面展示 → 修改画像后重新计算"，
+    这里逐步给出"从哪查、当前状态"，让核对不必靠读代码。
+    """
+    def one(k, d=""):
+        return (qs.get(k, [d])[0] or d).strip()
+
+    blocks = []
+    try:
+        algos = q(c, """SELECT algorithm_id, title, user_facing, version, path, uses,
+                               writes_to, note, status
+                          FROM mt.algorithm_registry ORDER BY user_facing DESC, version""")
+    except psycopg.Error as e:
+        return page("接入状态", '<div class="card"><div class="note err">%s</div></div>'
+                    % esc(str(e).splitlines()[0]), kind="err",
+                    subtitle="读不到算法注册表（迁移 063）")
+
+    # ---------- ① 算法注册表 + 版本冲突 ----------
+    rows = []
+    for a in algos:
+        rows.append(
+            '<tr><td><b>%s</b>%s</td><td><code>%s</code></td>'
+            '<td class="n">%s</td><td>%s</td><td>%s</td><td>%s</td></tr>'
+            % (esc(a["title"]),
+               ' <span class="tag">用户侧</span>' if a["user_facing"] else "",
+               esc(a["version"]),
+               "是" if a["user_facing"] else "否",
+               esc(a["uses"][:90]), esc(a["path"][:80]),
+               esc(a["writes_to"] or "—")))
+    blocks.append(
+        '<div class="card"><h2>算法注册表：谁在算、写到哪</h2>'
+        '<div class="tscroll"><table>'
+        '<tr><th>算法</th><th>版本</th><th class="n">用户侧</th>'
+        '<th>用什么算</th><th>入口</th><th>产出写到</th></tr>%s</table></div>'
+        '<div class="note">两套算法**写同一张 <code>match_result</code> 表**，'
+        '所以必须靠 <code>algo_version</code> 区分。'
+        '这一页的存在就是为了让"用户拿到的"和"运营看到的"不会混。</div></div>'
+        % "".join(rows))
+
+    try:
+        ver = q(c, """SELECT algo_title, algo_version, from_user_facing_algo,
+                             is_current_user_algo, count(*) AS n,
+                             count(DISTINCT person_id) AS ppl
+                        FROM mt.v_match_result_versioned
+                       GROUP BY 1,2,3,4 ORDER BY 5 DESC""")
+        cur_user = q(c, """SELECT version FROM mt.algorithm_registry
+                            WHERE algorithm_id='match_rule'""")[0]["version"]
+    except psycopg.Error:
+        ver, cur_user = [], "?"
+
+    stale = sum(r["n"] for r in ver if not r["is_current_user_algo"])
+    total = sum(r["n"] for r in ver) or 0
+    vrows = "".join(
+        '<tr><td>%s</td><td><code>%s</code></td><td class="n">%s</td>'
+        '<td class="n">%s</td><td class="n">%d</td><td class="n">%d</td></tr>'
+        % (esc(r["algo_title"]), esc(r["algo_version"]),
+           "是" if r["from_user_facing_algo"] else "否",
+           "是" if r["is_current_user_algo"] else "<b>否</b>",
+           r["n"], r["ppl"]) for r in ver)
+    conflict = ""
+    if stale:
+        conflict = (
+            '<div class="note err" style="margin-top:8px">⚠ <b>版本冲突：%d 条结果'
+            '（%.1f%%）不是当前用户侧算法（<code>%s</code>）产出的。</b><br>'
+            '这意味着：<b>门户上看到的匹配结果，未必是用户从小程序拿到的那套。</b>'
+            '两套算法口径不同（一套是概念集合命中，一套是 50 维权重），'
+            '<b>不要直接混着排序或比较</b>。'
+            '要让两者可比，必须先说明各自口径；要统一，则需明确以哪套为准并重算。</div>'
+            % (stale, 100.0 * stale / total if total else 0, esc(cur_user)))
+    elif total:
+        conflict = '<div class="note">所有匹配结果都来自当前用户侧算法，无版本冲突。</div>'
+    blocks.append(
+        '<div class="card"><h2>版本冲突：门户显示的 vs 用户拿到的</h2>'
+        '<div class="tscroll"><table>'
+        '<tr><th>算法</th><th>版本</th><th class="n">用户侧</th>'
+        '<th class="n">当前用户侧版本</th><th class="n">结果条数</th>'
+        '<th class="n">覆盖人数</th></tr>%s</table></div>%s</div>'
+        % (vrows or '<tr><td colspan="6" class="muted">还没有匹配结果</td></tr>',
+           conflict))
+
+    # ---------- ② 未映射字段 ----------
+    try:
+        un = q(c, """SELECT count(*) AS total,
+                            count(*) FILTER (WHERE concept_id IS NULL) AS unmapped
+                       FROM mt.job_requirement""")[0]
+        by_kind = q(c, """SELECT coalesce(requirement_kind,'（未标）') AS kind,
+                                 count(*) AS n,
+                                 count(*) FILTER (WHERE concept_id IS NULL) AS unmapped
+                            FROM mt.job_requirement GROUP BY 1 ORDER BY 2 DESC""")
+        krows = "".join('<tr><td>%s</td><td class="n">%d</td><td class="n">%d</td>'
+                        '<td class="n">%.1f%%</td></tr>'
+                        % (esc(r["kind"]), r["n"], r["unmapped"],
+                           100.0 * r["unmapped"] / r["n"] if r["n"] else 0)
+                        for r in by_kind)
+        pct = 100.0 * un["unmapped"] / un["total"] if un["total"] else 0
+        blocks.append(
+            '<div class="card"><h2>未映射字段：有多少要求根本没参与匹配</h2>'
+            '<p><b>%d / %d = %.1f%%</b> 的岗位要求没有映射到概念。</p>'
+            '<div class="tscroll"><table><tr><th>要求类型</th><th class="n">条数</th>'
+            '<th class="n">未映射</th><th class="n">未映射率</th></tr>%s</table></div>'
+            '<div class="note">没映射到概念的要求，在用户侧匹配里**只能进 unknown** —— '
+            '它们没有可比对的对象。所以这个比例直接决定<b>匹配的天花板</b>：'
+            '未映射率 31%% 意味着三成的要求对匹配结果没有任何贡献。<br>'
+            '修法是<b>补映射规则或词表</b>，不是把没映射的要求当成"不合格"'
+            '（那是把"不知道"当成"不满足"，本库一贯禁止这种混淆）。</div></div>'
+            % (un["unmapped"], un["total"], pct, krows))
+    except psycopg.Error:
+        pass
+
+    # ---------- ③ 投递队列（待投递 / 死信）----------
+    try:
+        ev = q(c, """SELECT coalesce(direction,'（未标）') AS dir, status,
+                            count(*) AS n, coalesce(sum(attempts),0) AS att,
+                            count(*) FILTER (WHERE last_error IS NOT NULL) AS errs
+                       FROM mt.sync_event GROUP BY 1,2 ORDER BY 3 DESC""")
+        pending = sum(r["n"] for r in ev
+                      if (r["status"] or "") not in ("ok", "acked", "done"))
+        dead = sum(r["n"] for r in ev
+                   if (r["att"] or 0) > 0 and r["errs"] and
+                   (r["status"] or "") not in ("ok", "acked", "done"))
+        erows = "".join('<tr><td>%s</td><td>%s</td><td class="n">%d</td>'
+                        '<td class="n">%d</td><td class="n">%d</td></tr>'
+                        % (esc(r["dir"]), esc(r["status"] or "—"), r["n"],
+                           r["att"], r["errs"]) for r in ev)
+        blocks.append(
+            '<div class="card"><h2>投递队列：待投递 %d 条 · 死信 %d 条</h2>'
+            '<div class="tscroll"><table><tr><th>方向</th><th>状态</th>'
+            '<th class="n">条数</th><th class="n">累计尝试</th>'
+            '<th class="n">有错误</th></tr>%s</table></div>'
+            '<div class="note">%s</div></div>'
+            % (pending, dead, erows or '<tr><td colspan="5" class="muted">'
+               '队列里还没有任何事件</td></tr>',
+               "**0 不代表链路健康**，只代表「当前没有待投递的东西」 —— "
+               "本库还没有真实下游，所以队列本来就是空的。真实接入后必须重新基线化，"
+               "并天天看死信（死信不报错、不阻塞，只是永远躺在队列里）。"
+               if not ev else
+               "待投递＝还没到终态的事件；死信＝重试过、报过错、仍未完成的事件。"))
+    except psycopg.Error:
+        pass
+
+    # ---------- ④ 删除确认（合规）----------
+    try:
+        dr = q(c, """SELECT count(*) AS n,
+                            count(*) FILTER (WHERE downstream_confirmed) AS conf,
+                            count(*) FILTER (WHERE completed_at IS NOT NULL) AS done
+                       FROM mt.talent_deletion_request""")[0]
+        n_wd = q(c, "SELECT count(*) AS n FROM mt.consent_withdrawal_action")[0]["n"]
+        n_tomb = q(c, "SELECT count(*) AS n FROM mt.tombstone")[0]["n"]
+        blocks.append(
+            '<div class="card"><h2>下游删除确认</h2><table>'
+            '<tr><th>删除请求</th><td class="n">%d</td></tr>'
+            '<tr><th>其中已获下游确认</th><td class="n">%d</td></tr>'
+            '<tr><th>已完成</th><td class="n">%d</td></tr>'
+            '<tr><th>同意撤回动作</th><td class="n">%d</td></tr>'
+            '<tr><th>墓碑</th><td class="n">%d</td></tr></table>'
+            '<div class="note">"本地删了、下游还留着"是本库最严重的合规风险之一，'
+            '所以**"发起删除"与"确认删除"必须分开计数**。'
+            '请求数为 0 时比例返回 <b>NULL</b>（不是 0%% 也不是 100%%）—— '
+            '"还没有可算的对象"与"算出来是 0"是两件事。</div></div>'
+            % (dr["n"], dr["conf"], dr["done"], n_wd, n_tomb))
+    except psycopg.Error:
+        pass
+
+    # ---------- ⑤ 真实链路核对清单（评审给的验收链路）----------
+    blocks.append(
+        '<div class="card"><h2>真实链路核对清单</h2>'
+        '<p class="muted">评审给的验收链路：<b>提交画像 → 规范化入库 → '
+        '调用实际匹配 API → 页面展示 → 修改画像后重新计算</b>。'
+        '下面每一步给出"从哪查、怎么算通过"。</p>'
+        '<div class="tscroll"><table>'
+        '<tr><th>步骤</th><th>从哪查</th><th>判断标准</th></tr>'
+        '<tr><td>① 提交画像</td><td><code>/import</code>（表格）或 '
+        '<code>/mockreg</code>（单条）</td>'
+        '<td>提交后 <code>external_identity</code> 出现该来源编号，'
+        '且 <code>answer</code> 里有对应答卷行</td></tr>'
+        '<tr><td>② 规范化入库</td><td><code>/t/person</code>、'
+        '<code>/t/education_record</code></td>'
+        '<td>person 行存在；教育/技能按 crosswalk 投影到规范表；'
+        '<b>未映射的事实计数上报而不是静默丢弃</b></td></tr>'
+        '<tr><td>③ 调用实际匹配 API</td>'
+        '<td><code>POST /v1/talent/matches</code>（bridge api.matches）</td>'
+        '<td>返回 <code>ruleVersion=match_rule@0.1</code>；'
+        '无有效授权时返回 <code>CONSENT_REQUIRED</code>；'
+        '<code>deleting</code> 时返回 <code>PROFILE_DELETING</code></td></tr>'
+        '<tr><td>④ 页面展示</td><td><code>/match</code></td>'
+        '<td>页面显示的 <code>algo_version</code> 应与 ③ 一致；'
+        '不一致就是本页顶部的"版本冲突"</td></tr>'
+        '<tr><td>⑤ 改画像后重新计算</td><td>再调一次 ③，看 '
+        '<code>profileVersion</code> 与 <code>generatedAt</code></td>'
+        '<td>版本号上升、结果随之变化；'
+        '<b>旧版本结果不应被当成最新</b>（本页按 algo_version 分开计数）</td></tr>'
+        '</table></div>'
+        '<div class="note">⚠ <b>当前这一步是断的</b>：'
+        '<code>/match</code> 页面读的是 <code>match_result</code>，'
+        '而表里的结果全部来自离线 50 维算法（见上方版本冲突）。'
+        '所以"页面展示"目前<b>不能</b>证明用户侧链路通了 —— '
+        '要证明它，需要在真实调用一次 ③ 之后，让页面显示那次调用的产出。</div></div>')
+
+    return page("接入状态",
+                _integration_banner(c) + "".join(blocks),
+                subtitle="哪套算法接在哪 · 有没有东西卡住 · 版本是否冲突")
+
+
+def _integration_banner(c) -> str:
+    """顶部一句话总结当前接入状态（避免让人自己从四张表里推断）。"""
+    try:
+        stale = q(c, "SELECT count(*) AS n FROM mt.v_match_result_versioned "
+                     "WHERE NOT is_current_user_algo")[0]["n"]
+        total = q(c, "SELECT count(*) AS n FROM mt.match_result")[0]["n"]
+        unmapped = q(c, "SELECT count(*) AS n FROM mt.job_requirement "
+                        "WHERE concept_id IS NULL")[0]["n"]
+        reqs = q(c, "SELECT count(*) AS n FROM mt.job_requirement")[0]["n"]
+    except psycopg.Error:
+        return ""
+    bits = []
+    if total and stale == total:
+        bits.append("**门户上的匹配结果 100% 不是用户侧算法产出的** —— "
+                    "它来自离线 50 维，而小程序返回的是规则版。这两者不可直接比较。")
+    elif stale:
+        bits.append("有 %d/%d 条匹配结果来自非用户侧算法。" % (stale, total))
+    if reqs and unmapped:
+        bits.append("**%.1f%% 的岗位要求没有映射到概念**（%d/%d），"
+                    "它们在匹配里只能进 unknown —— 这是匹配效果的天花板。"
+                    % (100.0 * unmapped / reqs, unmapped, reqs))
+    if not bits:
+        bits.append("没有发现版本冲突或未映射积压。")
+    return ('<div class="card" style="border-left:4px solid #c2410c">'
+            '<h2>当前接入状态</h2>%s</div>'
+            % "".join('<p style="margin:6px 0">%s</p>' % b for b in bits))
+
+
 def view_analyze(c, qs, aid=None, want_csv=False):
     if aid is None:
         cards = "".join(
@@ -4767,7 +5017,42 @@ SELECT * FROM match_run ORDER BY started_at DESC;""" % who))
     body += page_analysis(c, "/match")
     # h1 是「匹配 · 按人才 / 按职业」，跟导航标签「匹配」不相等——不显式指定 here，
     # 这一页一个导航项都不会高亮（改前的实测现象）。
-    return page(title, body, subtitle="能力 ↔ 职业 · 三态可解释", here="匹配")
+    # ⚠ 匹配结果的**算法版本必须标在页面上**（评审优先级 2 的核心问题）：
+    # 实测表里的结果可能来自"离线 50 维"而不是"用户侧规则版"，
+    # 而两者口径不同、不可直接比较。不标注就会让运营以为"这就是用户看到的"。
+    # 版本判定统一走 `v_match_result_versioned`（口径只此一处）。
+    _vb = ""
+    try:
+        _rows = q(c, """SELECT algo_title, algo_version, from_user_facing_algo,
+                               is_current_user_algo, count(*) AS n
+                          FROM mt.v_match_result_versioned
+                         GROUP BY 1,2,3,4 ORDER BY 5 DESC""")
+        _user = q(c, """SELECT version FROM mt.algorithm_registry
+                         WHERE algorithm_id='match_rule'""")[0]["version"]
+        _stale = sum(r["n"] for r in _rows if not r["is_current_user_algo"])
+        _tot = sum(r["n"] for r in _rows) or 0
+        _items = "".join(
+            '<li>%s（<code>%s</code>）· %d 条 · %s</li>'
+            % (esc(r["algo_title"]), esc(r["algo_version"]), r["n"],
+               "用户侧算法" if r["from_user_facing_algo"] else
+               "<b>非用户侧</b>（离线核算 / 案例验证）") for r in _rows)
+        if _stale:
+            _vb = ('<div class="card" style="border-left:4px solid #c2410c">'
+                   '<h2>⚠ 这一页的结果来自哪套算法</h2><ul>%s</ul>'
+                   '<div class="note err">其中 <b>%d/%d</b> 条<b>不是</b>当前用户侧算法'
+                   '（<code>%s</code>）产出的。<br>'
+                   '也就是说：<b>这一页显示的匹配结果，未必是用户从小程序拿到的那套。</b>'
+                   '两套算法口径不同（规则版＝概念集合命中；离线版＝50 维权重），'
+                   '<b>不要直接混着比较或排序</b>。'
+                   '接入状态与差异原因见 <a href="/integration">接入状态</a>。</div></div>'
+                   % (_items, _stale, _tot, esc(_user)))
+        elif _tot:
+            _vb = ('<div class="card"><h2>结果来源</h2><ul>%s</ul>'
+                   '<div class="note">全部来自当前用户侧算法（<code>%s</code>）。</div>'
+                   '</div>' % (_items, esc(_user)))
+    except psycopg.Error:
+        _vb = ""
+    return page(title, _vb + body, subtitle="能力 ↔ 职业 · 三态可解释", here="匹配")
 
 
 # ---------------------------------------------------------------------------
@@ -6021,6 +6306,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, view_pivot(c, qs))
                 if path == "/factors":
                     return self._send(200, view_factors(c, qs))
+                if path == "/integration":
+                    return self._send(200, view_integration(c, qs))
                 if path == "/funnel":
                     return self._send(200, view_funnel(c, qs))
                 if path == "/analyze":
