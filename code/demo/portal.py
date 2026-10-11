@@ -136,7 +136,10 @@ DOMAIN_TABLES = {
     # 分析口径体系（053/054）：把"如何看数据"本身也当数据管起来 —— 口径、分类、漏斗。
     # 归到"字典与语义"这一域：它们和 code_table/field_catalog 一样，是**定义层**，
     # 不是业务数据。漏登记会让 I1.2（未归类表）报错，所以新增注册表要同步加进这里。
-    "分析口径体系": ["metric_registry", "dimension_registry", "funnel_registry"],
+    "分析口径体系": ["metric_registry", "dimension_registry", "funnel_registry",
+                     # 刻意锁住的对象登记表：它属于"定义层"（写明哪些对象是故意不给读的），
+                     # 所以和口径注册表同一域；漏登记会让 I1.2（未归类表）报错。
+                     "locked_object_registry"],
     "治理与合规": ["access_log", "access_policy", "consent_record", "consent_withdrawal_action",
                    "data_lifecycle_run", "incident_report", "retention_policy",
                    "subject_request", "talent_deletion_request", "tombstone", "change_log",
@@ -1299,7 +1302,10 @@ def view_home(c, qs) -> bytes:
     ]), domain_html, top_html, f"{total_rows:,}", len(filled), len(empty), dict_html,
         n_pk, n_fk, n_uni, n_chk, n_idx, n_trg, dom, n_fun, len(views),
         len(tables), len(m["rels"]), m["count_seconds"])
-    return page("总览", body, subtitle="一个只读的数据库门户：信息展示 · 检索 · 基础分析")
+    # **数据性质卡放在最前面**（评审第 1 条的验收标准：一眼看出哪些结论由真实数据支撑）。
+    # 放在总览的开头，是因为它决定"下面这些数字该不该当业务结论读"。
+    return page("总览", _data_nature_card(c) + body,
+                subtitle="一个只读的数据库门户：信息展示 · 检索 · 基础分析")
 
 
 # ---------------------------------------------------------------------------
@@ -5459,6 +5465,126 @@ SELECT * FROM mt.form_schema('person');"""))
 # ---------------------------------------------------------------------------
 # ⑮ 数据质量仪表盘
 # ---------------------------------------------------------------------------
+def _data_nature_card(c) -> str:
+    """**数据性质卡**：直接回答"哪些结论由真实数据支撑"。
+
+    为什么必须有它（评审第 1 条的验收标准）：
+      "可以明确指出哪些结论由真实数据支撑"。
+    实测：岗位侧**真实数据为 0**（690 个岗位全部来自本地 fixture），
+    人才侧 97.6% 是合成夹具。也就是说，**当前几乎所有"业务结论"都只是在验证管道**。
+    这件事如果不显式摆出来，读报表的人会把演示数字当成市场发现。
+
+    判据**不是名称匹配**：人侧读 `person.quality_flags`，
+    岗位侧读 `source_registry.is_synthetic`（写入时登记的事实，见迁移 061）。
+    """
+    try:
+        # ⚠ 这里**直接查底表**，不经 `v_job_nature` —— 那个视图是分析视图、只给 T3
+        # （未登记视图的默认授权），而这张卡要服务所有登录用户。
+        # 底表（job_posting / source_registry / person）都是 T1 可读，
+        # 所以 T1 用户也能看到数据性质；用视图会让 T1 用户明明登录了却看到"需要登录"。
+        # 教训：**通用展示与专用分析视图不要混用同一个对象** ——
+        # 它们的权限受众不一样，混用会把权限问题伪装成"功能没做"。
+        row = q(c, """SELECT
+              (SELECT count(*) FROM mt.person WHERE NOT ('synthetic_fixture' = ANY(quality_flags))) AS preal,
+              (SELECT count(*) FROM mt.person) AS pall,
+              (SELECT count(*) FROM mt.job_posting) AS jall,
+              (SELECT count(*) FROM mt.job_posting j
+                 JOIN mt.source_registry s ON s.source_id = j.source_id
+                WHERE NOT s.is_synthetic) AS jreal,
+              -- ⚠ 分子必须是**去重职业数**，不是岗位数。
+              -- 第一版写成 count(*) 得到 690，于是覆盖率显示 704.1% ——
+              -- 一个超过 100% 的比例本该一眼看出，但它混在一堆数字里很容易漏掉。
+              (SELECT count(DISTINCT occupation_id) FROM mt.job_posting
+                WHERE occupation_id IS NOT NULL) AS jocc,
+              (SELECT count(*) FROM mt.occupation WHERE level=3 AND status='active') AS l3,
+              (SELECT count(DISTINCT o.parent_id) FROM mt.job_posting j JOIN mt.occupation o
+                ON o.occupation_id=j.occupation_id WHERE o.parent_id IS NOT NULL) AS l2cov,
+              (SELECT count(*) FROM mt.occupation WHERE level=2 AND status='active') AS l2,
+              (SELECT count(*) FROM mt.occupation WHERE status='active') AS allocc,
+              (SELECT count(*) FROM mt.job_competency_weight w WHERE EXISTS (
+                 SELECT 1 FROM mt.job_requirement r JOIN mt.job_posting j ON j.job_id=r.job_id
+                 JOIN mt.source_registry s ON s.source_id=j.source_id
+                 WHERE j.occupation_id=w.occupation_id AND NOT s.is_synthetic)) AS wreal,
+              (SELECT count(*) FROM mt.job_competency_weight) AS wall""")[0]
+    except psycopg.Error:
+        # ⚠ 不要静默返回空 —— 那会让人以为"这一页没有数据性质信息"，
+        # 而实际上是**权限边界**（人才侧的表是 T1，匿名读不到）。
+        # 本项目的纪律：看不到 ≠ 没有；降级要**说出来**。
+        return ('<div class="card"><h2>数据性质：哪些结论由真实数据支撑</h2>'
+                '<div class="note">这一块需要**登录**后查看：'
+                '它要读人才侧与岗位侧的来源登记（其中人才侧是 T1）。<br>'
+                '权限强制点在数据库，不在页面上 —— 所以这里不会用"隐藏卡片"来假装安全。'
+                '</div><p><a class="btnlink" href="/login">去登录</a></p></div>')
+
+    def pct(a, b):
+        return "—" if not b else "%.1f%%" % (100.0 * a / b)
+
+    p_syn = 100.0 * (row["pall"] - row["preal"]) / row["pall"] if row["pall"] else 0
+    j_syn = 100.0 * (row["jall"] - row["jreal"]) / row["jall"] if row["jall"] else 0
+    no_real_job = row["jreal"] == 0
+    no_real_weight = row["wreal"] == 0
+
+    verdict = []
+    if no_real_job:
+        verdict.append(
+            "**岗位侧没有任何真实数据**（%d 个岗位全部来自合成来源）→ "
+            "所有基于岗位的结论（能力权重、要求强度、供需错配、推荐效果）"
+            "**只能验证管道，不能当业务结论**。" % row["jall"])
+    if no_real_weight:
+        verdict.append(
+            "**能力权重的真实样本支撑率为 0**（%d 行权重全部来自合成岗位）→ "
+            "任何「某能力在市场上很重要」的说法，在真实岗位进来之前都不成立。" % row["wall"])
+    if p_syn > 50:
+        verdict.append(
+            "人才侧 **%.0f%% 是合成夹具** → 人才画像类结论同样只是演示；"
+            "分析时请按维度「数据性质」分层，或看 v_person_real。" % p_syn)
+
+    return (
+        '<div class="card"><h2>数据性质：哪些结论由真实数据支撑</h2>'
+        '<div class="tscroll"><table>'
+        '<tr><th>对象</th><th class="n">真实</th><th class="n">合成/夹具</th>'
+        '<th class="n">合成占比</th><th>判据（写入时登记的事实）</th></tr>'
+        '<tr><td>人才（person）</td><td class="n">%d</td><td class="n">%d</td>'
+        '<td class="n">%.1f%%</td><td><code>person.quality_flags</code> 含 '
+        '<code>synthetic_fixture</code></td></tr>'
+        '<tr><td>岗位（job_posting）</td><td class="n"><b>%d</b></td>'
+        '<td class="n">%d</td><td class="n">%.1f%%</td>'
+        '<td><code>source_registry.is_synthetic</code>（经 source_id 关联）</td></tr>'
+        '<tr><td>能力权重（job_competency_weight）</td><td class="n">%d 行</td>'
+        '<td class="n">%d 行</td><td class="n">%s</td>'
+        '<td>按职业关联到真实岗位的行数</td></tr>'
+        '</table></div>'
+        '<h3 style="margin:14px 0 6px;font-size:14px">真实岗位的覆盖情况</h3>'
+        '<div class="tscroll"><table>'
+        '<tr><th>口径</th><th class="n">分子</th><th class="n">分母</th>'
+        '<th class="n">值</th></tr>'
+        '<tr><td>具体职业覆盖率（level 3 具体职业）</td><td class="n">%d</td>'
+        '<td class="n">%d</td><td class="n">%s</td></tr>'
+        '<tr><td>方向覆盖率（level 2 方向）</td><td class="n">%d</td>'
+        '<td class="n">%d</td><td class="n">%s</td></tr>'
+        '<tr><td class="muted">（对照）若把 151 个节点混在一个分母里</td>'
+        '<td class="n muted">%d</td><td class="n muted">%d</td>'
+        '<td class="n muted">%s ← <b>分母口径错误</b></td></tr>'
+        '</table></div>'
+        '<div class="note"><b>覆盖率的分母必须按层级算</b>：职业树里 level 1 是大类、'
+        'level 2 是方向、level 3 是具体职业。把三种层级混在一个分母里会**系统性低估**'
+        '（本例按 151 算得 %s，按同层级 98 算是 %s）。<br>'
+        '岗位覆盖率低说明"岗位库里没有这个职业的样本"，'
+        '<b>不等于</b>市场上没有这个职业 —— 补样本要优先补目标用户需要、'
+        '而当前没有样本的职业。</div>'
+        '%s</div>'
+        % (row["preal"], row["pall"] - row["preal"], p_syn,
+           row["jreal"], row["jall"] - row["jreal"], j_syn,
+           row["wreal"], row["wall"] - row["wreal"], pct(row["wreal"], row["wall"]),
+           row["jocc"], row["l3"], pct(row["jocc"], row["l3"]),
+           row["l2cov"], row["l2"], pct(row["l2cov"], row["l2"]),
+           row["jocc"], row["allocc"], pct(row["jocc"], row["allocc"]),
+           pct(row["jocc"], row["allocc"]), pct(row["jocc"], row["l3"]),
+           "".join('<div class="note err" style="margin-top:8px">%s</div>' % v
+                   for v in verdict) if verdict else
+           '<div class="note">真实数据占比正常，结论可作为业务依据。</div>'))
+
+
 def view_quality(c, qs) -> bytes:
     m = meta()
     tables = [r for r in m["rels"] if r["kind"] == "table"]
@@ -5634,7 +5760,7 @@ SELECT count(*) AS n FROM mt.<每张基础表>;   -- 在应用层逐表执行，
 -- 本次实测空表 %d 张：%s
 -- 完整性不变量见 ops/tests/regression_guards.sql""" % (
             len(empty), "、".join(empty[:8]) if empty else "无")))
-    return page("数据质量", body, subtitle="可核的数字，不是形容词")
+    return page("数据质量", _data_nature_card(c) + body, subtitle="可核的数字，不是形容词")
 
 
 # ---------------------------------------------------------------------------

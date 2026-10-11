@@ -197,6 +197,45 @@ def d1_integrity(c):
         note=("未通过时按降序看是哪张表：%s" % "、".join(worst[:5])) if worst else
              "两类引用表都覆盖（外键与无外键），新增表自动纳入")
 
+    # I1.8 没有任何等级可读、也没登记为"刻意锁"的对象
+    #
+    # 为什么加这条（**同一个坑踩了三次**，每次都表现为"页面空白/降级"，不像权限问题）：
+    #   048：新建视图没进 public_view_registry → 授权随对账飘
+    #   052：DROP + CREATE 视图带走 GRANT → 显式重授
+    #   061：新建视图**完全没跑对账** → 连 T3 都读不到（首页"数据性质卡"直接降级）
+    # 本库的授权由对账统一生成；新建对象不在对账范围内 = 没授权。
+    # 而"刻意锁"（如 login_attempt）与"忘了授权"在数据库里长得一模一样，
+    # 所以判据是：**谁都读不到 且 没在 locked_object_registry 里登记** = 违规。
+    #
+    # ⚠ 判据必须同时看表级与列级权限：本库基础表用**列级**授权，
+    # 此时 has_table_privilege 返回 false 而表其实可读（第一版就误报过 92 个）。
+    # 用 has_any_column_privilege 才是"这张表读不读得到"的正确判据。
+    try:
+        no_grants = c.execute("""
+            SELECT c.relname FROM pg_class c
+              JOIN pg_namespace ns ON ns.oid = c.relnamespace
+             WHERE ns.nspname = 'mt' AND c.relkind IN ('r','v')
+               AND c.relname NOT IN (SELECT object_name FROM mt.locked_object_registry)
+               AND NOT (has_table_privilege('mt_t0', c.oid, 'SELECT')
+                     OR has_table_privilege('mt_t1', c.oid, 'SELECT')
+                     OR has_table_privilege('mt_t2', c.oid, 'SELECT')
+                     OR has_table_privilege('mt_t3', c.oid, 'SELECT')
+                     OR has_any_column_privilege('mt_t0', c.oid, 'SELECT')
+                     OR has_any_column_privilege('mt_t1', c.oid, 'SELECT')
+                     OR has_any_column_privilege('mt_t2', c.oid, 'SELECT')
+                     OR has_any_column_privilege('mt_t3', c.oid, 'SELECT'))
+             ORDER BY 1""").fetchall()
+        names = [r[0] for r in no_grants]
+        locked = q1(c, "SELECT count(*) FROM mt.locked_object_registry")
+        add("D1", "I1.8", "无任何等级可读的对象数", len(names), 0, "MUST",
+            "对账后扫全部表与视图（表级 + 列级都查）；已在 locked_object_registry "
+            "显式登记为「刻意锁」的 %d 个不计" % locked,
+            note=("违规对象：%s" % "、".join(names[:6])) if names else
+                 "没有「忘授权」的对象；刻意锁的都有登记与理由")
+    except psycopg.Error:
+        add("D1", "I1.8", "无任何等级可读的对象数", -1, 0, "MUST",
+            "扫描失败（locked_object_registry 可能还没建，见迁移 062）")
+
     # I1.2 未分类的表（每张表都要归入一个业务域）
     # 判据：mt 下的基础表里，有多少张既不在 entity_catalog（语义层登记），
     # 也不在 DOMAIN_TABLES（门户的域划分）里 —— 两边都没登记就是"没人认领的表"。
