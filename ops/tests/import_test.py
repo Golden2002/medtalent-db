@@ -121,7 +121,7 @@ def main():
                              WHERE field_id='F_PSN_RES_OVERSEAS'
                                AND subject_type='person'""").fetchone()["n"]
         n_blank = c.execute("""SELECT count(*) AS n FROM mt.field_value
-                                WHERE value_code IS NULL OR value_code = ''""").fetchone()["n"]
+                                WHERE coalesce(value_code,'') = '' AND coalesce(value_text,'') = '' AND value_codes IS NULL AND value_num IS NULL AND value_date IS NULL AND value_json IS NULL""").fetchone()["n"]
     check(n_ov >= 1, "动态字段写入了值（%d 条）" % n_ov)
     check(n_blank == 0,
           "**没有任何空值行** —— 缺的字段是不写行，而不是写空（缺失 ≠ 空值）")

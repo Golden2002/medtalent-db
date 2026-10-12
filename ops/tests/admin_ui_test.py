@@ -172,8 +172,7 @@ def main():
                    "WHERE source_system=%s", (EXT,))["n"]
         check(n_ids == 2, "3 行里导入 2 个（未授权那行被授权门拒绝），实得 %d" % n_ids)
         check("授权门拒绝" in b, "报告里说明了有一行被授权门拒绝（门在工作）")
-        check(q1("SELECT count(*) AS n FROM mt.field_value WHERE value_code IS NULL "
-                 "OR value_code=''")["n"] == 0,
+        check(q1("SELECT count(*) AS n FROM mt.field_value WHERE coalesce(value_code,'') = '' AND coalesce(value_text,'') = '' AND value_codes IS NULL AND value_num IS NULL AND value_date IS NULL AND value_json IS NULL")["n"] == 0,
               "**没有任何空值行** —— 缺的字段是不写行，而不是写空（缺失≠空值）")
         check(q1("SELECT count(*) AS n FROM mt.consent_record c WHERE NOT EXISTS "
                  "(SELECT 1 FROM mt.person p WHERE p.person_id=c.person_id)")["n"] == 0,

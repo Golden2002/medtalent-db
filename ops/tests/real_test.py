@@ -73,6 +73,19 @@ def main():
         # ===============================================================
         print("\n【R2】充分性：两侧可评维度数必须与实测基线一致")
         cov = V.coverage(c, dims)
+        # ⚠ **分母必须同人群**：报名表（`source_type='SRC5'` 问卷）**根本不问履历**，
+        # 把填报者算进"工作年限覆盖率"的分母，就是把「**没问**」混成「**没填**」——
+        # 两者是完全不同的问题，需要完全不同的处置。
+        # 所以这里按**采集工具**剔除问卷来源的人，并把剔除量**显式说出来**（不静默）。
+        # 判据是 `source_type`（登记的事实），不是来源名称。
+        _svy = c.execute("""SELECT count(*) AS n FROM mt.person p
+                              JOIN mt.source_registry s ON s.source_id = p.source_id
+                             WHERE s.source_type = 'SRC5'""").fetchone()["n"]
+        n_base = cov["n_person"] - _svy
+        check(True,
+              "分母按人群：总人数 %d · 其中问卷来源 %d 位（采集工具不问履历，已剔除）"
+              "· 基准人群 %d 位 —— 「没问」不能和「没填」混进同一个分母"
+              % (cov["n_person"], _svy, n_base))
         two = sorted(d["dimension_id"] for d in cov["dims"] if d["person_ok"] and d["job_ok"])
         check(len(two) == N_TWO_SIDED,
               "两侧都能取到值的维度 = %d（基线 %d）" % (len(two), N_TWO_SIDED))
@@ -88,9 +101,9 @@ def main():
         check(wy["job_ok"] == cov["n_job"],
               "DIM_WORK_YEARS 岗位侧全覆盖（%d/%d）—— 这条门禁以前是 0，从来不拦人"
               % (wy["job_ok"], cov["n_job"]))
-        check(wy["person_ok"] >= 0.8 * cov["n_person"],
+        check(wy["person_ok"] >= 0.8 * n_base,
               "DIM_WORK_YEARS 人侧覆盖率 >= 80%%（%d/%d）"
-              % (wy["person_ok"], cov["n_person"]))
+              % (wy["person_ok"], n_base))
         et = byid["DIM_EMPLOYER_TYPE"]
         check(et["job_ok"] >= 0.9 * cov["n_job"],
               "DIM_EMPLOYER_TYPE 岗位侧由 employer_name_raw 派生（%d/%d）"
@@ -100,9 +113,9 @@ def main():
               "DIM_CITY_TIER 两侧都有值（人侧 %d，岗位侧 %d/%d）—— 映射来自数据字典"
               % (ct["person_ok"], ct["job_ok"], cov["n_job"]))
         st = byid["DIM_SCHOOL_TIER"]
-        check(st["person_ok"] >= 0.8 * cov["n_person"],
+        check(st["person_ok"] >= 0.8 * n_base,
               "DIM_SCHOOL_TIER 由院校中文标签归一化（%d/%d）—— 修 _as_codes 的数组嵌套之前是 0"
-              % (st["person_ok"], cov["n_person"]))
+              % (st["person_ok"], n_base))
         # 岗位侧缺落点是"待采集"而不是"错误"，但缺口规模要看得见
         no_landing = [d for d in cov["dims"] if d["job_ok"] == 0]
         check(len(no_landing) > 0,

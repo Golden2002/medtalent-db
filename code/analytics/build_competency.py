@@ -39,7 +39,10 @@ from psycopg.rows import dict_row  # noqa: E402
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-DSN = ("host=127.0.0.1 port=55432 dbname=medtalent user=postgres "
+# ⚠ 允许用环境变量覆盖 —— 这样变更试算可以在**隔离实例**上重跑整条管道
+# （见 ops/dryrun.py），而不必为了试算去动生产库。
+# 默认值仍是生产实例，所以现有调用方行为不变。
+DSN = os.environ.get("MT_DSN") or ("host=127.0.0.1 port=55432 dbname=medtalent user=postgres "
        "client_encoding=UTF8 options='-c search_path=mt,public'")
 CONCEPT_CSV = os.path.join(BASE, "schema", "catalog", "concept_seed.csv")
 HARDNESS = {"RK1": 1.0, "RK2": 0.6, "RK3": 0.3}
